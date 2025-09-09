@@ -175,7 +175,7 @@ def init_grid(grid, io, args: Namespace):
 
     grid['is_partitioned'] = args.is_partitioned_elmer_mesh
     if grid['is_partitioned']:
-        assert(args.netcdf_mesh), "--is-partitioned-elmer-mesh requires --netcdf-mesh. (Without --netcdf-mesh should also work but is untested.)"
+        assert (args.netcdf_mesh), "--is-partitioned-elmer-mesh requires --netcdf-mesh. (Without --netcdf-mesh should also work but is untested.)"
         logger.info('Using partitioned grid...')
     else:
         logger.info('Using non-partitioned grid...')
@@ -190,7 +190,7 @@ def init_grid(grid, io, args: Namespace):
         logger.error(f"Invalid grid configuration. EBFM supports the grid types {[t.name for t in GridInputType]}. Please please refer to the documentation for correct configuration.")
         raise Exception("Invalid grid configuration.")
 
-    if grid['input_type'] is GridInputType.CUSTOM: # Read grid from Elmer, elevations from BedMachine
+    if grid['input_type'] is GridInputType.CUSTOM:  # Read grid from Elmer, elevations from BedMachine
         if grid['is_partitioned']:
             mesh: Mesh = read_elmer_mesh(mesh_root=args.elmer_mesh,
                                          is_partitioned=True,

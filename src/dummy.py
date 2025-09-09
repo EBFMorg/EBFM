@@ -27,28 +27,28 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--couple-to-elmer-ice",
-                       action="store_true",
-                       help="Enable coupling with Elmer/Ice models via YAC")
+                        action="store_true",
+                        help="Enable coupling with Elmer/Ice models via YAC")
 
     parser.add_argument("--couple-to-icon-atmo",
-                       action="store_true",
-                       help="Enable coupling with ICON via YAC")
+                        action="store_true",
+                        help="Enable coupling with ICON via YAC")
 
     parser.add_argument("--elmer-mesh",
-                       type=Path,
-                       help="Path to the Elmer mesh file. Either --elmer-mesh or --matlab-mesh is required.")
+                        type=Path,
+                        help="Path to the Elmer mesh file. Either --elmer-mesh or --matlab-mesh is required.")
 
     parser.add_argument("--matlab-mesh",
-                       type=Path,
-                       help="Path to the MATLAB mesh file. Either --elmer-mesh or --matlab-mesh is required.")
+                        type=Path,
+                        help="Path to the MATLAB mesh file. Either --elmer-mesh or --matlab-mesh is required.")
 
     parser.add_argument("--netcdf-mesh",
-                       type=Path,
-                       help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.")
+                        type=Path,
+                        help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.")
 
     parser.add_argument("--is-partitioned-elmer-mesh",
-                       action="store_true",
-                       help="Indicate if the provided Elmer mesh is partitioned for parallel runs.")
+                        action="store_true",
+                        help="Indicate if the provided Elmer mesh is partitioned for parallel runs.")
 
     parser.add_argument("--use-part",
                         type=int,
@@ -141,7 +141,8 @@ def main():
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         if not grid['is_partitioned'] and not io['use_coupling']:
-            assert(grid['input_type'] is GridInputType.MATLAB), "Output writing currently only implemented for MATLAB input grids."
+            assert (grid['input_type'] is GridInputType.MATLAB), \
+                "Output writing currently only implemented for MATLAB input grids."
             io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time2, C)
             pass
         elif grid['is_partitioned'] or io['use_coupling']:

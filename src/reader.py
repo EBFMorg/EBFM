@@ -8,7 +8,8 @@ from numpy.typing import NDArray
 from elmer.mesh import TriangleMesh
 import elmer.parser
 
-def read_elmer_mesh(mesh_root: Path, is_partitioned: bool=False, partition_id: int=-1) -> TriangleMesh:
+
+def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id: int = -1) -> TriangleMesh:
     """Read Elmer mesh files.
     Args:
         mesh_root (Path): Path to the Elmer mesh folder.
@@ -102,7 +103,8 @@ def read_matlab(mat_file: Path) -> tuple[NDArray[np.float64], NDArray[np.float64
     """
     raise Exception("Reading from MATLAB files is not implemented yet.")
 
-def write_dem_as_elmer(mesh: TriangleMesh, h: NDArray[np.float64], dem_file: Path, allow_overwrite: bool=False) -> None:
+
+def write_dem_as_elmer(mesh: TriangleMesh, h: NDArray[np.float64], dem_file: Path, allow_overwrite: bool = False) -> None:
     """Write digital elevation model to a file following the structure of an existing Elmer mesh
     Args:
         mesh (Mesh): The mesh object containing x and y vertices and vertex IDs.
