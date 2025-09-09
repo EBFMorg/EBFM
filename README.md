@@ -11,16 +11,10 @@ developing and running this dummy.
 
 Activate the `venv` by running `source .venv/bin/activate`.
 
-### Without coupling
+A basic, uncoupled simulation can be run with the following command:
 
 ```sh
 python3 src/dummy.py --matlab-mesh examples/dem_and_mask.mat
-```
-
-### With coupling
-
-```sh
-python3 src/dummy.py --matlab-mesh examples/dem_and_mask.mat --couple-to-elmer-ice --couple-to-icon-atmo
 ```
 
 ### Mesh data
@@ -95,3 +89,51 @@ Usage example for partitioned mesh:
 ```sh
 python3 src/dummy.py --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
 ```
+
+### Coupled simulation
+
+The EBFM code allows coupling to other simulation codes. The following arguments
+allow to configure the coupling:
+
+```sh
+python3 src/dummy.py ...
+  --couple-to-elmer-ice
+  --couple-to-icon-atmo
+  --coupler-config /path/to/coupling/config.yaml
+```
+
+Note that the coupling uses the Python bindings of YAC. Additionally, EBFM must
+be run in a MPMD (multiple process multiple data) run. An example command for
+running a coupled simulation with Elmer/Ice and ICON is given below:
+
+```sh
+mpirun -n 1 python $EBFM_ROOT/src/dummy.py \
+  --elmer-mesh $MESHES/MESH/partitioning.128/ \
+  --netcdf-mesh $DATA/BedMachineGreenland-v5.nc \
+  --is-partitioned-elmer-mesh --use-part 1 \
+  --coupler-config $CPL_CONFIG --couple-to-elmer --couple-to-icon \
+  : \
+  -n 1 $ELMER_ROOT/src/elmer_dummy_f.x $MESHES/MESH/partitioning.128 1 $CPL_CONFIG \
+  : \
+  -n 1 $ICON_ROOT/src/icon_dummy.x $MESHES/icon_grid_0054_R02B08_G.nc $DATA/mbe3064_atm_elmer_monmean_1979.nc $DATA/varlist_elmerfile
+```
+
+Be aware that the command above requires setting a few environment variables.
+Assuming your project is structured following [this repository](https://gitlab.dkrz.de/k202215/ebfm_dummy)
+the following settings should help getting started:
+
+```sh
+export EBFM_DUMMY_REPO=/path/to/k202215/ebfm_dummy
+export EBFM_REPO=/path/to/this/repo
+
+export CPL_CONFIG=$EBFM_DUMMY_REPO/config/coupling.yaml
+export MESHES=$EBFM_DUMMY_REPO/mesh
+export DATA=$EBFM_DUMMY_REPO/data
+
+export EBFM_ROOT=$EBFM_REPO
+export ELMER_ROOT=$EBFM_DUMMY_REPO/dummies/ELMER
+export ICON_ROOT=$EBFM_DUMMY_REPO/dummies/ICON
+```
+
+Depending on the binaries that you want to use `$ELMER_ROOT` and/or `$ICON_ROOT`
+may be set to point to the non-dummy versions of the codes.
