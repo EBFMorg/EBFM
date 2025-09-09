@@ -82,10 +82,6 @@ def init_config(args: Namespace):
     io['freqout'] = 8  # OUTPUT: frequency of storing output (every n-th time-step)
     io['output_type'] = 2 # Set output file type: 1 = binary files, 2 = netCDF file
 
-    io['couple_to_elmer_ice'] = args.couple_to_elmer_ice  # whether to couple to Elmer/Ice
-    io['couple_to_icon_atmo'] = args.couple_to_icon_atmo  # whether to couple to ICON atmosphere
-    io['use_coupling'] = io['couple_to_elmer_ice'] or io['couple_to_icon_atmo']
-
     # Ensure output and reboot directories exist
     os.makedirs(io['outdir'], exist_ok=True)
     os.makedirs(io['rebootdir'], exist_ok=True)

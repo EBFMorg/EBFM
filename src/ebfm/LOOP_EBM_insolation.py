@@ -4,7 +4,7 @@ import datetime
 from ebfm.grid import GridInputType
 
 
-def main(grid, time2, OUT, phys, io):
+def main(grid, time2, OUT):
     """
     Calculates the unattenuated incoming solar radiation and shading due to topography.
 

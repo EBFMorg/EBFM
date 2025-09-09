@@ -1,11 +1,12 @@
 import numpy as np
 
+from coupling import Coupler
 
-def main(C, grid, IN, t, time, OUT, io):
+def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     """
-    Meteorological forcing: Specify or read meteorological input and derive 
+    Meteorological forcing: Specify or read meteorological input and derive
     associated meteorological fields.
-    
+
     Parameters:
         C (dict): Constants for the model.
         grid (dict): Grid information.
@@ -13,8 +14,8 @@ def main(C, grid, IN, t, time, OUT, io):
         t (int): Current time step.
         time (dict): Time-related variables.
         OUT (dict): Output variables from the model.
-        io (dict): Input/Output configuration.
-    
+        cpl (Coupler): Coupling object for data exchange with external models.
+
     Returns:
         Updated IN and OUT dictionaries. Fields include:
         - IN['T']: Air temperature (K)
@@ -29,8 +30,8 @@ def main(C, grid, IN, t, time, OUT, io):
     ###########################################################
     # SPECIFY/READ METEO FORCING
     ###########################################################
-    if not io['couple_to_icon_atmo']:
-        IN = set_random_weather_data(IN, io, C, time, grid)
+    if not cpl.couple_to_icon_atmo:
+        IN = set_random_weather_data(IN, C, time, grid)
 
     ###########################################################
     # DERIVED METEOROLOGICAL FIELDS
@@ -48,7 +49,7 @@ def main(C, grid, IN, t, time, OUT, io):
             C['VP0'] * np.exp(C['Ls'] / C['Rv'] * (1.0 / 273.15 - 1.0 / IN['T'])) * (IN['T'] < 273.15)
     )
 
-    if io['couple_to_icon_atmo']: # q from ICON, calculate VP and RH
+    if cpl.couple_to_icon_atmo: # q from ICON, calculate VP and RH
         IN['VP'] = IN['q'] * IN['Pres'] / C['eps']
         IN['RH'] = IN['VP'] / VPsat
     else:   # RH from input, calculate VP and q
@@ -88,13 +89,12 @@ def main(C, grid, IN, t, time, OUT, io):
     return IN, OUT
 
 
-def set_random_weather_data(IN, io, C, time, grid):
+def set_random_weather_data(IN, C, time, grid):
     """
     Specify or read meteorological data for the current time-step.
 
     Parameters:
         IN (dict): Meteorological input variables.
-        io (dict): Input/Output configuration.
         C (dict): Constants for the model.
         time (dict): Time-related variables.
         grid (dict): Grid information.

@@ -1,9 +1,11 @@
 import numpy as np
 
+from coupling import Coupler
 
-def main(C, OUT, IN, grid, io):
+
+def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
     """
-    Computes the incoming shortwave radiation, including direct, diffuse, 
+    Computes the incoming shortwave radiation, including direct, diffuse,
     and total radiation after shading and atmospheric transmissivity.
 
     Parameters:
@@ -11,12 +13,13 @@ def main(C, OUT, IN, grid, io):
         OUT (dict): Dictionary containing existing computed values, like `TOA`.
         IN (dict): Input data, including cloud cover (C), pressure (Pres), specific humidity (q), etc.
         grid (dict): Grid information, including latitude.
+        cpl (Coupler): Coupling object for data exchange with external models.
 
     Returns:
         tuple: SWin (numpy array of incoming shortwave radiation) and updated OUT dictionary.
     """
 
-    if io['couple_to_icon_atmo']:
+    if cpl.couple_to_icon_atmo:
         SWin_diff = (0.8 - 0.65 * (1 - IN["C"])) * IN['SWin']
         SWin_dir = (0.2 + 0.65 * (1 - IN["C"])) * (1 - OUT["shade"]) * IN['SWin']
         SWin = SWin_dir + SWin_diff

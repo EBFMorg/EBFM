@@ -33,8 +33,50 @@ def days_to_iso(days: float) -> str:
     dt = pd.Timedelta(days=days)
     return dt.isoformat()
 
-
 class Coupler():
+    component_name: str  # name of this component in the coupler configuration
+
+    couple_to_elmer_ice: bool  # whether to couple with Elmer/Ice
+    couple_to_icon_atmo: bool  # whether to couple with ICON atmosphere
+
+    @property
+    def has_coupling(self) -> bool:
+        return_value = self.couple_to_elmer_ice or self.couple_to_icon_atmo
+        logger.debug(f"Component {self.component_name} has_coupling={return_value}")
+        return return_value
+
+    def __init__(self, component_name: str, coupler_config: Path=None):
+        """
+        Create Coupler object
+
+        @param[in] component_name name of this component in the coupler configuration
+        @param[in] coupler_config path to the coupler configuration file
+        """
+        raise NotImplementedError("Coupler is an abstract base class and cannot be instantiated directly.")
+
+    def add_grid(self, grid_name: str, grid: Grid):
+        """
+        Add grid to the Coupler interface
+        """
+        raise NotImplementedError("add_grid method must be implemented in subclasses.")
+
+    def add_couples(self, time: Dict[str, float]):
+        """
+        Add coupling definitions to the Coupler interface
+        """
+        raise NotImplementedError("add_couples method must be implemented in subclasses.")
+
+
+class NoCoupler(Coupler):
+    couple_to_icon_atmo: bool = False
+    couple_to_elmer_ice: bool = False
+
+    def __init__(self, component_name: str):
+        self.component_name = component_name
+        logger.debug(f"NoCoupler created for component '{component_name}'.")
+
+
+class YACCoupler(Coupler):
     interface     : yac.YAC              = None
     component     : yac.Component        = None
     grid          : yac.UnstructuredGrid = None
@@ -43,18 +85,54 @@ class Coupler():
     source_fields : Dict[str, yac.Field] = {}
     target_fields : Dict[str, yac.Field] = {}
 
-    couple_to_elmer_ice: bool
-    couple_to_icon_atmo: bool
+    def __init__(self, component_name: str, coupler_config: Path):
+        logger.debug(f"YAC version is {yac.version()}")
+        self.interface = yac.YAC()
+        self.component_name = component_name
+        self.interface.read_config_yaml(str(coupler_config))
+        self.component = self.interface.def_comp(component_name)
 
-    def __init__(self, interface: yac.YAC):
-        self.interface = interface
+    def add_grid(self, grid_name, grid):
+        """
+        Adds a grid to the Coupler interface.
+
+        @param[in] grid_name name of the grid in YAC
+        @param[in] grid Grid object used by EBFM where coupling happens
+        """
+
+        self.grid = yac.UnstructuredGrid(
+            grid_name,
+            np.full(len(grid.cell_ids), grid.num_vertices_per_cell),
+            grid.lon,
+            grid.lat,
+            grid.cell_to_vertex.flatten(),
+        )
+
+        self.grid.set_global_index(grid.vertex_ids, yac.Location.CORNER)
+        self.corner_points = self.grid.def_points(yac.Location.CORNER, grid.lon, grid.lat)
+
+    def add_couples(self, time: Dict[str, float]):
+        """
+        Adds coupling definitions to the Coupler interface.
+
+        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
+        """
+
+        self.construct_coupling(time)
+
+        self.interface.sync_def()
+
+        self.construct_coupling_post_sync()
+
+        self.interface.enddef()
 
     def construct_coupling(self, time: Dict[str, float]):
-        '''
+        """
         Constructs the coupling interface with YAC.
 
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
-        '''
+        """
+
         if self.couple_to_elmer_ice:
             self.construct_coupling_elmer_ice(time)
 
@@ -86,10 +164,9 @@ class Coupler():
 
             if field_definition.exchange_type == yac.ExchangeType.SOURCE:
                 self.source_fields[field_definition.name] = field
-            
+
             elif field_definition.exchange_type == yac.ExchangeType.TARGET:
                 self.target_fields[field_definition.name] = field
-
 
     def construct_coupling_icon_atmo(self, time: Dict[str, float]):
         assert self.couple_to_icon_atmo, "Cannot construct coupling to ICON if 'couple_to_icon_atmo' is False."
@@ -235,11 +312,16 @@ class Coupler():
 
         return received_data
 
+    def finalize(self):
+        """Finalize the coupling interface
+        """
+        del self.interface
 
-def init(yac_config: Path, ebfm_coupling_config: Path, couple_with_icon_atmo: bool, couple_with_elmer_ice: bool) -> Coupler:
-    """Create interface to YAC and register component
 
-    @param[in] yac_config path to global YAC configuration file
+def init(coupler_config: Path, ebfm_coupling_config: Path, couple_with_icon_atmo: bool, couple_with_elmer_ice: bool) -> Coupler:
+    """Create interface to the coupler and register component
+
+    @param[in] path to global Coupler configuration file
     @param[in] ebfm_coupling_config path to local configuration of coupling for EBFM
     @param[in] couple_with_icon_atmo whether to couple with ICON atmosphere
     @param[in] couple_with_elmer_ice whether to couple with Elmer/Ice
@@ -247,17 +329,10 @@ def init(yac_config: Path, ebfm_coupling_config: Path, couple_with_icon_atmo: bo
     @returns Coupler object
     """
 
-    logger.debug(f"YAC version is {yac.version()}")
-
-    coupler = Coupler(yac.YAC())
-
-    coupler.interface.read_config_yaml(str(yac_config))
-
     # TODO: use ebfm_coupling_config for EBFM specific configuration?
 
     component_name = 'ebfm'  # TODO: get from ebfm_coupling_config?
-
-    coupler.component = coupler.interface.def_comp(component_name)
+    coupler = YACCoupler(component_name, coupler_config)
 
     coupler.couple_to_icon_atmo = couple_with_icon_atmo
     coupler.couple_to_elmer_ice = couple_with_elmer_ice
@@ -267,36 +342,19 @@ def init(yac_config: Path, ebfm_coupling_config: Path, couple_with_icon_atmo: bo
     return coupler
 
 def setup(coupler: Coupler, grid: Grid, time: Dict[str, float]):
-    """Performs initialization operations after yac_csyncdef and before yac_cenddef
+    """Performs initialization operations after init and before enterint the
+    time loop
 
     @param[in] coupler Coupler object with interface to YAC
     @param[in] grid Grid used by EBFM where coupling happens
     @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
     """
     grid_name = "ebfm_grid"    # TODO: get from ebfm_coupling_config?
-    num_vertices_per_cell = grid.num_vertices_per_cell
 
-    coupler.grid = yac.UnstructuredGrid(
-        grid_name,
-        np.full(len(grid.cell_ids), num_vertices_per_cell),
-        grid.lon,
-        grid.lat,
-        grid.cell_to_vertex.flatten(),
-    )
-
-    coupler.grid.set_global_index(grid.vertex_ids, yac.Location.CORNER)
-
-    coupler.corner_points = coupler.grid.def_points(yac.Location.CORNER, grid.lon, grid.lat)
-
-    coupler.construct_coupling(time)
-
-    coupler.interface.sync_def()
-
-    coupler.construct_coupling_post_sync()
-
-    coupler.interface.enddef()
+    coupler.add_grid(grid_name, grid)
+    coupler.add_couples(time)
 
 def finalize(coupler: Coupler):
     logger.debug("Finalizing coupling...")
-    del coupler.interface
+    coupler.finalize()
     logger.info("Coupling finalized.")

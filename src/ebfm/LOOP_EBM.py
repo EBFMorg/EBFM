@@ -3,7 +3,9 @@ import numpy as np
 from ebfm import LOOP_EBM_SHF,LOOP_EBM_GHF, LOOP_EBM_LHF, LOOP_EBM_LWin, LOOP_EBM_LWout, LOOP_EBM_SWin
 from ebfm import LOOP_EBM_SWout, LOOP_EBM_insolation
 
-def main(C, OUT, IN, time2, grid, phys, io):
+from coupling import Coupler
+
+def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     """
     Surface Energy Balance Model: Calculates heat fluxes, surface temperature, melt rates, and moisture fluxes.
 
@@ -13,6 +15,7 @@ def main(C, OUT, IN, time2, grid, phys, io):
         IN (dict): Input data for the model.
         time (dict): Time-related parameters and variables.
         grid (dict): Model grid information.
+        cpl (Coupler): Coupling object for data exchange with external models.
 
     Returns:
         dict: Updated OUT dictionary containing energy balance results.
@@ -22,12 +25,14 @@ def main(C, OUT, IN, time2, grid, phys, io):
     ###########################################################
 
     # Compute SWin, SWout, LWin and GHF (independent of surface temperature)
-    OUT = LOOP_EBM_insolation.main(grid, time2, OUT, phys, io)
-    SWin, OUT = LOOP_EBM_SWin.main(C, OUT, IN, grid, io)
-    if not io['couple_to_icon_atmo']:
-        LWin = LOOP_EBM_LWin.main(C, IN)
-    else:
+    OUT = LOOP_EBM_insolation.main(grid, time2, OUT)
+    SWin, OUT = LOOP_EBM_SWin.main(C, OUT, IN, grid, cpl)
+
+    # TODO: better do this before calling LOOP_EBM.main
+    if cpl.couple_to_icon_atmo:
         LWin = IN['LWin']
+    else:
+        LWin = LOOP_EBM_LWin.main(C, IN)
 
     SWout, OUT = LOOP_EBM_SWout.main(C, time2, OUT, SWin)
     GHF_k = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2
