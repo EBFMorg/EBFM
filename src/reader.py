@@ -8,17 +8,17 @@ from numpy.typing import NDArray
 from elmer.mesh import TriangleMesh
 import elmer.parser
 
-def read_elmer_mesh(mesh_root: Path, is_partitioned: bool=False, rank: int=-1) -> TriangleMesh:
+def read_elmer_mesh(mesh_root: Path, is_partitioned: bool=False, partition_id: int=-1) -> TriangleMesh:
     """Read Elmer mesh files.
     Args:
         mesh_root (Path): Path to the Elmer mesh folder.
         is_partitioned (bool): Set True if given mesh is partitioned.
-        rank (int): Provide rank if is_partitioned=True. Identifies partition.
+        partition_id (int): Provide partition_id if is_partitioned=True. Identifies partition.
     Returns:
         Mesh: A Mesh object containing x, y, z coordinates, vertex IDs, cell-to-vertex mapping, and cell IDs.
     """
     # Check input
-    assert mesh_root.is_dir(), f"Elmer mesh directory {args.mesh_root} does not exist."
+    assert mesh_root.is_dir(), f"{mesh_root} is no directory or does not exist."
 
     if not is_partitioned:
         # Check subdirectories of mesh_root
@@ -26,7 +26,6 @@ def read_elmer_mesh(mesh_root: Path, is_partitioned: bool=False, rank: int=-1) -
         nodes_file: Path = mesh_root / "mesh.nodes"
         elements_file: Path = mesh_root / "mesh.elements"
     else:
-        partition_id = rank + 1
         # Check subdirectories of mesh_root
         header_file: Path = mesh_root / f"part.{partition_id}.header"
         nodes_file: Path = mesh_root / f"part.{partition_id}.nodes"
@@ -130,7 +129,7 @@ def write_dem_as_elmer(mesh: TriangleMesh, h: NDArray[np.float64], dem_file: Pat
         """Convert a number to Fortran-style scientific notation."""
         if x == 0:
             return f" 0.{''.join(['0']*precision)}E+00"  # special case for zero; Fortran style requires leading space for positive numbers
-        
+
         exp = int(np.floor(np.log10(abs(x)))) + 1
         mantissa = x / (10 ** exp)
         sign = '-' if mantissa < 0 else ' '
@@ -147,7 +146,7 @@ def write_dem_as_elmer(mesh: TriangleMesh, h: NDArray[np.float64], dem_file: Pat
         escapechar='\\'          # required when using QUOTE_NONE with special chars
     )
 
-    # Postprocess file to ensure it matches Elmer's expected format    
+    # Postprocess file to ensure it matches Elmer's expected format
     with open(dem_file, 'r') as f:
         content = (
             '\n'.join(line.rstrip() + ' ' for line in f.read().splitlines())  # append space to each line

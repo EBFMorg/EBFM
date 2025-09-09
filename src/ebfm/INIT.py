@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from enum import Enum
+from argparse import Namespace
 from typing import Any
 import numpy as np
 from numpy import ndarray, dtype
@@ -12,13 +13,13 @@ from pathlib import Path
 from reader import read_elmer_mesh, read_dem
 
 from elmer.mesh import Mesh
+from ebfm.grid import GridInputType
 from mpi4py import MPI
 
 import logging
 logger = logging.getLogger(__name__)
-import multiprocessing
 
-def init_config():
+def init_config(args: Namespace):
     """
     Set model parameters, specify grid parameters, model time period, I/O, and physics settings.
     Returns:
@@ -49,23 +50,6 @@ def init_config():
     grid['nl'] = 50  # Number of vertical layers
     grid['doubledepth'] = True  # Double vertical layer depth at specified layers (True/False)
     grid['split'] = np.array([15, 25, 35]) # Vertical layer numbers at which layer depth doubles
-
-    grid['is_partitioned'] = False
-    if grid['is_partitioned'] :
-        logger.info('EBFM: Using partitioned grid...')
-    else:
-        logger.info('EBFM: Using non-partitioned grid...')
-
-    grid['input_type'] = 2  # choose grid input type (0 = elmer grid; 1 = elmer grid with DEM; 2 = MATLAB grid)
-
-    if grid['input_type'] == 0:
-        logger.info('EBFM: Using Elmer grid and elevations from BedMachine...')
-    elif grid['input_type'] == 1:
-        logger.info('EBFM: Using Elmer grid and elevations from Elmer/Ice...')
-    elif grid['input_type'] == 2:
-        logger.info('EBFM: Using MATLAB grid...')
-    else:
-        raise ValueError('Invalid input_type specified.')
 
     # ---------------------------------------------------------------------
     # Model physics
@@ -98,13 +82,9 @@ def init_config():
     io['freqout'] = 8  # OUTPUT: frequency of storing output (every n-th time-step)
     io['output_type'] = 2 # Set output file type: 1 = binary files, 2 = netCDF file
 
-    io['couple_to_elmer_ice'] = False  # whether to couple to Elmer/Ice
-    io['couple_to_icon_atmo'] = False  # whether to couple to ICON atmosphere
+    io['couple_to_elmer_ice'] = args.couple_to_elmer_ice  # whether to couple to Elmer/Ice
+    io['couple_to_icon_atmo'] = args.couple_to_icon_atmo  # whether to couple to ICON atmosphere
     io['use_coupling'] = io['couple_to_elmer_ice'] or io['couple_to_icon_atmo']
-
-    # if not io['use_coupling']:
-    #     logger.warning('grid[input_type] was set incorrectly and will be set to 2 (use MATLAB grid)')
-    #     grid['input_type'] = 2
 
     # Ensure output and reboot directories exist
     os.makedirs(io['outdir'], exist_ok=True)
@@ -181,19 +161,45 @@ def init_constants():
     return C
 
 
-def init_grid(grid, io):
+def init_grid(grid, io, args: Namespace):
 
-    input = grid['input_type']  # choose input type
-    is_partitioned = grid['is_partitioned']
-    if input == 0: # Read grid from Elmer, elevations from BedMachine
-        if not is_partitioned:
-            mesh: Mesh = read_elmer_mesh(Path() / "mesh" / "MESH")
+    # Check configuration
+
+    if args.elmer_mesh and args.matlab_mesh:
+        logger.error("Please provide either --elmer-mesh or --matlab-mesh, not both.")
+        raise Exception("Invalid grid configuration.")
+
+    if args.is_partitioned_elmer_mesh and not args.elmer_mesh:
+        logger.error("--is-partitioned-elmer-mesh requires --elmer-mesh.")
+        raise Exception("Invalid grid configuration.")
+
+    grid['is_partitioned'] = args.is_partitioned_elmer_mesh
+    if grid['is_partitioned']:
+        assert(args.netcdf_mesh), "--is-partitioned-elmer-mesh requires --netcdf-mesh. (Without --netcdf-mesh should also work but is untested.)"
+        logger.info('Using partitioned grid...')
+    else:
+        logger.info('Using non-partitioned grid...')
+
+    if args.matlab_mesh:
+        grid['input_type'] = GridInputType.MATLAB
+    elif args.netcdf_mesh and args.elmer_mesh:
+        grid['input_type'] = GridInputType.CUSTOM
+    elif args.elmer_mesh:
+        grid['input_type'] = GridInputType.ELMER
+    else:
+        logger.error(f"Invalid grid configuration. EBFM supports the grid types {[t.name for t in GridInputType]}. Please please refer to the documentation for correct configuration.")
+        raise Exception("Invalid grid configuration.")
+
+    if grid['input_type'] is GridInputType.CUSTOM: # Read grid from Elmer, elevations from BedMachine
+        if grid['is_partitioned']:
+            mesh: Mesh = read_elmer_mesh(mesh_root=args.elmer_mesh,
+                                         is_partitioned=True,
+                                         partition_id=args.use_part)
         else:
-            mesh: Mesh = read_elmer_mesh(Path() / "mesh" / "MESH" / "partitioning.128", is_partitioned=True,
-                                         rank=MPI.COMM_WORLD.rank)
+            mesh: Mesh = read_elmer_mesh(mesh_root=args.elmer_mesh)
 
         grid['x'], grid['y'] = mesh.x_vertices, mesh.y_vertices
-        grid['z'] = read_dem(Path() / "data" / "BedMachineGreenland-v5.nc", grid['x'], grid['y'])
+        grid['z'] = read_dem(args.netcdf_mesh, grid['x'], grid['y'])
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
@@ -205,9 +211,8 @@ def init_grid(grid, io):
         grid["mesh"] = mesh
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
-    elif input == 1: # Read grid and elevations from Elmer
-        mesh: Mesh = read_elmer_mesh(
-            Path() / "mesh" / "MESH")  # assuming mesh/MESH/mesh.nodes contains DEM data in the z component; see mesh/README.md for the required preprocessing steps.
+    elif grid['input_type'] is GridInputType.ELMER: # Read grid and elevations from Elmer
+        mesh: Mesh = read_elmer_mesh(args.elmer_mesh)  # assuming mesh/MESH/mesh.nodes contains DEM data in the z component; see mesh/README.md for the required preprocessing steps.
         grid["x"], grid["y"], grid["z"] = mesh.x_vertices, mesh.y_vertices, mesh.z_vertices
         grid["z"] = np.random.uniform(0, 100, size=len(grid['x'])) # test values!
         grid["slope_x"] = np.zeros_like(grid["x"])      # test values!
@@ -222,12 +227,12 @@ def init_grid(grid, io):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-    elif input == 2: # Read grid and elevations from example MATLAB file
+    elif grid['input_type'] is GridInputType.MATLAB: # Read grid and elevations from example MATLAB file
         # ---------------------------------------------------------------------
         # Read and process grid information
         # ---------------------------------------------------------------------
         # Read grid data
-        input_data = read_MATLAB_grid(io)
+        input_data = read_MATLAB_grid(args.matlab_mesh)
         grid['x_2D'] = input_data['x'][0][0]
         grid['y_2D'] = input_data['y'][0][0]
         grid['z_2D'] = input_data['z'][0][0]
@@ -322,14 +327,12 @@ def init_grid(grid, io):
     return grid
 
 
-def read_MATLAB_grid(io):
+def read_MATLAB_grid(gridfile: Path):
     """
     Provides grid information by reading from a .mat file or allowing user input.
 
     Parameters:
-        io (dict): Dictionary containing file paths and control variables.
-                   - "example_run" (bool): Whether to run the example or not.
-                   - "homedir" (str): Path to the home directory.
+        gridfile: Path to the .mat file containing grid data.
 
     Returns:
         dict: A dictionary named `input_data` containing:
@@ -342,10 +345,9 @@ def read_MATLAB_grid(io):
     logger.info('EBFM: Reading grid data from MATLAB file...')
     input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
 
-    filepath = os.path.join(io["homedir"], "../examples/", "dem_and_mask.mat")
     try:
         # Load MATLAB file
-        mat_file = sio.loadmat(filepath)
+        mat_file = sio.loadmat(str(gridfile))
         grid_svalbard = mat_file.get("grid_svalbard", None)
 
         if grid_svalbard is None:
@@ -358,7 +360,7 @@ def read_MATLAB_grid(io):
         input_data["mask"] = grid_svalbard["mask"]
 
     except FileNotFoundError:
-        logger.info(f"File not found: {filepath}")
+        logger.info(f"File not found: {gridfile}")
         raise
     except KeyError as e:
         logger.info(f"Missing field in .mat file: {e}")

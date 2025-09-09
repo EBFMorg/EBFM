@@ -1,18 +1,18 @@
 import numpy as np
 import datetime
-import matplotlib.pyplot as plt
-import time
+
+from ebfm.grid import GridInputType
 
 
 def main(grid, time2, OUT, phys, io):
     """
     Calculates the unattenuated incoming solar radiation and shading due to topography.
-    
+
     Parameters:
         grid (dict): Contains grid-related variables like elevation, latitude, longitude, etc.
         time2 (dict): Time data including the current time step "TCUR".
         OUT (dict): Output dictionary to store computed values.
-    
+
     Returns:
         dict: Updated OUT dictionary with calculated solar radiation and shading variables.
     """
@@ -64,7 +64,7 @@ def main(grid, time2, OUT, phys, io):
         np.cos(lat_rad) * np.cos(d_rad) * np.cos(h_rad)
     )  # SOURCE: Iqbal (1983)
 
-    if grid['input_type']==2: # only use shading routine in uncoupled runs on a regular grid
+    if grid['input_type'] is GridInputType.MATLAB: # only use shading routine in uncoupled runs on a regular grid
         yl = grid['Ly']
         xl = grid['Lx']
 

@@ -1,12 +1,14 @@
 import coupling
 from pathlib import Path
+import argparse
 
 from ebfm import INIT, LOOP_general_functions, LOOP_climate_forcing, LOOP_EBM, LOOP_SNOW, LOOP_mass_balance
 from ebfm import LOOP_write_to_file, FINAL_create_restart_file
+from ebfm.grid import GridInputType
 
+from mpi4py import MPI
 from utils import setup_logging
 import logging
-import matplotlib.pyplot as plt
 
 
 log_levels = {
@@ -22,10 +24,43 @@ logger = logging.getLogger(__name__)
 
 def main():
 
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--couple-to-elmer-ice",
+                       action="store_true",
+                       help="Enable coupling with Elmer/Ice models via YAC")
+
+    parser.add_argument("--couple-to-icon-atmo",
+                       action="store_true",
+                       help="Enable coupling with ICON via YAC")
+
+    parser.add_argument("--elmer-mesh",
+                       type=Path,
+                       help="Path to the Elmer mesh file. Either --elmer-mesh or --matlab-mesh is required.")
+
+    parser.add_argument("--matlab-mesh",
+                       type=Path,
+                       help="Path to the MATLAB mesh file. Either --elmer-mesh or --matlab-mesh is required.")
+
+    parser.add_argument("--netcdf-mesh",
+                       type=Path,
+                       help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.")
+
+    parser.add_argument("--is-partitioned-elmer-mesh",
+                       action="store_true",
+                       help="Indicate if the provided Elmer mesh is partitioned for parallel runs.")
+
+    parser.add_argument("--use-part",
+                        type=int,
+                        default=MPI.COMM_WORLD.rank + 1,
+                        help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. If not provided, the MPI rank + 1 will be used as partition ID.")
+
+    args = parser.parse_args()
+
     # Model setup & initialization
-    grid, time2, io, phys    = INIT.init_config()
+    grid, time2, io, phys    = INIT.init_config(args)
     C                        = INIT.init_constants()
-    grid                     = INIT.init_grid(grid, io)
+    grid                     = INIT.init_grid(grid, io, args)
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time2)
 
@@ -104,10 +139,16 @@ def main():
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
 
-        # Write output to files (only in uncoupled run and for unpartioned grid)
+        # Write output to files (only in uncoupled run and for unpartitioned grid)
         if not grid['is_partitioned'] and not io['use_coupling']:
+            assert(grid['input_type'] is GridInputType.MATLAB), "Output writing currently only implemented for MATLAB input grids."
             io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time2, C)
             pass
+        elif grid['is_partitioned'] or io['use_coupling']:
+            logger.warning('Skipping writing output to file for coupled or partitioned runs.')
+        else:
+            logger.error('Unhandled case in output writing.')
+            raise Exception("Unhandled case in output writing.")
 
     # Write restart file
     if not grid['is_partitioned'] and not io['use_coupling']:

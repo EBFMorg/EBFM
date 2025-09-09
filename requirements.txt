@@ -7,3 +7,4 @@ pandas       ~= 2.0
 pandas-stubs ~= 2.0
 pathlib
 pyproj
+scipy
