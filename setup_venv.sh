@@ -1,3 +1,5 @@
+#!/bin/bash
+
 set -e
 
 if [[ -z "${YAC_BUILD_DIR}" ]]; then
