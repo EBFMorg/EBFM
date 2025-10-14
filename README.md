@@ -137,3 +137,29 @@ export ICON_ROOT=$EBFM_DUMMY_REPO/dummies/ICON
 
 Depending on the binaries that you want to use `$ELMER_ROOT` and/or `$ICON_ROOT`
 may be set to point to the non-dummy versions of the codes.
+
+## Troubleshooting
+
+### `libnetcdf.so` not found at runtime
+
+*Problem:* `./icon_dummy.x: error while loading shared libraries: libnetcdf.so.15: cannot open shared object file: No such file or directory
+*Solution:* Try rebuilding `icon_dummy.x`
+`
+### `libyaxt_c.so` not found at runtime
+
+*Problem:* `./icon_dummy.x: error while loading shared libraries: libyaxt_c.so.1: cannot open shared object file: No such file or directory
+*Solution:* `export LD_LIBRARY_PATH='$YAXT_INSTALL_DIR/lib/'
+
+## `#include <proj.h>` not found when building the Elmer dummy
+
+*Problem:* 
+```sh
+...
+elmer_grid.c:11:10: fatal error: proj.h: No such file or directory
+   11 | #include <proj.h>
+      |          ^~~~
+compilation terminated.
+make: *** [Makefile:48: elmer_grid.o] Error 1
+```
+
+*Solution:* `sudo apt-get install libproj-dev`
