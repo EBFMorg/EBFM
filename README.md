@@ -150,7 +150,7 @@ may be set to point to the non-dummy versions of the codes.
 *Problem:* `./icon_dummy.x: error while loading shared libraries: libyaxt_c.so.1: cannot open shared object file: No such file or directory
 *Solution:* `export LD_LIBRARY_PATH='$YAXT_INSTALL_DIR/lib/'
 
-## `#include <proj.h>` not found when building the Elmer dummy
+### `#include <proj.h>` not found when building the Elmer dummy
 
 *Problem:* 
 ```sh
