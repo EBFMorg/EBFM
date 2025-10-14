@@ -142,12 +142,13 @@ may be set to point to the non-dummy versions of the codes.
 
 ### `libnetcdf.so` not found at runtime
 
-*Problem:* `./icon_dummy.x: error while loading shared libraries: libnetcdf.so.15: cannot open shared object file: No such file or directory
+*Problem:* `./icon_dummy.x: error while loading shared libraries: libnetcdf.so.15: cannot open shared object file: No such file or directory`
 *Solution:* Try rebuilding `icon_dummy.x`
 `
 ### `libyaxt_c.so` not found at runtime
 
-*Problem:* `./icon_dummy.x: error while loading shared libraries: libyaxt_c.so.1: cannot open shared object file: No such file or directory
+*Problem:* `./icon_dummy.x: error while loading shared libraries: libyaxt_c.so.1: cannot open shared object file: No such file or directory`
+
 *Solution:* `export LD_LIBRARY_PATH='$YAXT_INSTALL_DIR/lib/'
 
 ### `#include <proj.h>` not found when building the Elmer dummy
