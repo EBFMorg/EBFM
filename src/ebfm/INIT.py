@@ -19,6 +19,8 @@ from mpi4py import MPI
 import logging
 logger = logging.getLogger(__name__)
 
+import sys
+
 def init_config(args: Namespace):
     """
     Set model parameters, specify grid parameters, model time period, I/O, and physics settings.
@@ -182,6 +184,8 @@ def init_grid(grid, io, args: Namespace):
         grid['input_type'] = GridInputType.CUSTOM
     elif args.elmer_mesh:
         grid['input_type'] = GridInputType.ELMER
+    elif args.elmer_xios_mesh:
+        grid['input_type'] = GridInputType.ELMER_XIOS
     else:
         logger.error(f"Invalid grid configuration. EBFM supports the grid types {[t.name for t in GridInputType]}. Please please refer to the documentation for correct configuration.")
         raise Exception("Invalid grid configuration.")
@@ -319,8 +323,26 @@ def init_grid(grid, io, args: Namespace):
         grid['slope_gamma'][(grid['slope_x'] > 0) & (grid['slope_y'] == 0)] = np.pi / 2
         grid['slope_gamma'][(grid['slope_x'] < 0) & (grid['slope_y'] == 0)] = -np.pi / 2
         grid['slope_gamma'] = -grid['slope_gamma']
-
+    elif grid['input_type'] is GridInputType.ELMER_XIOS:
+        grid = read_elmer_xios_grid(grid=grid, gridfile=args.elmer_xios_mesh)
+        grid['gpsum'] = grid['z'].shape[0]
+        grid['mask'] = (grid['h'] > 1.0) * 1.0
+        grid['x'] = np.zeros_like(grid['z'])
+        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
+        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
     return grid
+
+
+def read_elmer_xios_grid(grid, gridfile: Path):
+    import netCDF4 as nc
+    print(gridfile)
+    with nc.Dataset(gridfile) as file:
+        grid['lat'] = file['mesh2D_node_x'][:]
+        grid['lon'] = file['mesh2D_node_y'][:]
+        grid['z'] = np.squeeze(file['zs'][:].data)
+        grid['h'] = np.squeeze(file['h'][:].data)
+    return grid
+
 
 
 def read_MATLAB_grid(gridfile: Path):
