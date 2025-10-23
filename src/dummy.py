@@ -45,10 +45,6 @@ def main():
                         type=Path,
                         help="Path to the Elmer mesh file. Either --elmer-mesh or --matlab-mesh is required.")
 
-    parser.add_argument("--elmer-xios-mesh",
-                        type=Path,
-                        help="Path to the Elmer-xios mesh file. One of the following options is required: --elmer-mesh, --matlab-mesh, --elmer-xios-mesh.")
-
     parser.add_argument("--matlab-mesh",
                         type=Path,
                         help="Path to the MATLAB mesh file. Either --elmer-mesh or --matlab-mesh is required.")
@@ -56,6 +52,10 @@ def main():
     parser.add_argument("--netcdf-mesh",
                         type=Path,
                         help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.")
+
+    parser.add_argument("--netcdf-mesh-unstructured",
+                        type=Path,
+                        help="Path to the unstructured NetCDF mesh file. Optional if using --elmer-mesh. If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.")
 
     parser.add_argument("--is-partitioned-elmer-mesh",
                         action="store_true",
@@ -159,15 +159,15 @@ def main():
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         if not grid['is_partitioned'] and not coupler.has_coupling:
-            if grid['input_type'] is GridInputType.ELMER_XIOS:
-                gridtype = 'unstructured'
-            elif grid['input_type'] is GridInputType.MATLAB:
+            if grid['input_type'] is GridInputType.MATLAB:
                 gridtype = 'structured'
-            # assert (grid['input_type'] is GridInputType.MATLAB) or GridInputType.ELMER_XIOS, \
-                # "Output writing currently only implemented for MATLAB input grids."
-            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t,
-                                                  time2, C, gridtype)
-            pass
+            # if grid['input_type'] is GridInputType.MATLAB or grid['input_type'] is GridInputType.ELMER_XIOS:
+            # if grid['input_type'] is GridInputType.MATLAB:
+                # assert (grid['input_type'] is GridInputType.MATLAB), \
+                    # "Output writing currently only implemented for MATLAB and ELMER_XIOS input grids."
+                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time2, C, gridtype=gridtype)
+            else:
+                logger.warning('Skipping writing output to file for Elmer input grids.')
         elif grid['is_partitioned'] or coupler.has_coupling:
             logger.warning('Skipping writing output to file for coupled or partitioned runs.')
         else:

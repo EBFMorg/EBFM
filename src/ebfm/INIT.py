@@ -10,7 +10,7 @@ from pyproj import Transformer
 from netCDF4 import Dataset, num2date
 
 from pathlib import Path
-from reader import read_elmer_mesh, read_dem
+from reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from elmer.mesh import Mesh
 from ebfm.grid import GridInputType
@@ -180,12 +180,10 @@ def init_grid(grid, io, args: Namespace):
 
     if args.matlab_mesh:
         grid['input_type'] = GridInputType.MATLAB
-    elif args.netcdf_mesh and args.elmer_mesh:
+    elif (args.netcdf_mesh or args.netcdf_mesh_unstructured) and args.elmer_mesh:
         grid['input_type'] = GridInputType.CUSTOM
     elif args.elmer_mesh:
         grid['input_type'] = GridInputType.ELMER
-    elif args.elmer_xios_mesh:
-        grid['input_type'] = GridInputType.ELMER_XIOS
     else:
         logger.error(f"Invalid grid configuration. EBFM supports the grid types {[t.name for t in GridInputType]}. Please please refer to the documentation for correct configuration.")
         raise Exception("Invalid grid configuration.")
@@ -199,15 +197,18 @@ def init_grid(grid, io, args: Namespace):
             mesh: Mesh = read_elmer_mesh(mesh_root=args.elmer_mesh)
 
         grid['x'], grid['y'] = mesh.x_vertices, mesh.y_vertices
-        grid['z'] = read_dem(args.netcdf_mesh, grid['x'], grid['y'])
+        if args.netcdf_mesh:
+            grid['z'] = read_dem(args.netcdf_mesh, grid['x'], grid['y'])
+            grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
+            grid["lon"] = np.zeros_like(grid["x"]) + 320  # test values!
+        if args.netcdf_mesh_unstructured:
+            grid = read_dem_xios(args.netcdf_mesh_unstructured, grid)
+        grid["mask"] = np.ones_like(grid["x"])          # treats every grid cell as glacier
+        grid["gpsum"] = np.sum(grid['mask'] == 1)    # number of modelled grid cells
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
-        grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
-        grid["lon"] = np.zeros_like(grid["x"]) + 320  # test values!
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
-        grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-        grid["gpsum"] = np.sum(grid['mask'] == 1)  # number of modelled grid cells
         grid["mesh"] = mesh
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
@@ -339,6 +340,8 @@ def read_elmer_xios_grid(grid, gridfile: Path):
     with nc.Dataset(gridfile) as file:
         grid['lat'] = file['mesh2D_node_x'][:]
         grid['lon'] = file['mesh2D_node_y'][:]
+        grid['x'] = file['x'][:]
+        grid['y'] = file['y'][:]
         grid['z'] = np.squeeze(file['zs'][:].data)
         grid['h'] = np.squeeze(file['h'][:].data)
     return grid
