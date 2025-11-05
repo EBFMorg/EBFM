@@ -2,6 +2,7 @@ import numpy as np
 
 from coupling import Coupler
 
+
 def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     """
     Meteorological forcing: Specify or read meteorological input and derive
@@ -38,53 +39,52 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     ###########################################################
 
     # Annual snow accumulation
-    OUT['ys'] = (1.0 - (1.0 / (C['yeardays'] / time['dt']))) * OUT['ys'] + IN['P'] * 1e3
-    logys = np.log(OUT['ys'])
-    IN['yearsnow'] = np.tile(OUT['ys'][:, np.newaxis], (1, grid['nl']))
-    IN['logyearsnow'] = np.tile(logys[:, np.newaxis], (1, grid['nl']))
+    OUT["ys"] = (1.0 - (1.0 / (C["yeardays"] / time["dt"]))) * OUT["ys"] + IN["P"] * 1e3
+    logys = np.log(OUT["ys"])
+    IN["yearsnow"] = np.tile(OUT["ys"][:, np.newaxis], (1, grid["nl"]))
+    IN["logyearsnow"] = np.tile(logys[:, np.newaxis], (1, grid["nl"]))
 
     # Vapor pressure, relative and specific humidity
-    VPsat = (
-            C['VP0'] * np.exp(C['Lv'] / C['Rv'] * (1.0 / 273.15 - 1.0 / IN['T'])) * (IN['T'] >= 273.15) +
-            C['VP0'] * np.exp(C['Ls'] / C['Rv'] * (1.0 / 273.15 - 1.0 / IN['T'])) * (IN['T'] < 273.15)
-    )
+    VPsat = C["VP0"] * np.exp(C["Lv"] / C["Rv"] * (1.0 / 273.15 - 1.0 / IN["T"])) * (IN["T"] >= 273.15) + C[
+        "VP0"
+    ] * np.exp(C["Ls"] / C["Rv"] * (1.0 / 273.15 - 1.0 / IN["T"])) * (IN["T"] < 273.15)
 
-    if cpl.couple_to_icon_atmo: # q from ICON, calculate VP and RH
-        IN['VP'] = IN['q'] * IN['Pres'] / C['eps']
-        IN['RH'] = IN['VP'] / VPsat
-    else:   # RH from input, calculate VP and q
-        IN['VP'] = IN['RH'] * VPsat
-        IN['q'] = IN['RH'] * (VPsat * C['eps'] / IN['Pres'])
+    if cpl.couple_to_icon_atmo:  # q from ICON, calculate VP and RH
+        IN["VP"] = IN["q"] * IN["Pres"] / C["eps"]
+        IN["RH"] = IN["VP"] / VPsat
+    else:  # RH from input, calculate VP and q
+        IN["VP"] = IN["RH"] * VPsat
+        IN["q"] = IN["RH"] * (VPsat * C["eps"] / IN["Pres"])
 
     # Air density
-    IN['Dair'] = IN['Pres'] / (C['Rd'] * IN['T'])
+    IN["Dair"] = IN["Pres"] / (C["Rd"] * IN["T"])
 
     # Time since last snowfall event
-    snowfall_mask = (IN['snow'] / (time['dt'] * 24 * 3600)) > C['Pthres']
-    OUT['timelastsnow'][snowfall_mask] = time['TCUR']
+    snowfall_mask = (IN["snow"] / (time["dt"] * 24 * 3600)) > C["Pthres"]
+    OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
     if t == 1:
-        OUT['timelastsnow'][:] = time['TCUR']
+        OUT["timelastsnow"][:] = time["TCUR"]
 
     # Potential temperature and lapse rate
-    IN['Theta'] = IN['T'] * (C['Pref'] / IN['Pres']) ** (C['Rd'] / C['Cp'])
-    all_same = np.all(grid['z'] == grid['z'][0])
+    IN["Theta"] = IN["T"] * (C["Pref"] / IN["Pres"]) ** (C["Rd"] / C["Cp"])
+    all_same = np.all(grid["z"] == grid["z"][0])
     if not all_same:
-        poly_coeff = np.polyfit(grid['z'], IN['Theta'], deg=1)
-        IN['Theta_lapse'] = max(poly_coeff[0], 0.0015)
+        poly_coeff = np.polyfit(grid["z"], IN["Theta"], deg=1)
+        IN["Theta_lapse"] = max(poly_coeff[0], 0.0015)
     else:
-        IN['Theta_lapse'] = 0.0015
+        IN["Theta_lapse"] = 0.0015
 
     ###########################################################
     # STORE RELEVANT VARIABLES IN OUT
     ###########################################################
-    OUT['climT'] = IN['T']
-    OUT['climP'] = IN['P']
-    OUT['climC'] = IN['C']
-    OUT['climRH'] = IN['RH']
-    OUT['climWS'] = IN['WS']
-    OUT['climPres'] = IN['Pres']
-    OUT['climsnow'] = IN['snow']
-    OUT['climrain'] = IN['rain']
+    OUT["climT"] = IN["T"]
+    OUT["climP"] = IN["P"]
+    OUT["climC"] = IN["C"]
+    OUT["climRH"] = IN["RH"]
+    OUT["climWS"] = IN["WS"]
+    OUT["climPres"] = IN["Pres"]
+    OUT["climsnow"] = IN["snow"]
+    OUT["climrain"] = IN["rain"]
 
     return IN, OUT
 
@@ -105,44 +105,42 @@ def set_random_weather_data(IN, C, time, grid):
     ##############################
     # Example: Random Conditions
     ##############################
-    yearfrac = time['TCUR'].timetuple().tm_yday / C['yeardays']
+    yearfrac = time["TCUR"].timetuple().tm_yday / C["yeardays"]
 
     # Air temperature (K)
     T_amplitude = 10.0  # Seasonal temperature amplitude (K)
     T_mean_sea_level = 268.0  # Mean sea level temperature (K)
     T_lapse_rate = -0.005  # Temperature lapse rate (K m-1)
-    IN['T'] = (
-            T_mean_sea_level + T_amplitude * np.sin(2 * np.pi * yearfrac - 0.65 * np.pi)
-    )
-    IN['T'] += T_lapse_rate * grid['z']
+    IN["T"] = T_mean_sea_level + T_amplitude * np.sin(2 * np.pi * yearfrac - 0.65 * np.pi)
+    IN["T"] += T_lapse_rate * grid["z"]
 
     # Precipitation (m w.e.)
     P_annual_sea_level = 0.5  # Annual precipitation at sea level (m w.e.)
     P_z_gradient = 0.1  # Precipitation - elevation gradient (% m-1)
-    if time['TCUR'].isocalendar()[1] != time['TPREV'].isocalendar()[1]:
-        IN['P'][:] = (P_annual_sea_level / 52.0) * (1 + P_z_gradient * grid['z'] / 100.0)
+    if time["TCUR"].isocalendar()[1] != time["TPREV"].isocalendar()[1]:
+        IN["P"][:] = (P_annual_sea_level / 52.0) * (1 + P_z_gradient * grid["z"] / 100.0)
     else:
-        IN['P'][:] = 0.0
+        IN["P"][:] = 0.0
 
     # Cloud cover (fraction)
-    IN['C'][:] = 1.0 if time['TCUR'].isocalendar()[1] % 2 == 0 else 0.0
+    IN["C"][:] = 1.0 if time["TCUR"].isocalendar()[1] % 2 == 0 else 0.0
 
     # Relative humidity (fraction)
-    IN['RH'][:] = 0.8 if time['TCUR'].isocalendar()[1] % 2 == 0 else 0.5
+    IN["RH"][:] = 0.8 if time["TCUR"].isocalendar()[1] % 2 == 0 else 0.5
 
     # Wind speed (m s-1)
     max_WS = 10.0  # Max wind speed
-    IN['WS'][:] = np.random.uniform(0.0, max_WS, size=grid['gpsum'])
+    IN["WS"][:] = np.random.uniform(0.0, max_WS, size=grid["gpsum"])
 
     # Air pressure (Pa)
     Pres_sea_level = 1015e2  # Sea level pressure (Pa)
-    IN['Pres'][:] = Pres_sea_level * np.exp(-1.244e-4 * grid['z'])
+    IN["Pres"][:] = Pres_sea_level * np.exp(-1.244e-4 * grid["z"])
 
     # Snowfall and rainfall
-    IN['snow'] = IN['P'] * (IN['T'] < C['rainsnowT'] - 1)
-    IN['rain'] = IN['P'] * (IN['T'] > C['rainsnowT'] + 1)
-    in_between_mask = (IN['T'] < C['rainsnowT'] + 1) & (IN['T'] > C['rainsnowT'] - 1)
-    IN['snow'] += IN['P'] * (C['rainsnowT'] - IN['T'] + 1) / 2 * in_between_mask
-    IN['rain'] += IN['P'] * (1 + IN['T'] - C['rainsnowT']) / 2 * in_between_mask
+    IN["snow"] = IN["P"] * (IN["T"] < C["rainsnowT"] - 1)
+    IN["rain"] = IN["P"] * (IN["T"] > C["rainsnowT"] + 1)
+    in_between_mask = (IN["T"] < C["rainsnowT"] + 1) & (IN["T"] > C["rainsnowT"] - 1)
+    IN["snow"] += IN["P"] * (C["rainsnowT"] - IN["T"] + 1) / 2 * in_between_mask
+    IN["rain"] += IN["P"] * (1 + IN["T"] - C["rainsnowT"]) / 2 * in_between_mask
 
     return IN

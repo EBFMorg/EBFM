@@ -36,27 +36,24 @@ def main(C, Tsurf, IN, cond):
     # Turbulent Exchange Coefficient
     ###########################################################
     C_kat = np.maximum(
-        C["k_turb"] * (IN["T"][cond] - Tsurf) * np.sqrt(C["g"] / (C["T0"] * (IN["Theta_lapse"] * C["Pr"]))),
-        0
+        C["k_turb"] * (IN["T"][cond] - Tsurf) * np.sqrt(C["g"] / (C["T0"] * (IN["Theta_lapse"] * C["Pr"]))), 0
     )
     C_turb = 0.5 * (C["turb"] + C_kat)
 
     ###########################################################
     # Saturation Vapor Pressure (Clausius-Clapeyron)
     ###########################################################
-    VPsurf = (
-            C["VP0"] * np.exp(C["Ls"] / C["Rv"] / 273.15 * (1 - 273.15 / Tsurf)) * (Tsurf < 273.15)
-            + C["VP0"] * np.exp(C["Lv"] / C["Rv"] / 273.15 * (1 - 273.15 / Tsurf)) * (Tsurf >= 273.15)
-    )
+    VPsurf = C["VP0"] * np.exp(C["Ls"] / C["Rv"] / 273.15 * (1 - 273.15 / Tsurf)) * (Tsurf < 273.15) + C[
+        "VP0"
+    ] * np.exp(C["Lv"] / C["Rv"] / 273.15 * (1 - 273.15 / Tsurf)) * (Tsurf >= 273.15)
 
     ###########################################################
     # Latent Heat Flux (bulk equations)
     ###########################################################
-    LHF = (
-            C["eps"] * IN["Dair"][cond] * C["Ls"] * C_turb * (IN["VP"][cond] - VPsurf) / IN["Pres"][cond] * (
-            Tsurf < 273.15)
-            + C["eps"] * IN["Dair"][cond] * C["Lv"] * C_turb * (IN["VP"][cond] - VPsurf) / IN["Pres"][cond] * (
-                    Tsurf >= 273.15)
+    LHF = C["eps"] * IN["Dair"][cond] * C["Ls"] * C_turb * (IN["VP"][cond] - VPsurf) / IN["Pres"][cond] * (
+        Tsurf < 273.15
+    ) + C["eps"] * IN["Dair"][cond] * C["Lv"] * C_turb * (IN["VP"][cond] - VPsurf) / IN["Pres"][cond] * (
+        Tsurf >= 273.15
     )
 
     return LHF

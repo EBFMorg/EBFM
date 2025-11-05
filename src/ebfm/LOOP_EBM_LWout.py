@@ -17,5 +17,5 @@ def main(C, Tsurf):
     ###########################################################
     # Blackbody Emission of Thermal Radiation
     ###########################################################
-    LWout = C["boltz"] * Tsurf ** 4
+    LWout = C["boltz"] * Tsurf**4
     return LWout
