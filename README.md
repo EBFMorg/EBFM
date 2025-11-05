@@ -183,6 +183,8 @@ pre-commit install
 
 The pre-commit hooks will now run automatically on every commit. 
 
+Note: You can bypass this check with `--no-verify`. Please note that the CI will also check for PEP8 compliance and fail if the code is not PEP8 compliant. Therefore, it is recommended to use the pre-commit hooks locally before pushing code to this repository.
+
 ----
 
 [^1]: https://ljvmiranda921.github.io/notebook/2018/06/21/precommits-using-black-and-flake8/
