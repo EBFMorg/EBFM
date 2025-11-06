@@ -1,0 +1,15 @@
+# Copyright (c) 2025 The EBFM Authors
+#
+# SPDX-License-Identifier: CC-BY-4.0
+
+# This file will potentially hold more pre-commit-hooks in the future
+
+# SPDX-SnippetBegin
+# SPDX-SnippetCopyrightText: 2020 Free Software Foundation Europe e.V.
+# SPDX-License-Identifier: CC0-1.0
+repos:
+  - repo: https://github.com/fsfe/reuse-tool
+    rev: v6.2.0
+    hooks:
+      - id: reuse
+# SPDX-SnippetEnd
