@@ -16,4 +16,4 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit
       - name: Run pre-commit
-        run: pre-commit run reuse
+        run: pre-commit run reuse --all-files
