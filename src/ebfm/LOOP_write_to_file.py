@@ -5,7 +5,6 @@
 import os
 import numpy as np
 from netCDF4 import Dataset, date2num
-import sys
 
 
 def main(OUTFILE, io, OUT, grid, t, time, C, gridtype):
@@ -142,12 +141,12 @@ def main(OUTFILE, io, OUT, grid, t, time, C, gridtype):
             # Create NetCDF file
             nc_filepath = os.path.join(io["outdir"], "model_output.nc")
             io["nc_file"] = Dataset(nc_filepath, "w", format="NETCDF4")
-            if gridtype == 'unstructured':
+            if gridtype == "unstructured":
                 # Define dimensions
                 io["nc_file"].createDimension("time", None)  # Unlimited time dimension
                 io["nc_file"].createDimension("y", grid["lat"].shape[0])  # 2D grid rows
                 io["nc_file"].createDimension("nl", grid["nl"])  # Vertical layers for `sub` variables
-            elif gridtype == 'structured':
+            elif gridtype == "structured":
                 # Define dimensions
                 io["nc_file"].createDimension("time", None)  # Unlimited time dimension
                 io["nc_file"].createDimension("y", grid["x_2D"].shape[0])  # 2D grid rows
@@ -167,7 +166,7 @@ def main(OUTFILE, io, OUT, grid, t, time, C, gridtype):
                         nc_var = io["nc_file"].createVariable(
                             varname,
                             np.float32,
-                            ("time", "y","nl"),
+                            ("time", "y", "nl"),
                             zlib=True,
                             complevel=4,
                             fill_value=-9999.0,  # Fill missing values

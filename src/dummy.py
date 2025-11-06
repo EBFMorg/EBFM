@@ -77,7 +77,8 @@ def main():
     parser.add_argument(
         "--netcdf-mesh-unstructured",
         type=Path,
-        help="Path to the unstructured NetCDF mesh file. Optional if using --elmer-mesh. If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+        help="Path to the unstructured NetCDF mesh file. Optional if using --elmer-mesh."
+        " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
     parser.add_argument(
@@ -188,16 +189,17 @@ def main():
             # IN['dhdy'] = data_from_elmer('dhdy')
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
-        if not grid['is_partitioned'] and not coupler.has_coupling:
-            if grid['input_type'] is GridInputType.MATLAB:
-                gridtype = 'structured'
-            # if grid['input_type'] is GridInputType.MATLAB or grid['input_type'] is GridInputType.ELMER_XIOS:
-            # if grid['input_type'] is GridInputType.MATLAB:
-                # assert (grid['input_type'] is GridInputType.MATLAB), \
-                    # "Output writing currently only implemented for MATLAB and ELMER_XIOS input grids."
+        if not grid["is_partitioned"] and not coupler.has_coupling:
+            if grid["input_type"] is GridInputType.MATLAB:
+                gridtype = "structured"
+                #           if grid['input_type'] is GridInputType.MATLAB or grid['input_type'] is GridInputType.ELMER_XIOS:
+                #               ...
+                #           if grid['input_type'] is GridInputType.MATLAB:
+                #               assert (grid['input_type'] is GridInputType.MATLAB), \
+                #                 "Output writing currently only implemented for MATLAB and ELMER_XIOS input grids."
                 io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time2, C, gridtype=gridtype)
             else:
-                logger.warning('Skipping writing output to file for Elmer input grids.')
+                logger.warning("Skipping writing output to file for Elmer input grids.")
         elif grid["is_partitioned"] or coupler.has_coupling:
             logger.warning("Skipping writing output to file for coupled or partitioned runs.")
         else:

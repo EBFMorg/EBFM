@@ -11,7 +11,6 @@ from numpy.typing import NDArray
 
 from elmer.mesh import TriangleMesh
 import elmer.parser
-import sys
 
 
 def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id: int = -1) -> TriangleMesh:
@@ -89,7 +88,8 @@ def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id:
         cell_ids=global_cell_ids,
     )
 
-def read_dem_xios(dem_file: Path,  grid: dict):
+
+def read_dem_xios(dem_file: Path, grid: dict):
     """Read digital elevation model (DEM) file.
     Args:
         dem_file (Path): Path to the DEM NetCDF file.
@@ -100,12 +100,16 @@ def read_dem_xios(dem_file: Path,  grid: dict):
     assert dem_file.is_file(), f"DEM file {dem_file} does not exist."
 
     import netCDF4
+
     nc = netCDF4.Dataset(dem_file)
-    assert (np.squeeze(nc['x'][:]).shape == grid['x'].shape), "Surface mesh and Elmer mesh do not have the same number of vertices"
-    grid['z'] = np.squeeze(nc['zs'][:]).data
-    grid['lat'] = np.squeeze(nc['mesh2D_node_x'][:]).data
-    grid['lon'] = np.squeeze(nc['mesh2D_node_y'][:]).data
+    assert (
+        np.squeeze(nc["x"][:]).shape == grid["x"].shape
+    ), "Surface mesh and Elmer mesh do not have the same number of vertices"
+    grid["z"] = np.squeeze(nc["zs"][:]).data
+    grid["lat"] = np.squeeze(nc["mesh2D_node_x"][:]).data
+    grid["lon"] = np.squeeze(nc["mesh2D_node_y"][:]).data
     return grid
+
 
 def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
     """Read digital elevation model (DEM) file.
