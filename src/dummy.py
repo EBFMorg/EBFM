@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import coupling
 from pathlib import Path
 import argparse

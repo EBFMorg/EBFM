@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from mpi4py import MPI
 import sys
 import logging

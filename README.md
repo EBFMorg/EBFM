@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: 2025 EBFM Authors
+
+SPDX-License-Identifier: BSD-3-Clause
+-->
+
 # EBFM dummy
 
 This dummy provides a template how EBFM can be coupled to other models via YAC.

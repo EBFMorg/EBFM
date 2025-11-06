@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 from netCDF4 import Dataset, date2num
 import numpy as np
