@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import numpy as np
 
 
@@ -28,8 +32,7 @@ def main(C, Tsurf, IN, cond):
     # Turbulent Exchange Coefficient
     ###########################################################
     C_kat = np.maximum(
-        C["k_turb"] * (IN["T"][cond] - Tsurf) * np.sqrt(C["g"] / (C["T0"] * (IN["Theta_lapse"] * C["Pr"]))),
-        0
+        C["k_turb"] * (IN["T"][cond] - Tsurf) * np.sqrt(C["g"] / (C["T0"] * (IN["Theta_lapse"] * C["Pr"]))), 0
     )
     C_turb = 0.5 * (C["turb"] + C_kat)
 

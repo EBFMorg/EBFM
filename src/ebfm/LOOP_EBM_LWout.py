@@ -1,4 +1,6 @@
-import numpy as np
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
 
 
 def main(C, Tsurf):
@@ -17,5 +19,5 @@ def main(C, Tsurf):
     ###########################################################
     # Blackbody Emission of Thermal Radiation
     ###########################################################
-    LWout = C["boltz"] * Tsurf ** 4
+    LWout = C["boltz"] * Tsurf**4
     return LWout

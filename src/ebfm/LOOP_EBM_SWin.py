@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import numpy as np
 
 from coupling import Coupler
@@ -20,35 +24,33 @@ def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
     """
 
     if cpl.couple_to_icon_atmo:
-        SWin_diff = (0.8 - 0.65 * (1 - IN["C"])) * IN['SWin']
-        SWin_dir = (0.2 + 0.65 * (1 - IN["C"])) * (1 - OUT["shade"]) * IN['SWin']
+        SWin_diff = (0.8 - 0.65 * (1 - IN["C"])) * IN["SWin"]
+        SWin_dir = (0.2 + 0.65 * (1 - IN["C"])) * (1 - OUT["shade"]) * IN["SWin"]
         SWin = SWin_dir + SWin_diff
 
     else:
         ###########################################################
         # Top of the atmosphere radiation
         ###########################################################
-        lat_rad = OUT['lat_rad']
-        d_rad = OUT['d_rad']
-        h_rad = OUT['h_rad']
+        lat_rad = OUT["lat_rad"]
+        d_rad = OUT["d_rad"]
+        h_rad = OUT["h_rad"]
 
         # On a flat surface
         OUT["TOAflat"] = OUT["I0"] * (
-                np.sin(lat_rad) * np.sin(d_rad) +
-                np.cos(lat_rad) * np.cos(d_rad) * np.cos(h_rad)
+            np.sin(lat_rad) * np.sin(d_rad) + np.cos(lat_rad) * np.cos(d_rad) * np.cos(h_rad)
         )  # SOURCE: Iqbal (1983)
 
         # On an inclined surface
         slopebeta = grid["slope_beta"]  # Slope angle
         slopegamma = grid["slope_gamma"]  # Slope azimuth angle
         OUT["TOA"] = OUT["I0"] * (
-                (np.sin(lat_rad) * np.cos(slopebeta) - np.cos(lat_rad) * np.sin(slopebeta) * np.cos(
-                    slopegamma)) * np.sin(
-            d_rad) +
-                (np.cos(lat_rad) * np.cos(slopebeta) + np.sin(lat_rad) * np.sin(slopebeta) * np.cos(
-                    slopegamma)) * np.cos(
-            d_rad) * np.cos(h_rad) +
-                np.cos(d_rad) * np.sin(slopebeta) * np.sin(slopegamma) * np.sin(h_rad)
+            (np.sin(lat_rad) * np.cos(slopebeta) - np.cos(lat_rad) * np.sin(slopebeta) * np.cos(slopegamma))
+            * np.sin(d_rad)
+            + (np.cos(lat_rad) * np.cos(slopebeta) + np.sin(lat_rad) * np.sin(slopebeta) * np.cos(slopegamma))
+            * np.cos(d_rad)
+            * np.cos(h_rad)
+            + np.cos(d_rad) * np.sin(slopebeta) * np.sin(slopegamma) * np.sin(h_rad)
         )
         OUT["TOA"] = np.maximum(OUT["TOA"], 0.0)
         ###########################################################
@@ -60,21 +62,22 @@ def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
         OUT["TOAdiff"] = (0.8 - 0.65 * (1 - IN["C"])) * OUT["TOA"]
         OUT["TOAshade"] = OUT["TOAdir"] + OUT["TOAdiff"]
 
-
         ###########################################################
         # Atmospheric transmissivity
         ###########################################################
 
         # Transmissivity after gaseous absorption / scattering
-        m = 35.0 * (IN["Pres"] / C["Pref"]) * (
-                1224.0 * (OUT["TOAflat"] / OUT["I0"]) ** 2 + 1.0) ** -0.5  # SOURCE: Meyers and Dale (1983)
+        m = (
+            35.0 * (IN["Pres"] / C["Pref"]) * (1224.0 * (OUT["TOAflat"] / OUT["I0"]) ** 2 + 1.0) ** -0.5
+        )  # SOURCE: Meyers and Dale (1983)
         t_rg = 1.021 - 0.084 * np.sqrt(
-            m * (949.0 * (IN["Pres"] / 1e3) * 1e-5 + 0.051))  # SOURCE: Atwater and Brown Jr (1974)
+            m * (949.0 * (IN["Pres"] / 1e3) * 1e-5 + 0.051)
+        )  # SOURCE: Atwater and Brown Jr (1974)
 
         # Transmissivity after water vapor absorption
-        temp_dew_kelvin = (1 / 273.15 - (C["Rv"] / C["Ls"]) * np.log(
-            IN["q"] * IN["Pres"] / (C["eps"] * C["VP0"])
-        )) ** -1  # SOURCE: McDonald (1960)
+        temp_dew_kelvin = (
+            1 / 273.15 - (C["Rv"] / C["Ls"]) * np.log(IN["q"] * IN["Pres"] / (C["eps"] * C["VP0"]))
+        ) ** -1  # SOURCE: McDonald (1960)
         temp_dew_fahr = 32.0 + 1.8 * (temp_dew_kelvin - 273.15)
 
         # Assign lambda based on latitude region

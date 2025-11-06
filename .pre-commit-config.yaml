@@ -1,0 +1,27 @@
+# Copyright (c) 2025 The EBFM Authors
+#
+# SPDX-License-Identifier: CC-BY-4.0
+
+repos:
+# SPDX-SnippetBegin
+# SPDX-License-Identifier: CC-BY-4.0
+# This configuration is adapted from LJ Miranda's blog post, 
+# "Pre-commits using Black and Flake8" (https://ljvmiranda921.github.io/notebook/2018/06/21/precommits-using-black-and-flake8/)
+- repo: https://github.com/psf/black
+  rev: stable
+  hooks:
+  - id: black
+- repo: https://github.com/PyCQA/flake8.git
+  rev: 7.3.0
+  hooks:
+  - id: flake8
+# SPDX-SnippetEnd
+
+# SPDX-SnippetBegin
+# SPDX-SnippetCopyrightText: 2020 Free Software Foundation Europe e.V.
+# SPDX-License-Identifier: CC0-1.0
+- repo: https://github.com/fsfe/reuse-tool
+  rev: v6.2.0
+  hooks:
+  - id: reuse
+# SPDX-SnippetEnd

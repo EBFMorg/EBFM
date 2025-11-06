@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2025 The EBFM Authors
+#
+# SPDX-License-Identifier: CC-BY-4.0
+
+Ward van Pelt <ward.van.pelt@geo.uu.se>
+Benjamin Rodenberg <rodenberg@dkrz.de>

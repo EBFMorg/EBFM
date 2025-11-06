@@ -1,2 +1,6 @@
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 # Auto detect text files and perform LF normalization
 * text=auto

@@ -1,6 +1,14 @@
-# EBFM dummy
+<!--
+SPDX-FileCopyrightText: 2025 EBFM Authors
 
-This dummy provides a template how EBFM can be coupled to other models via YAC.
+SPDX-License-Identifier: BSD-3-Clause
+-->
+
+# Energy balance and firn model (EBFM)
+
+This repository provides a Python implementation of a energy balance and firn model (EBFM).
+
+Using YAC this model can be coupled to other models.
 
 ## Preparations
 
@@ -153,7 +161,7 @@ may be set to point to the non-dummy versions of the codes.
 
 ### `#include <proj.h>` not found when building the Elmer dummy
 
-*Problem:* 
+*Problem:*
 ```sh
 ...
 elmer_grid.c:11:10: fatal error: proj.h: No such file or directory
@@ -164,3 +172,48 @@ make: *** [Makefile:48: elmer_grid.o] Error 1
 ```
 
 *Solution:* `sudo apt-get install libproj-dev`
+
+# Developer notes
+
+## pre-commit
+
+This project uses pre-commit hooks for some tasks described in detail below. To setup pre-commit please do the following:
+
+```sh
+pipx install pre-commit
+pre-commit install
+```
+
+As soon as pre-commit is set up, you will not be able to commit if any of the checks fails. With the help of the logging output it should usually be possible to fix the problem.
+
+Note: You can bypass this check with `--no-verify`. Please note that the CI will also run pre-commit and fail if there are problems in any of the checks. Therefore, it is recommended to use the pre-commit hooks locally before pushing code to this repository and only bypass them if there is a good reason.
+
+## Copyright and licensing
+
+This project uses [REUSE](https://reuse.software/) to track information regarding copyright and licensing. Therefore, all files in this repository are required to provide the corresponding information. Please refer to the documentation of REUSE for details.
+
+You can use pre-commit to automatically check if all files in the repository provide the necessary information:
+
+```
+pre-commit run reuse --all-files
+```
+
+## Code formatting
+
+Automated checks for PEP8 compiance are implemented following [^1] with some modifications. You can use pre-commit hooks to automatically format your code with black:
+
+```sh
+pre-commit run black --all-files
+```
+
+With flake8 you can check whether your code follows all relevant formatting rules:
+
+```sh
+pre-commit run flake8 --all-files
+```
+
+Please note that black might not be able to automatically fix all problems and therefore flake8 might fail even if you have run black before. In this case, you will have to manually fix the remaining problems.
+
+----
+
+[^1]: https://ljvmiranda921.github.io/notebook/2018/06/21/precommits-using-black-and-flake8/

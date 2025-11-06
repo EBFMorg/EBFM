@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import numpy as np
 
 
@@ -15,9 +19,15 @@ def main(OUT, IN, C):
     """
 
     # Climatic mass balance
-    OUT["smb"] = (IN["snow"] + IN["rain"] - OUT["runoff"]
-                  + OUT["moist_deposition"] + OUT["moist_condensation"]
-                  - OUT["moist_sublimation"] - OUT["moist_evaporation"])
+    OUT["smb"] = (
+        IN["snow"]
+        + IN["rain"]
+        - OUT["runoff"]
+        + OUT["moist_deposition"]
+        + OUT["moist_condensation"]
+        - OUT["moist_sublimation"]
+        - OUT["moist_evaporation"]
+    )
 
     OUT["smb_cumulative"] += OUT["smb"]
 

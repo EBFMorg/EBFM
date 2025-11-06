@@ -1,6 +1,11 @@
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 from netCDF4 import Dataset, date2num
 import numpy as np
+
 
 def main(OUT, io):
 
@@ -51,7 +56,11 @@ def main(OUT, io):
 
             return True
 
-    OUT['timelastsnow_netCDF'] = date2num(OUT['timelastsnow'], units="days since 1970-01-01 00:00:00", calendar="gregorian")
+    OUT["timelastsnow_netCDF"] = date2num(
+        OUT["timelastsnow"],
+        units="days since 1970-01-01 00:00:00",
+        calendar="gregorian",
+    )
     OUT = {
         "subZ": OUT["subZ"],
         "subW": OUT["subW"],
@@ -65,7 +74,6 @@ def main(OUT, io):
         "timelastsnow_netCDF": OUT["timelastsnow_netCDF"],
         "alb_snow": OUT["alb_snow"],
     }
-
 
     # Create the boot file
     create_boot_file()

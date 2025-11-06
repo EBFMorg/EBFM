@@ -1,4 +1,7 @@
-import datetime
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 import os
 import numpy as np
 from netCDF4 import Dataset, date2num
@@ -40,11 +43,12 @@ def main(OUTFILE, io, OUT, grid, t, time, C, gridtype):
             ["subT", "K", "sample", "Temperature"],
             ["subS", "mm w.e.", "sample", "Slush water content"],
             ["subW", "mm w.e.", "sample", "Irreducible water"],
-            ["subZ", "m", "sample", "Layer thickness"]
+            ["subZ", "m", "sample", "Layer thickness"],
         ]
 
-        io["varsout"] = [{"varname": v[0], "units": v[1], "type": v[2], "description": v[3]} for v in
-                         OUTFILE["varsout"]]
+        io["varsout"] = [
+            {"varname": v[0], "units": v[1], "type": v[2], "description": v[3]} for v in OUTFILE["varsout"]
+        ]
 
     # Update OUTFILE.TEMP with variables to be stored
     for entry in OUTFILE["varsout"]:
@@ -64,7 +68,6 @@ def main(OUTFILE, io, OUT, grid, t, time, C, gridtype):
             OUTFILE["TEMP"][varname] += temp_long / io["freqout"]
         elif var_type == "sum":
             OUTFILE["TEMP"][varname] += temp_long
-
 
     def save_binary_files():
         """
@@ -106,15 +109,9 @@ def main(OUTFILE, io, OUT, grid, t, time, C, gridtype):
             for file in io["fid"].values():
                 file.close()
 
+            # TODO: WORK IN PROGRESS
             # Prepare the runinfo dictionary
-            runinfo = {
-                "grid": grid,
-                "time": time,
-                "IOout": io,
-                "Cout": C
-            }
-
-            ################ WORK IN PROGRESS ###############
+            # runinfo = {"grid": grid, "time": time, "IOout": io, "Cout": C}
 
         return True
 
@@ -136,7 +133,6 @@ def main(OUTFILE, io, OUT, grid, t, time, C, gridtype):
         # Epoch for time variable
         time_units = "days since 1970-01-01 00:00:00"
         time_calendar = "gregorian"
-
 
         # Initialize NetCDF file at the first time step
         if t == 1:
@@ -217,9 +213,7 @@ def main(OUTFILE, io, OUT, grid, t, time, C, gridtype):
                 nc_var.description = var_desc
 
             # Define a time variable to track simulation steps
-            nc_time = io["nc_file"].createVariable(
-                "time", np.float64, ("time",), zlib=True, fill_value=-9999.0
-            )
+            nc_time = io["nc_file"].createVariable("time", np.float64, ("time",), zlib=True, fill_value=-9999.0)
             nc_time.units = time_units
             nc_time.calendar = time_calendar
             nc_time.description = "Time at which data is recorded, in days since 1970-01-01 00:00:00"
@@ -239,25 +233,16 @@ def main(OUTFILE, io, OUT, grid, t, time, C, gridtype):
                 varname = entry[0]
                 var_1D = OUTFILE["TEMP"][varname]  # 1D data
 
-                if gridtype == 'unstructured':
-                    # Handle `sub` variables (3D: time, y, nl)
-                    if varname.startswith("sub"):
-                        io["nc_file"][varname][time_index, :, :] = var_1D
-                    else:
-                        io["nc_file"][varname][time_index, :] = var_1D
-                elif gridtype == 'structured':
-                    # Handle `sub` variables (4D: time, y, x, nl)
-                    if varname.startswith("sub"):
-                        var_3D = np.full((grid["x_2D"].size, grid["nl"]), -9999.0)
-                        var_3D[grid["ind"], :] = var_1D
-                        var_4D = var_3D.reshape(-1, grid["nl"]).reshape(
-                            *grid["x_2D"].shape, grid["nl"]
-                        )
-                        io["nc_file"][varname][time_index, :, :, :] = var_4D
-                    else:
-                        var_2D = np.full(grid["x_2D"].shape, -9999.0)
-                        var_2D.flat[grid["ind"]] = var_1D
-                        io["nc_file"][varname][time_index, :, :] = var_2D
+                # Handle `sub` variables (4D: time, y, x, nl)
+                if varname.startswith("sub"):
+                    var_3D = np.full((grid["x_2D"].size, grid["nl"]), -9999.0)
+                    var_3D[grid["ind"], :] = var_1D
+                    var_4D = var_3D.reshape(-1, grid["nl"]).reshape(*grid["x_2D"].shape, grid["nl"])
+                    io["nc_file"][varname][time_index, :, :, :] = var_4D
+                else:
+                    var_2D = np.full(grid["x_2D"].shape, -9999.0)
+                    var_2D.flat[grid["ind"]] = var_1D
+                    io["nc_file"][varname][time_index, :, :] = var_2D
 
         # Close the NetCDF file at the final time step
         if t == time["tn"]:

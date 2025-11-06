@@ -1,4 +1,6 @@
-import numpy as np
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
 
 
 def main(Tsurf, OUT, cond, GHF_k, GHF_C):

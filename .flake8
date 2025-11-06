@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2025 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
+[flake8]
+ignore = E203, W503
+max-line-length=120
