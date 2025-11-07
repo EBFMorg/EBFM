@@ -224,6 +224,10 @@ pre-commit run flake8 --all-files
 
 Please note that black might not be able to automatically fix all problems and therefore flake8 might fail even if you have run black before. In this case, you will have to manually fix the remaining problems.
 
+## Further hints
+
+* Please consider installing EBFM via `pip --editable .` if you are developing the package.
+
 ----
 
 [^1]: https://ljvmiranda921.github.io/notebook/2018/06/21/precommits-using-black-and-flake8/
