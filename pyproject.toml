@@ -2,5 +2,39 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+[project]
+name = "EBFM"
+dynamic = [ "version" ]
+authors = [ {name="EBFM Authors"} ]
+license = "BSD-3-Clause"
+readme = "README.md"
+dependencies = [
+    "yac >= 3.8",
+    "mpi4py >= 4.1",
+    "mypy >= 1.0",
+    "netCDF4 >= 1.7",
+    "numpy >= 2.0",
+    "pandas >= 2.0",
+    "pandas-stubs >= 2.0",
+    "pathlib",
+    "pyproj",
+    "scipy"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit >= 4.0"
+]
+
+[project.scripts]
+ebfm = "dummy:main"
+
+[build-system]
+requires = ["setuptools", "setuptools-git-versioning"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools-git-versioning]
+enabled = true
+
 [tool.black]
 line-length = 120
