@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-import coupling
 from pathlib import Path
 import argparse
 
@@ -22,6 +21,16 @@ from mpi4py import MPI
 from utils import setup_logging
 import logging
 
+from typing import List
+
+try:
+    import coupling  # noqa: E402
+
+    coupling_supported = True
+except ImportError as e:
+    coupling_supported = False
+    coupling_import_error = e
+
 log_levels = {
     "file": logging.DEBUG,  # log level for logging to file
     0: logging.INFO,  # log level for rank 0
@@ -33,9 +42,14 @@ setup_logging(log_levels=log_levels)
 logger = logging.getLogger(__name__)
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def add_coupling_arguments(parser: argparse.ArgumentParser):
+    """
+    Add command line arguments related to coupling with other models via YAC.
 
+    @param[in] parser the argument parser to add the coupling arguments to.
+    """
+
+    # Note: If you add arguments to this function, also update check_coupling_features.
     parser.add_argument(
         "--couple-to-elmer-ice",
         action="store_true",
@@ -53,6 +67,33 @@ def main():
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
     )
+
+
+def extract_active_coupling_features(args: argparse.Namespace) -> List[str]:
+    """
+    Determine if coupling is required based on the provided command line arguments.
+
+    @param[in] args the parsed command line arguments.
+
+    @return a list of argument names that indicate coupling is required.
+    """
+
+    active_coupling_args = []
+
+    if args.couple_to_elmer_ice:
+        active_coupling_args.append("--couple-to-elmer-ice")
+
+    if args.couple_to_icon_atmo:
+        active_coupling_args.append("--couple-to-icon-atmo")
+
+    if args.coupler_config:
+        active_coupling_args.append("--coupler-config")
+
+    return active_coupling_args
+
+
+def main():
+    parser = argparse.ArgumentParser()
 
     parser.add_argument(
         "--elmer-mesh",
@@ -93,10 +134,29 @@ def main():
         help="Show the EBFM version and exit.",
     )
 
+    # Add args for features requiring 'import coupling'
+    add_coupling_arguments(parser)
+
     args = parser.parse_args()
 
     if args.version:
         ebfm.print_version_and_exit()
+
+    has_active_coupling_features = extract_active_coupling_features(args)
+    if has_active_coupling_features and not coupling_supported:
+        raise RuntimeError(
+            f"""
+Coupling requested via command line argument(s) {has_active_coupling_features}, but the 'coupling' module could not be
+imported due to the following error:
+
+{coupling_import_error}
+
+Hint: If you are missing 'yac', please install YAC and the python binds as described under
+https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
+"""
+        )
+    else:
+        from coupler import NoCoupler
 
     logger.info(f"Starting EBFM version {ebfm.get_version()}...")
 
@@ -123,7 +183,7 @@ def main():
         )
         coupling.setup(coupler, grid["mesh"], time2)
     else:
-        coupler = coupling.NoCoupler("ebfm")
+        coupler = NoCoupler("ebfm")
 
     # Time-loop
     logger.info("Entering time loop...")
