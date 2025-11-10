@@ -25,6 +25,12 @@ You can then install EBFM into you virtual environment by running the following 
 pip install .
 ```
 
+If you do not want to clone this repository, you can also install the package via the following command:
+
+```sh
+pip install git+https://github.com/wardvp/EBFM.git
+```
+
 Please test your installation by running `ebfm --help` to print the help message and `ebfm --version` to print the installed version.
 
 ## Running
