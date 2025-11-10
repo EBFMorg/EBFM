@@ -34,6 +34,7 @@ def setup_logging(log_levels=default_levels, file=None):
     if MPI.COMM_WORLD.rank in log_levels.keys():
         stdout_handler = logging.StreamHandler(sys.stdout)
         stdout_handler.setFormatter(log_formatter)
+        stdout_handler.addFilter(lambda record: record.levelno < logging.ERROR)
         stdout_handler.setLevel(log_levels[MPI.COMM_WORLD.rank])
         root_logger.addHandler(stdout_handler)
 
