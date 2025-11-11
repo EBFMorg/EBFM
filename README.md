@@ -15,14 +15,30 @@ Using YAC this model can be coupled to other models.
 Please use the script `setup_venv.sh` to create a virtual environment for
 developing and running this dummy.
 
-## Running
+## Installation
 
 Activate the `venv` by running `source .venv/bin/activate`.
 
-A basic, uncoupled simulation can be run with the following command:
+You can then install EBFM into you virtual environment by running the following command in this folder:
 
 ```sh
-python3 src/dummy.py --matlab-mesh examples/dem_and_mask.mat
+pip install .
+```
+
+If you do not want to clone this repository, you can also install the package via the following command:
+
+```sh
+pip install git+https://github.com/wardvp/EBFM.git
+```
+
+Please test your installation by running `ebfm --help` to print the help message and `ebfm --version` to print the installed version.
+
+## Running
+
+After installation a basic, uncoupled simulation can be run with the following command:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat
 ```
 
 ### Mesh data
@@ -37,7 +53,7 @@ provide different kinds of mesh data. EBFM supports the following formats:
   Usage example:
 
   ```sh
-  python3 src/dummy.py --matlab-mesh examples/dem_and_mask.mat
+  ebfm --matlab-mesh examples/dem_and_mask.mat
   ```
 
 * Elmer Mesh: An Elmer mesh file with x-y coordinates of mesh points and
@@ -47,7 +63,7 @@ provide different kinds of mesh data. EBFM supports the following formats:
   Usage example:
 
   ```sh
-  python3 src/dummy.py --elmer-mesh examples/DEM
+  ebfm --elmer-mesh examples/DEM
   ```
 
 * Elmer Mesh with Elevation data from NetCDF: The Elmer mesh file provides x-y
@@ -58,7 +74,7 @@ provide different kinds of mesh data. EBFM supports the following formats:
   Usage example:
 
   ```sh
-  python3 src/dummy.py --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc
+  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc
   ```
 
 Note that an Elmer mesh must be provided in a directory following the structure:
@@ -95,7 +111,7 @@ path/to/your/elmer/MESH
 Usage example for partitioned mesh:
 
 ```sh
-python3 src/dummy.py --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
 ### Coupled simulation
@@ -104,7 +120,7 @@ The EBFM code allows coupling to other simulation codes. The following arguments
 allow to configure the coupling:
 
 ```sh
-python3 src/dummy.py ...
+ebfm ...
   --couple-to-elmer-ice
   --couple-to-icon-atmo
   --coupler-config /path/to/coupling/config.yaml
@@ -215,6 +231,10 @@ pre-commit run flake8 --all-files
 ```
 
 Please note that black might not be able to automatically fix all problems and therefore flake8 might fail even if you have run black before. In this case, you will have to manually fix the remaining problems.
+
+## Further hints
+
+* Please consider installing EBFM via `pip --editable .` if you are developing the package.
 
 ----
 

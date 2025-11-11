@@ -44,6 +44,6 @@ def setup_logging(log_levels=default_levels, file=None):
     stderr_handler.setLevel(logging.ERROR)
     root_logger.addHandler(stderr_handler)
 
-    root_logger.info("Logging setup complete.")
+    root_logger.debug("Logging setup complete.")
 
     return logging

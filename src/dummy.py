@@ -6,6 +6,7 @@ import coupling
 from pathlib import Path
 import argparse
 
+import ebfm
 from ebfm import (
     INIT,
     LOOP_general_functions,
@@ -33,8 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 def main():
-    logger.info("Starting EBFM...")
-
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -88,7 +87,18 @@ def main():
         "If not provided, the MPI rank + 1 will be used as partition ID.",
     )
 
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Show the EBFM version and exit.",
+    )
+
     args = parser.parse_args()
+
+    if args.version:
+        ebfm.print_version_and_exit()
+
+    logger.info(f"Starting EBFM version {ebfm.get_version()}...")
 
     logger.info("Done parsing command line arguments.")
     logger.debug("Parsed the following command line arguments:")
