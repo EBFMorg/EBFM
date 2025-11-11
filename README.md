@@ -184,6 +184,8 @@ pipx install pre-commit
 pre-commit install
 ```
 
+**Alternative:** If you are already working in an virtual environment, you can also use `pip install pre-commit` instead of `pipx`. Refer to the [documentation of `pipx`](https://pipx.pypa.io/stable/#overview-what-is-pipx) for further information.
+
 As soon as pre-commit is set up, you will not be able to commit if any of the checks fails. With the help of the logging output it should usually be possible to fix the problem.
 
 Note: You can bypass this check with `--no-verify`. Please note that the CI will also run pre-commit and fail if there are problems in any of the checks. Therefore, it is recommended to use the pre-commit hooks locally before pushing code to this repository and only bypass them if there is a good reason.
