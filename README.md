@@ -25,13 +25,35 @@ You can then install EBFM into you virtual environment by running the following 
 pip install .
 ```
 
+This will install the basic version of EBFM without coupling.
+
+### Install with coupling features
+
+If you want to install an advanced version of EBFM including coupling, please run the command:
+
+```sh
+pip install .[cpl]
+```
+
+This will include the optional dependencies `[cpl]` needed for coupling, such as `yac`
+
+### Install directly from git without cloning
+
 If you do not want to clone this repository, you can also install the package via the following command:
 
 ```sh
 pip install git+https://github.com/wardvp/EBFM.git
 ```
 
-Please test your installation by running `ebfm --help` to print the help message and `ebfm --version` to print the installed version.
+If you want to include the optional dependencies `[cpl]¸ run:
+
+```sh
+pip install "EBFM[cpl] @ git+https://github.com/wardvp/EBFM.git"
+```
+
+### Checking your installation
+
+Please check your installation by running `ebfm --help` to print the help message and `ebfm --version` to print the installed version.
 
 ## Running
 
@@ -190,6 +212,23 @@ make: *** [Makefile:48: elmer_grid.o] Error 1
 *Solution:* `sudo apt-get install libproj-dev`
 
 # Developer notes
+
+## optional dependencies `[dev]`
+
+Please install the package with the optional dependencies `[dev]` if you are developing (this will automatically
+install `pre-commit`).
+
+To concatenate multiple optional dependencies, please run
+
+```sh
+pip install -e .[dev,cpl]
+```
+
+respectively
+
+```sh
+pip install "EBFM[dev,cpl] @ git+https://github.com/wardvp/EBFM.git@i2-optional-yac"
+```
 
 ## pre-commit
 
