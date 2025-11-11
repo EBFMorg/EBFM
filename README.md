@@ -12,12 +12,31 @@ Using YAC this model can be coupled to other models.
 
 ## Preparations
 
-Please use the script `setup_venv.sh` to create a virtual environment for
-developing and running this dummy.
+### Create Python virtual environment
+
+First, set the path to your virtual environment:
+
+```sh
+export VENV=/path/to/your/environment/.venv
+```
+
+Please create a virtual environment and install the packages listed in the `requirements.txt` in the following way:
+```sh
+python -m venv $VENV
+source $VENV/bin/activate
+pip install -r requirements.txt
+```
+
+### Installation with YAC
+
+To run EBFM using YAC as a coupler, it is recommended to install YAC with the Python bindings. 
+When doing so, set the installation prefix to your virtual environment (`--prefix=$VENV`).
+For detailed instructions, see the YAC documentation on [Python bindings](https://yac.gitlab-pages.dkrz.de/YAC-dev/d7/d9e/pythonbindings.html).
+
 
 ## Running
 
-Activate the `venv` by running `source .venv/bin/activate`.
+Make sure your virtual environment is activated (by running `source $VENV/bin/activate`).
 
 A basic, uncoupled simulation can be run with the following command:
 
