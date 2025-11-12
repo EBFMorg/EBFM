@@ -30,7 +30,7 @@ cpl = [
 ]
 
 [project.scripts]
-ebfm = "dummy:main"
+ebfm = "main:main"
 
 [build-system]
 requires = ["setuptools", "setuptools-git-versioning"]
