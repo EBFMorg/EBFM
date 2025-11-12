@@ -6,41 +6,94 @@ SPDX-License-Identifier: BSD-3-Clause
 
 # Energy balance and firn model (EBFM)
 
-This repository provides a Python implementation of a energy balance and firn model (EBFM).
+This repository provides a Python implementation of an energy balance and firn model (EBFM).
 
-Using YAC this model can be coupled to other models.
+Using YAC, this model can be coupled to other models.
 
 ## Preparations
 
 ### Create virtual environment
 
-Set the path to your virtual environment:
+You can use an arbitrary location to create your virtual environment. 
+A common choice is `.venv`. In the following, we will use `$VENV` as a placeholder and the path to the virtual environment `.venv` should be set as follows:
 
 ```sh
 export VENV=/path/to/your/environment/.venv
 ```
 
-Create a virtual environment and install the dependencies specified in `pyproject.toml` using the following commands:
+If you do not already have a virtual environment, you can create one using the following commands, which will additionally install the necessary dependencies specified in `pyproject.toml`:
 
 ```sh
 python3 -m venv $VENV
 source $VENV/bin/activate
-pip3 install uv
-uv pip3 install -r pyproject.toml
+pip install uv
+uv pip install -r pyproject.toml
 ```
 
-Note: If you intend to install EBFM with coupling features, it is recommended to install YAC with the Python bindings. 
-In your configuration step, set the installation prefix to your virtual environment and enable Python bindings (`--prefix=$VENV` `--enable-python-bindings`).
+If you want to know more about virtual enviornments, please refer to the [Python documentation](https://docs.python.org/3/library/venv.html). \
+If you intend to develop EBFM, please take a look at the [developer notes](https://github.com/wardvp/EBFM/edit/matthias-ibach-patch-1/README.md?pr=%2Fwardvp%2FEBFM%2Fpull%2F23#developer-notes) further down in the `README`.
+
+### Create virtual environment with coupling features
+
+If you want to install EBFM with coupling features, it is recommended to install YAC with the Python bindings. 
+During YAC’s configuration step, set the installation prefix to your virtual environment and enable Python bindings (`--prefix=$VENV` `--enable-python-bindings`).
+Make sure to do this *after* creating your virtual environment.
+
+```sh
+python3 -m venv $VENV
+# configure and install YAC with --prefix=$VENV and --enable-python-bindings
+source $VENV/bin/activate
+...
+```
+
 For detailed instructions, see the YAC documentation on [Python bindings](https://yac.gitlab-pages.dkrz.de/YAC-dev/d7/d9e/pythonbindings.html).
+
+## Installation
+
+Check if your virtual environment is activated or run `source $VENV/bin/activate`.
+
+You can then install EBFM into you virtual environment by running the following command in this folder (provided you cloned the repository):
+
+```sh
+pip install .
+```
+
+This will install the basic version of EBFM without coupling.
+
+### Install with coupling features
+
+If you want to install an advanced version of EBFM including coupling, please run the command:
+
+```sh
+pip install .[cpl]
+```
+
+This will include the optional dependencies `[cpl]` needed for coupling, such as `yac`.
+
+### Install directly from git without cloning
+
+If you do not want to clone this repository, you can also install the package directly via the following command:
+
+```sh
+pip install git+https://github.com/wardvp/EBFM.git
+```
+
+If you want to include the optional dependencies `[cpl]¸ run:
+
+```sh
+pip install "EBFM[cpl] @ git+https://github.com/wardvp/EBFM.git"
+```
+
+### Checking your installation
+
+Please check your installation by running `ebfm --help` to print the help message and `ebfm --version` to print the installed version.
 
 ## Running
 
-Make sure your virtual environment is activated (by running `source $VENV/bin/activate`).
-
-A basic, uncoupled simulation can be run with the following command:
+After installation, a basic, uncoupled simulation can be run with the following command:
 
 ```sh
-python3 src/dummy.py --matlab-mesh examples/dem_and_mask.mat
+ebfm --matlab-mesh examples/dem_and_mask.mat
 ```
 
 ### Mesh data
@@ -55,7 +108,7 @@ provide different kinds of mesh data. EBFM supports the following formats:
   Usage example:
 
   ```sh
-  python3 src/dummy.py --matlab-mesh examples/dem_and_mask.mat
+  ebfm --matlab-mesh examples/dem_and_mask.mat
   ```
 
 * Elmer Mesh: An Elmer mesh file with x-y coordinates of mesh points and
@@ -65,7 +118,7 @@ provide different kinds of mesh data. EBFM supports the following formats:
   Usage example:
 
   ```sh
-  python3 src/dummy.py --elmer-mesh examples/DEM
+  ebfm --elmer-mesh examples/DEM
   ```
 
 * Elmer Mesh with Elevation data from NetCDF: The Elmer mesh file provides x-y
@@ -76,7 +129,7 @@ provide different kinds of mesh data. EBFM supports the following formats:
   Usage example:
 
   ```sh
-  python3 src/dummy.py --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc
+  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc
   ```
 
 Note that an Elmer mesh must be provided in a directory following the structure:
@@ -113,7 +166,7 @@ path/to/your/elmer/MESH
 Usage example for partitioned mesh:
 
 ```sh
-python3 src/dummy.py --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
 ### Coupled simulation
@@ -122,7 +175,7 @@ The EBFM code allows coupling to other simulation codes. The following arguments
 allow to configure the coupling:
 
 ```sh
-python3 src/dummy.py ...
+ebfm ...
   --couple-to-elmer-ice
   --couple-to-icon-atmo
   --coupler-config /path/to/coupling/config.yaml
@@ -193,6 +246,23 @@ make: *** [Makefile:48: elmer_grid.o] Error 1
 
 # Developer notes
 
+## optional dependencies `[dev]`
+
+Please install the package with the optional dependencies `[dev]` if you are developing (this will automatically
+install `pre-commit`).
+
+To concatenate multiple optional dependencies, please run
+
+```sh
+pip install -e .[dev,cpl]
+```
+
+respectively
+
+```sh
+pip install "EBFM[dev,cpl] @ git+https://github.com/wardvp/EBFM.git@i2-optional-yac"
+```
+
 ## pre-commit
 
 This project uses pre-commit hooks for some tasks described in detail below. To setup pre-commit please do the following:
@@ -201,6 +271,8 @@ This project uses pre-commit hooks for some tasks described in detail below. To 
 pipx install pre-commit
 pre-commit install
 ```
+
+**Alternative:** If you are already working in an virtual environment, you can also use `pip install pre-commit` instead of `pipx`. Refer to the [documentation of `pipx`](https://pipx.pypa.io/stable/#overview-what-is-pipx) for further information.
 
 As soon as pre-commit is set up, you will not be able to commit if any of the checks fails. With the help of the logging output it should usually be possible to fix the problem.
 
@@ -231,6 +303,10 @@ pre-commit run flake8 --all-files
 ```
 
 Please note that black might not be able to automatically fix all problems and therefore flake8 might fail even if you have run black before. In this case, you will have to manually fix the remaining problems.
+
+## Further hints
+
+* Please consider installing EBFM via `pip --editable .` if you are developing the package.
 
 ----
 
