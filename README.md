@@ -6,58 +6,80 @@ SPDX-License-Identifier: BSD-3-Clause
 
 # Energy balance and firn model (EBFM)
 
-This repository provides a Python implementation of a energy balance and firn model (EBFM).
+This repository provides a Python implementation of an energy balance and firn model (EBFM).
 
-Using YAC this model can be coupled to other models.
+Using YAC, this model can be coupled to other models.
 
-## Preparations
+## Basic installation 
 
-Please use the script `setup_venv.sh` to create a virtual environment for
-developing and running this dummy.
+### Create virtual environment
 
-## Installation
-
-Activate the `venv` by running `source .venv/bin/activate`.
-
-You can then install EBFM into you virtual environment by running the following command in this folder:
+You can use an arbitrary location to create your virtual environment. 
+A common choice is `.venv`. In the following, we will use `$VENV` as a placeholder and the path to the virtual environment `.venv` should be set as follows:
 
 ```sh
-pip install .
+export VENV=/path/to/your/environment/.venv
+```
+
+If you do not already have a virtual environment, you can create one using the following commands, which will additionally install the necessary dependencies specified in `pyproject.toml`:
+
+```sh
+python3 -m venv $VENV
+source $VENV/bin/activate
+```
+
+Check if your virtual environment is activated. You should see the name within parentheses just before your command prompt, in this case it should say `(.venv)`. 
+
+If you want to know more about virtual environments, please refer to the [Python documentation](https://docs.python.org/3/library/venv.html). \
+If you intend to develop EBFM, please take a look at the [developer notes](https://github.com/wardvp/EBFM/edit/matthias-ibach-patch-1/README.md?pr=%2Fwardvp%2FEBFM%2Fpull%2F23#developer-notes) further down in the `README`.
+
+### Install EBFM
+
+You can then install EBFM directly into you virtual environment by running the following command:
+
+```sh
+pip3 install "EBFM @ git+https://github.com/wardvp/EBFM.git"
 ```
 
 This will install the basic version of EBFM without coupling.
-
-### Install with coupling features
-
-If you want to install an advanced version of EBFM including coupling, please run the command:
-
-```sh
-pip install .[cpl]
-```
-
-This will include the optional dependencies `[cpl]` needed for coupling, such as `yac`
-
-### Install directly from git without cloning
-
-If you do not want to clone this repository, you can also install the package via the following command:
-
-```sh
-pip install git+https://github.com/wardvp/EBFM.git
-```
-
-If you want to include the optional dependencies `[cpl]¸ run:
-
-```sh
-pip install "EBFM[cpl] @ git+https://github.com/wardvp/EBFM.git"
-```
 
 ### Checking your installation
 
 Please check your installation by running `ebfm --help` to print the help message and `ebfm --version` to print the installed version.
 
-## Running
+## Installation with coupling features 
 
-After installation a basic, uncoupled simulation can be run with the following command:
+### Create virtual environment
+
+If you want to install EBFM with coupling features, it is recommended to install YAC with the Python bindings. 
+During YAC’s configuration step, set the installation prefix to your virtual environment and enable Python bindings (`--prefix=$VENV` `--enable-python-bindings`).
+Make sure to do this *after* creating your virtual environment. 
+The procedure should like this:
+
+```sh
+python3 -m venv $VENV
+# configure and install YAC with --prefix=$VENV and --enable-python-bindings
+source $VENV/bin/activate
+pip3 install "EBFM[cpl] @ git+https://github.com/wardvp/EBFM.git"
+```
+
+Check if your virtual environment is activated. You should see the name within parentheses just before your command prompt, in this case it should say `(.venv)`. 
+
+For detailed instructions on how to install YAC properly, see the YAC documentation on [Python bindings](https://yac.gitlab-pages.dkrz.de/YAC-dev/d7/d9e/pythonbindings.html).
+
+### Install EBFM with coupling features
+
+You can then install EBFM with coupling features directly into you virtual environment by running the following command:
+
+```sh
+pip3 install "EBFM[cpl] @ git+https://github.com/wardvp/EBFM.git"
+```
+
+This will include the optional dependencies `[cpl]` needed for coupling, such as `yac`.
+
+## Running EBFM
+
+After installation, a basic, uncoupled simulation can be run with the following command, provided you cloned this repository:
 
 ```sh
 ebfm --matlab-mesh examples/dem_and_mask.mat
@@ -65,8 +87,8 @@ ebfm --matlab-mesh examples/dem_and_mask.mat
 
 ### Mesh data
 
-The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to
-provide different kinds of mesh data. EBFM supports the following formats:
+The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data. 
+EBFM supports the following formats:
 
 * MATLAB Mesh: An example is given in `examples/dem_and_mask.mat`. This mesh
   file provides x-y coordinates and elevation data. Please use the argument
@@ -149,23 +171,23 @@ ebfm ...
 ```
 
 Note that the coupling uses the Python bindings of YAC. Additionally, EBFM must
-be run in a MPMD (multiple process multiple data) run. An example command for
-running a coupled simulation with Elmer/Ice and ICON is given below:
+be run in a MPMD (multiple process multiple data) run. 
+Follow the install instructions from above and run the example command for a coupled simulation with Elmer/Ice and ICON:
 
 ```sh
-mpirun -n 1 python $EBFM_ROOT/src/dummy.py \
+mpirun -np 1 ebfm \
   --elmer-mesh $MESHES/MESH/partitioning.128/ \
   --netcdf-mesh $DATA/BedMachineGreenland-v5.nc \
   --is-partitioned-elmer-mesh --use-part 1 \
   --coupler-config $CPL_CONFIG --couple-to-elmer --couple-to-icon \
   : \
-  -n 1 $ELMER_ROOT/src/elmer_dummy_f.x $MESHES/MESH/partitioning.128 1 $CPL_CONFIG \
+  -np 1 $ELMER_ROOT/src/elmer_dummy_f.x $MESHES/MESH/partitioning.128 1 $CPL_CONFIG \
   : \
-  -n 1 $ICON_ROOT/src/icon_dummy.x $MESHES/icon_grid_0054_R02B08_G.nc $DATA/mbe3064_atm_elmer_monmean_1979.nc $DATA/varlist_elmerfile
+  -np 1 $ICON_ROOT/src/icon_dummy.x $MESHES/icon_grid_0054_R02B08_G.nc $DATA/mbe3064_atm_elmer_monmean_1979.nc $DATA/varlist_elmerfile
 ```
 
 Be aware that the command above requires setting a few environment variables.
-Assuming your project is structured following [this repository](https://gitlab.dkrz.de/k202215/ebfm_dummy)
+Assuming your project is structured following [this repository](https://gitlab.dkrz.de/k202215/ebfm_dummy),
 the following settings should help getting started:
 
 ```sh
@@ -211,9 +233,9 @@ make: *** [Makefile:48: elmer_grid.o] Error 1
 
 *Solution:* `sudo apt-get install libproj-dev`
 
-# Developer notes
+## Developer notes
 
-## optional dependencies `[dev]`
+### Optional dependencies `[dev]`
 
 Please install the package with the optional dependencies `[dev]` if you are developing (this will automatically
 install `pre-commit`).
@@ -221,16 +243,10 @@ install `pre-commit`).
 To concatenate multiple optional dependencies, please run
 
 ```sh
-pip install -e .[dev,cpl]
+pip3 install "EBFM[dev,cpl] @ git+https://github.com/wardvp/EBFM.git"
 ```
 
-respectively
-
-```sh
-pip install "EBFM[dev,cpl] @ git+https://github.com/wardvp/EBFM.git@i2-optional-yac"
-```
-
-## pre-commit
+### pre-commit
 
 This project uses pre-commit hooks for some tasks described in detail below. To setup pre-commit please do the following:
 
@@ -239,13 +255,13 @@ pipx install pre-commit
 pre-commit install
 ```
 
-**Alternative:** If you are already working in an virtual environment, you can also use `pip install pre-commit` instead of `pipx`. Refer to the [documentation of `pipx`](https://pipx.pypa.io/stable/#overview-what-is-pipx) for further information.
+**Alternative:** If you are already working in an virtual environment, you can also use `pip3 install pre-commit` instead of `pipx`. Refer to the [documentation of `pipx`](https://pipx.pypa.io/stable/#overview-what-is-pipx) for further information.
 
 As soon as pre-commit is set up, you will not be able to commit if any of the checks fails. With the help of the logging output it should usually be possible to fix the problem.
 
 Note: You can bypass this check with `--no-verify`. Please note that the CI will also run pre-commit and fail if there are problems in any of the checks. Therefore, it is recommended to use the pre-commit hooks locally before pushing code to this repository and only bypass them if there is a good reason.
 
-## Copyright and licensing
+### Copyright and licensing
 
 This project uses [REUSE](https://reuse.software/) to track information regarding copyright and licensing. Therefore, all files in this repository are required to provide the corresponding information. Please refer to the documentation of REUSE for details.
 
@@ -255,7 +271,7 @@ You can use pre-commit to automatically check if all files in the repository pro
 pre-commit run reuse --all-files
 ```
 
-## Code formatting
+### Code formatting
 
 Automated checks for PEP8 compiance are implemented following [^1] with some modifications. You can use pre-commit hooks to automatically format your code with black:
 
@@ -271,9 +287,9 @@ pre-commit run flake8 --all-files
 
 Please note that black might not be able to automatically fix all problems and therefore flake8 might fail even if you have run black before. In this case, you will have to manually fix the remaining problems.
 
-## Further hints
+### Further hints
 
-* Please consider installing EBFM via `pip --editable .` if you are developing the package.
+* Please consider installing EBFM via `pip3 --editable .` if you are developing the package.
 
 ----
 
