@@ -42,8 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: testpypi
-      url: https://pypi.org/p/ebfm  # use this to push to pypi
-      # url: https://test.pypi.org/p/ebfm  # use this to push to test.pypi, also need to uncomment repository-url below.
+      url: https://test.pypi.org/p/ebfm
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
@@ -54,6 +53,6 @@ jobs:
         path: dist
     - name: Publish package distributions to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
-      # with:
-      #   repository-url: https://test.pypi.org/legacy/  # needed for publishing to test.pypi
+      with:
+        repository-url: https://test.pypi.org/legacy/
 # SPDX-SnippetBegin
