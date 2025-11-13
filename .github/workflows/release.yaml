@@ -38,6 +38,7 @@ jobs:
 # Modified from https://github.com/pypa/gh-action-pypi-publish/blob/987f11e872eb5ca67aad6a4fe531bd3089142c60/README.md?plain=1#L60-L76
   pypi-publish:
     name: Upload release to PyPI
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: testpypi
