@@ -1,3 +1,7 @@
+# Copyright (c) 2025 The EBFM Authors
+#
+# SPDX-License-Identifier: CC-BY-4.0
+
 name: Upload Python Package to PyPI
 
 on:
@@ -7,6 +11,9 @@ on:
 
 jobs:
   build:
+# SPDX-SnippetBegin
+# SPDX-License-Identifier: LGPL-3.0-only
+# From https://github.com/precice/python-bindings/blob/ce0dbbfed132ff1c19c4f34f868fbc8c122b69a9/.github/workflows/release.yml#L10-L26
     name: Build package
     runs-on: ubuntu-latest
     steps:
@@ -24,6 +31,11 @@ jobs:
           overwrite: true
           if-no-files-found: error
           retention-days: 1
+# SPDX-SnippetEnd
+
+# SPDX-SnippetBegin
+# SPDX-License-Identifier: BSD-3-Clause
+# Modified from https://github.com/pypa/gh-action-pypi-publish/blob/987f11e872eb5ca67aad6a4fe531bd3089142c60/README.md?plain=1#L60-L76
   pypi-publish:
     name: Upload release to PyPI
     runs-on: ubuntu-latest
@@ -40,3 +52,4 @@ jobs:
         path: dist
     - name: Publish package distributions to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
+# SPDX-SnippetBegin
