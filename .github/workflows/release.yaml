@@ -41,9 +41,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment:
-      name: testpypi
+      name: pypi
       url: https://pypi.org/p/ebfm  # use this to push to pypi
-      # url: https://test.pypi.org/p/ebfm  # use this to push to test.pypi, also need to uncomment repository-url below.
+      # use this to push to test.pypi, also need to uncomment repository-url below.
+      # name: testpypi
+      # url: https://test.pypi.org/p/ebfm
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
