@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from coupling import Coupler
+from coupler import Coupler
 
 
 def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
