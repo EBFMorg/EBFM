@@ -33,8 +33,8 @@ except ImportError as e:
 
 log_levels = {
     "file": logging.DEBUG,  # log level for logging to file
-    0: logging.INFO,  # log level for rank 0
-    # 1: logging.DEBUG,  # to log other ranks to console define log level here
+    # 0: logging.INFO,  # log level for rank 0
+    0: logging.DEBUG,  # to log other ranks to console define log level here
 }
 setup_logging(log_levels=log_levels)
 
@@ -122,6 +122,13 @@ def main():
         "--netcdf-mesh",
         type=Path,
         help="Path to the NetCDF mesh file. Optional if using --elmer-mesh."
+        " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+    )
+
+    input_group.add_argument(
+        "--netcdf-mesh-unstructured",
+        type=Path,
+        help="Path to the unstructured NetCDF mesh file. Optional if using --elmer-mesh."
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
@@ -252,19 +259,24 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             logger.debug("Done.")
             logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
 
-            IN["h"] = data_from_elmer["h"]
-            grid["z"] = IN["h"][0].ravel()
-            # TODO add gradient field later
+            # IN['h'] = data_from_elmer['h']
+            # grid['z'] = IN['h'][0].ravel()
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         if not grid["is_partitioned"] and not coupler.has_coupling:
-            assert (
-                grid["input_type"] is GridInputType.MATLAB
-            ), "Output writing currently only implemented for MATLAB input grids."
-            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time2, C)
-            pass
+            if grid["input_type"] is GridInputType.MATLAB:
+                gridtype = "structured"
+                #           if grid['input_type'] is GridInputType.MATLAB or
+                #                grid['input_type'] is GridInputType.ELMER_XIOS:
+                #               ...
+                #           if grid['input_type'] is GridInputType.MATLAB:
+                #               assert (grid['input_type'] is GridInputType.MATLAB), \
+                #                 "Output writing currently only implemented for MATLAB and ELMER_XIOS input grids."
+                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time2, C, gridtype=gridtype)
+            else:
+                logger.warning("Skipping writing output to file for Elmer input grids.")
         elif grid["is_partitioned"] or coupler.has_coupling:
             logger.warning("Skipping writing output to file for coupled or partitioned runs.")
         else:

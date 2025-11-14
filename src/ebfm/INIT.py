@@ -13,7 +13,7 @@ from pyproj import Transformer
 from netCDF4 import Dataset, num2date
 
 from pathlib import Path
-from reader import read_elmer_mesh, read_dem
+from reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from elmer.mesh import Mesh
 from ebfm.grid import GridInputType
@@ -38,7 +38,7 @@ def init_config(args: Namespace):
     # ---------------------------------------------------------------------
     time = {}
     time["ts"] = datetime.strptime("1-Jan-1979 00:00", "%d-%b-%Y %H:%M")  # Start date and time
-    time["te"] = datetime.strptime("2-Jan-1979 09:00", "%d-%b-%Y %H:%M")  # End date and time
+    time["te"] = datetime.strptime("2-Jan-1979 00:00", "%d-%b-%Y %H:%M")  # End date and time
     time["dt"] = 0.125  # Time step in days
 
     # Calculate the number of time steps
@@ -184,7 +184,7 @@ def init_grid(grid, io, args: Namespace):
 
     if args.matlab_mesh:
         grid["input_type"] = GridInputType.MATLAB
-    elif args.netcdf_mesh and args.elmer_mesh:
+    elif (args.netcdf_mesh or args.netcdf_mesh_unstructured) and args.elmer_mesh:
         grid["input_type"] = GridInputType.CUSTOM
     elif args.elmer_mesh:
         grid["input_type"] = GridInputType.ELMER
@@ -206,15 +206,18 @@ def init_grid(grid, io, args: Namespace):
             mesh: Mesh = read_elmer_mesh(mesh_root=args.elmer_mesh)
 
         grid["x"], grid["y"] = mesh.x_vertices, mesh.y_vertices
-        grid["z"] = read_dem(args.netcdf_mesh, grid["x"], grid["y"])
-        grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
-        grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
-        grid["lon"] = np.zeros_like(grid["x"]) + 320  # test values!
-        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
+        if args.netcdf_mesh:
+            grid["z"] = read_dem(args.netcdf_mesh, grid["x"], grid["y"])
+            grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
+            grid["lon"] = np.zeros_like(grid["x"]) + 320  # test values!
+        if args.netcdf_mesh_unstructured:
+            grid = read_dem_xios(args.netcdf_mesh_unstructured, grid)
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
         grid["gpsum"] = np.sum(grid["mask"] == 1)  # number of modelled grid cells
+        grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
+        grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
+        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
+        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
         grid["mesh"] = mesh
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
@@ -338,7 +341,27 @@ def init_grid(grid, io, args: Namespace):
         grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
+    elif grid["input_type"] is GridInputType.ELMER_XIOS:
+        grid = read_elmer_xios_grid(grid=grid, gridfile=args.elmer_xios_mesh)
+        grid["gpsum"] = grid["z"].shape[0]
+        grid["mask"] = (grid["h"] > 1.0) * 1.0
+        grid["x"] = np.zeros_like(grid["z"])
+        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
+        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
+    return grid
 
+
+def read_elmer_xios_grid(grid, gridfile: Path):
+    import netCDF4 as nc
+
+    print(gridfile)
+    with nc.Dataset(gridfile) as file:
+        grid["lat"] = file["mesh2D_node_x"][:]
+        grid["lon"] = file["mesh2D_node_y"][:]
+        grid["x"] = file["x"][:]
+        grid["y"] = file["y"][:]
+        grid["z"] = np.squeeze(file["zs"][:].data)
+        grid["h"] = np.squeeze(file["h"][:].data)
     return grid
 
 
