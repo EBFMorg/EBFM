@@ -1,0 +1,61 @@
+# Copyright (c) 2025 The EBFM Authors
+#
+# SPDX-License-Identifier: CC-BY-4.0
+
+name: Upload Python Package to PyPI
+
+on:
+  push:
+    tags:
+      - v*
+
+jobs:
+  build:
+# SPDX-SnippetBegin
+# SPDX-License-Identifier: LGPL-3.0-only
+# From https://github.com/precice/python-bindings/blob/ce0dbbfed132ff1c19c4f34f868fbc8c122b69a9/.github/workflows/release.yml#L10-L26
+    name: Build package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - run: pip install --upgrade build
+      - name: Build package
+        run: pyproject-build --sdist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 1
+# SPDX-SnippetEnd
+
+# SPDX-SnippetBegin
+# SPDX-License-Identifier: BSD-3-Clause
+# Modified from https://github.com/pypa/gh-action-pypi-publish/blob/987f11e872eb5ca67aad6a4fe531bd3089142c60/README.md?plain=1#L60-L76
+  pypi-publish:
+    name: Upload release to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ebfm  # use this to push to pypi
+      # use this to push to test.pypi, also need to uncomment repository-url below.
+      # name: testpypi
+      # url: https://test.pypi.org/p/ebfm
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+    steps:
+    - name: Download package
+      uses: actions/download-artifact@v4
+      with:
+        name: dist
+        path: dist
+    - name: Publish package distributions to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      # with:
+      #   repository-url: https://test.pypi.org/legacy/  # needed for publishing to test.pypi
+# SPDX-SnippetBegin
