@@ -6,6 +6,8 @@ SPDX-License-Identifier: BSD-3-Clause
 
 # Energy balance and firn model (EBFM)
 
+[![PyPI version](https://img.shields.io/pypi/v/ebfm)](https://pypi.org/p/ebfm/) ![License](https://img.shields.io/pypi/l/ebfm)
+
 This repository provides a Python implementation of an energy balance and firn model (EBFM).
 
 Using YAC, this model can be coupled to other models.
