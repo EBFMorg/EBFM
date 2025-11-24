@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from pathlib import Path
-from coupler import Coupler, Grid, Dict, EBFMCouplingConfig
+from couplers import Coupler
+from couplers.base import Grid, Dict, EBFMCouplingConfig
 
 import logging
 

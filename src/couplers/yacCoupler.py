@@ -9,7 +9,7 @@ from collections import namedtuple
 
 import logging
 
-from coupler import Coupler, Grid, Dict, EBFMCouplingConfig
+from couplers.base import Coupler, Grid, Dict, EBFMCouplingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +277,14 @@ class YACCoupler(Coupler):
         field: yac.Field = self.target_fields[field_name]
         data, action = field.get()
         return data
+
+    def exchange(self, component_name: str, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+        if component_name == "icon_atmo":
+            return self.exchange_icon_atmo(data_to_exchange)
+        elif component_name == "elmer_ice":
+            return self.exchange_elmer_ice(data_to_exchange)
+        else:
+            raise ValueError(f"Unknown component name '{component_name}' for data exchange.")
 
     def exchange_icon_atmo(self, put_data: Dict[str, np.array]) -> Dict[str, np.array]:
         """Exchange data with ICON atmosphere component

@@ -4,6 +4,7 @@
 
 from pathlib import Path
 from typing import Dict
+import numpy as np
 
 from elmer.mesh import Mesh as Grid  # for now use an alias
 
@@ -26,6 +27,21 @@ class Coupler:
         return_value = self.couple_to_elmer_ice or self.couple_to_icon_atmo
         logger.debug(f"Component {self.component_name} has_coupling={return_value}")
         return return_value
+
+    def has_coupling_to(self, component_name: str) -> bool:
+        """
+        Check if coupling to a specific component is enabled
+
+        @param[in] component_name name of the component to check coupling for
+
+        @returns True if coupling to the specified component is enabled, False otherwise
+        """
+        if component_name == "icon_atmo":
+            return self.couple_to_icon_atmo
+        elif component_name == "elmer_ice":
+            return self.couple_to_elmer_ice
+        else:
+            raise ValueError(f"Unknown component name '{component_name}' for coupling check.")
 
     def __init__(self, component_name: str, coupler_config: Path, component_coupling_config: EBFMCouplingConfig):
         """
@@ -59,6 +75,16 @@ class Coupler:
         Add coupling definitions to the Coupler interface
         """
         raise NotImplementedError("add_couples method must be implemented in subclasses.")
+
+    def exchange(self, component_name: str, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+        """Exchange data with another component
+
+        @param[in] component_name name of the component to exchange data with
+        @param[in] data_to_exchange dictionary of field names and their data to be exchanged
+
+        @returns dictionary of exchanged field data
+        """
+        raise NotImplementedError("Generic exchange method is not implemented. Use specific exchange methods.")
 
     def finalize(self):
         """

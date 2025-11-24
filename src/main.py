@@ -208,7 +208,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         logger.info(f'Time step {t} of {time2["tn"]} (dt = {time2["dt"]} days)')
 
         # Read and prepare climate input
-        if coupler and coupler.couple_to_icon_atmo:
+        if coupler.has_coupling_to("icon_atmo"):
             # Exchange data with ICON
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
@@ -216,7 +216,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "albedo": OUT["albedo"],
             }
 
-            data_from_icon = coupler.exchange_icon_atmo(data_to_icon)
+            data_from_icon = coupler.exchange("icon_atmo", data_to_icon)
 
             logger.debug("Done.")
             logger.debug("Received the following data from ICON:", data_from_icon)
@@ -245,7 +245,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         # Calculate surface mass balance
         OUT = LOOP_mass_balance.main(OUT, IN, C)
 
-        if coupler.couple_to_elmer_ice:
+        if coupler.has_coupling_to("elmer_ice"):
             # Exchange data with Elmer
             logger.info("Data exchange with Elmer/Ice")
             logger.debug("Started...")
@@ -255,7 +255,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "T_ice": OUT["T_ice"],
                 "runoff": OUT["runoff"],
             }
-            data_from_elmer = coupler.exchange_elmer_ice(data_to_elmer)
+            data_from_elmer = coupler.exchange("elmer_ice", data_to_elmer)
             logger.debug("Done.")
             logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
 
