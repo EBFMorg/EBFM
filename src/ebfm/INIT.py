@@ -339,6 +339,9 @@ def init_grid(grid, io, args: Namespace):
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
 
+        # TODO: improve mesh handling for MATLAB grids
+        grid["mesh"] = None  # No mesh associated with MATLAB grid
+
     return grid
 
 
