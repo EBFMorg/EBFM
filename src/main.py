@@ -16,7 +16,7 @@ from ebfm import (
 )
 from ebfm import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.grid import GridInputType
-from ebfm.config import EBFMCouplingConfig
+from ebfm.config import CouplingConfig, GridConfig
 
 from mpi4py import MPI
 from utils import setup_logging
@@ -159,7 +159,7 @@ imported due to the following error:
 
 {coupling_import_error}
 
-Hint: If you are missing 'yac', please install YAC and the python binds as described under
+Hint: If you are missing 'yac', please install YAC and the python bindings as described under
 https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 """
         )
@@ -168,35 +168,33 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     logger.info(f"Starting EBFM version {ebfm.get_version()}...")
 
-    # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    ebfm_coupling_config = EBFMCouplingConfig(
-        component_name="ebfm",
-        couple_to_icon_atmo=args.couple_to_icon_atmo,
-        couple_to_elmer_ice=args.couple_to_elmer_ice,
-    )
-
     logger.info("Done parsing command line arguments.")
     logger.debug("Parsed the following command line arguments:")
     for arg, val in vars(args).items():
         logger.debug(f"  {arg}: {val}")
 
+    logger.debug("Reading configuration and checking for consistency.")
+
+    # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
+    coupling_config = CouplingConfig(args, component_name="ebfm")
+    grid_config = GridConfig(args)
+
+    logger.debug("Successfully completed consistency checks.")
+
     # Model setup & initialization
-    grid, time2, io, phys = INIT.init_config(args)
+    grid, time2, io, phys = INIT.init_config()
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, io, args)
+    grid = INIT.init_grid(grid, io, grid_config)
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time2)
 
-    if ebfm_coupling_config.defines_coupling():
+    if coupling_config.defines_coupling():
         # TODO: introduce minimal stub implementation
         # TODO consider introducing an ebfm_adapter_config.yaml
-        coupler = coupling.init(
-            coupler_config=args.coupler_config,
-            component_coupling_config=ebfm_coupling_config,
-        )
+        coupler = coupling.init(coupling_config=coupling_config)
         coupling.setup(coupler, grid["mesh"], time2)
     else:
-        coupler = NoCoupler(component_name=ebfm_coupling_config.component_name)
+        coupler = NoCoupler(component_name=coupling_config.component_name)
 
     # Time-loop
     logger.info("Entering time loop...")
