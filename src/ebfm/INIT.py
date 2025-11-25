@@ -184,7 +184,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
         grid["gpsum"] = np.sum(grid["mask"] == 1)  # number of modelled grid cells
         grid["mesh"] = mesh
-        grid["has_shading"] = False
+        grid["has_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
     elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
@@ -210,7 +210,7 @@ def init_grid(grid, io, config: GridConfig):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-        grid["has_shading"] = False
+        grid["has_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
     elif config.grid_type is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
         # ---------------------------------------------------------------------
         # Read and process grid information
