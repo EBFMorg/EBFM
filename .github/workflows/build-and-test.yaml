@@ -13,8 +13,6 @@ jobs:
     steps:
       - name: Checkout EBFM repository
         uses: actions/checkout@v3
-        # with:
-        #   fetch-depth: 1  # Fetch only the latest commit (default behavior; for clarity)
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
@@ -34,8 +32,6 @@ jobs:
       - name: Check EBFM version
         run: |
           source .venv/bin/activate
-          git fetch --tags  # required for --version to work correctly since actions/checkout@v3 uses fetch-depth: 1
-          git log --oneline -5
           ebfm --version
       - name: Run example
         run: |
