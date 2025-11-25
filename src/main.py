@@ -186,6 +186,13 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
 
+    # Ensure shading routine is only used in uncoupled runs on unpartitioned MATLAB grids;
+    # see https://github.com/EBFMorg/EBFM/issues/11 for details.
+    if grid["has_shading"]:
+        assert grid_config.is_partitioned is False, "Shading routine only implemented for unpartitioned grids."
+        assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
+        assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
+
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time2)
 
     if coupling_config.defines_coupling():
@@ -265,7 +272,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         if not grid["is_partitioned"] and not coupler.has_coupling:
             assert (
-                grid["input_type"] is GridInputType.MATLAB
+                grid_config.grid_type is GridInputType.MATLAB
             ), "Output writing currently only implemented for MATLAB input grids."
             io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time2, C)
             pass

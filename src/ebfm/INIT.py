@@ -161,10 +161,9 @@ def init_constants():
 
 
 def init_grid(grid, io, config: GridConfig):
-    grid["input_type"] = config.grid_type
     grid["is_partitioned"] = config.is_partitioned
 
-    if grid["input_type"] is GridInputType.CUSTOM:  # Read grid from Elmer, elevations from BedMachine
+    if config.grid_type is GridInputType.CUSTOM:  # Read grid from Elmer, elevations from BedMachine
         if config.is_partitioned:
             mesh: Mesh = read_elmer_mesh(
                 mesh_root=config.mesh_file,
@@ -185,9 +184,10 @@ def init_grid(grid, io, config: GridConfig):
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
         grid["gpsum"] = np.sum(grid["mask"] == 1)  # number of modelled grid cells
         grid["mesh"] = mesh
+        grid["has_shading"] = False
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
-    elif grid["input_type"] is GridInputType.ELMER:  # Read grid and elevations from Elmer
+    elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
         mesh: Mesh = read_elmer_mesh(config.mesh_file)
 
         # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
@@ -210,7 +210,8 @@ def init_grid(grid, io, config: GridConfig):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-    elif grid["input_type"] is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
+        grid["has_shading"] = False
+    elif config.grid_type is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
         # ---------------------------------------------------------------------
         # Read and process grid information
         # ---------------------------------------------------------------------
@@ -222,6 +223,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["mask_2D"] = input_data["mask"][0][0]
 
         # Determine domain extent
+        grid["has_shading"] = True
         grid["Lx"], grid["Ly"] = grid["x_2D"].shape
 
         # Flip grid E-W or N-S when needed
@@ -307,6 +309,8 @@ def init_grid(grid, io, config: GridConfig):
         grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
+    else:
+        raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
     return grid
 
