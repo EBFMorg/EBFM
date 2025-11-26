@@ -4,7 +4,6 @@
 
 import os
 from datetime import datetime
-from argparse import Namespace
 from typing import Any
 import numpy as np
 from numpy import ndarray, dtype
@@ -16,6 +15,7 @@ from pathlib import Path
 from reader import read_elmer_mesh, read_dem
 
 from elmer.mesh import Mesh
+from ebfm.config import GridConfig
 from ebfm.grid import GridInputType
 
 import logging
@@ -23,7 +23,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def init_config(args: Namespace):
+def init_config():
     """
     Set model parameters, specify grid parameters, model time period, I/O, and physics settings.
     Returns:
@@ -160,53 +160,21 @@ def init_constants():
     return C
 
 
-def init_grid(grid, io, args: Namespace):
+def init_grid(grid, io, config: GridConfig):
+    grid["is_partitioned"] = config.is_partitioned
 
-    # Check configuration
-
-    if args.elmer_mesh and args.matlab_mesh:
-        logger.error("Please provide either --elmer-mesh or --matlab-mesh, not both.")
-        raise Exception("Invalid grid configuration.")
-
-    if args.is_partitioned_elmer_mesh and not args.elmer_mesh:
-        logger.error("--is-partitioned-elmer-mesh requires --elmer-mesh.")
-        raise Exception("Invalid grid configuration.")
-
-    grid["is_partitioned"] = args.is_partitioned_elmer_mesh
-    if grid["is_partitioned"]:
-        assert args.netcdf_mesh, (
-            "--is-partitioned-elmer-mesh requires --netcdf-mesh. "
-            "(Without --netcdf-mesh should also work but is untested.)"
-        )
-        logger.info("Using partitioned grid...")
-    else:
-        logger.info("Using non-partitioned grid...")
-
-    if args.matlab_mesh:
-        grid["input_type"] = GridInputType.MATLAB
-    elif args.netcdf_mesh and args.elmer_mesh:
-        grid["input_type"] = GridInputType.CUSTOM
-    elif args.elmer_mesh:
-        grid["input_type"] = GridInputType.ELMER
-    else:
-        logger.error(
-            f"Invalid grid configuration. EBFM supports the grid types {[t.name for t in GridInputType]}. "
-            "Please please refer to the documentation for correct configuration."
-        )
-        raise Exception("Invalid grid configuration.")
-
-    if grid["input_type"] is GridInputType.CUSTOM:  # Read grid from Elmer, elevations from BedMachine
-        if grid["is_partitioned"]:
+    if config.grid_type is GridInputType.CUSTOM:  # Read grid from Elmer, elevations from BedMachine
+        if config.is_partitioned:
             mesh: Mesh = read_elmer_mesh(
-                mesh_root=args.elmer_mesh,
-                is_partitioned=True,
-                partition_id=args.use_part,
+                mesh_root=config.mesh_file,
+                is_partitioned=config.is_partitioned,
+                partition_id=config.partition_id,
             )
         else:
-            mesh: Mesh = read_elmer_mesh(mesh_root=args.elmer_mesh)
+            mesh: Mesh = read_elmer_mesh(mesh_root=config.mesh_file)
 
         grid["x"], grid["y"] = mesh.x_vertices, mesh.y_vertices
-        grid["z"] = read_dem(args.netcdf_mesh, grid["x"], grid["y"])
+        grid["z"] = read_dem(config.dem_file, grid["x"], grid["y"])
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
@@ -216,10 +184,11 @@ def init_grid(grid, io, args: Namespace):
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
         grid["gpsum"] = np.sum(grid["mask"] == 1)  # number of modelled grid cells
         grid["mesh"] = mesh
+        grid["has_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
-    elif grid["input_type"] is GridInputType.ELMER:  # Read grid and elevations from Elmer
-        mesh: Mesh = read_elmer_mesh(args.elmer_mesh)
+    elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
+        mesh: Mesh = read_elmer_mesh(config.mesh_file)
 
         # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
         # see mesh/README.md for the required preprocessing steps.
@@ -241,18 +210,20 @@ def init_grid(grid, io, args: Namespace):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-    elif grid["input_type"] is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
+        grid["has_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
+    elif config.grid_type is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
         # ---------------------------------------------------------------------
         # Read and process grid information
         # ---------------------------------------------------------------------
         # Read grid data
-        input_data = read_MATLAB_grid(args.matlab_mesh)
+        input_data = read_MATLAB_grid(config.mesh_file)
         grid["x_2D"] = input_data["x"][0][0]
         grid["y_2D"] = input_data["y"][0][0]
         grid["z_2D"] = input_data["z"][0][0]
         grid["mask_2D"] = input_data["mask"][0][0]
 
         # Determine domain extent
+        grid["has_shading"] = True
         grid["Lx"], grid["Ly"] = grid["x_2D"].shape
 
         # Flip grid E-W or N-S when needed
@@ -338,6 +309,8 @@ def init_grid(grid, io, args: Namespace):
         grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
+    else:
+        raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
     return grid
 

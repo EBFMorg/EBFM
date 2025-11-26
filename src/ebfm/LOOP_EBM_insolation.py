@@ -5,8 +5,6 @@
 import numpy as np
 import datetime
 
-from ebfm.grid import GridInputType
-
 
 def main(grid, time2, OUT):
     """
@@ -71,7 +69,7 @@ def main(grid, time2, OUT):
         np.sin(lat_rad) * np.sin(d_rad) + np.cos(lat_rad) * np.cos(d_rad) * np.cos(h_rad)
     )  # SOURCE: Iqbal (1983)
 
-    if grid["input_type"] is GridInputType.MATLAB:  # only use shading routine in uncoupled runs on a regular grid
+    if grid["has_shading"]:
         yl = grid["Ly"]
         xl = grid["Lx"]
 
