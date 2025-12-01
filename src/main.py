@@ -16,6 +16,7 @@ from ebfm import (
 )
 from ebfm import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.grid import GridInputType
+from ebfm.config import CouplingConfig, GridConfig
 
 from mpi4py import MPI
 from utils import setup_logging
@@ -165,7 +166,7 @@ imported due to the following error:
 
 {coupling_import_error}
 
-Hint: If you are missing 'yac', please install YAC and the python binds as described under
+Hint: If you are missing 'yac', please install YAC and the python bindings as described under
 https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 """
         )
@@ -179,25 +180,35 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     for arg, val in vars(args).items():
         logger.debug(f"  {arg}: {val}")
 
+    logger.debug("Reading configuration and checking for consistency.")
+
+    # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
+    coupling_config = CouplingConfig(args, component_name="ebfm")
+    grid_config = GridConfig(args)
+
+    logger.debug("Successfully completed consistency checks.")
+
     # Model setup & initialization
-    grid, time2, io, phys = INIT.init_config(args)
+    grid, time2, io, phys = INIT.init_config()
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, io, args)
+    grid = INIT.init_grid(grid, io, grid_config)
+
+    # Ensure shading routine is only used in uncoupled runs on unpartitioned MATLAB grids;
+    # see https://github.com/EBFMorg/EBFM/issues/11 for details.
+    if grid["has_shading"]:
+        assert grid_config.is_partitioned is False, "Shading routine only implemented for unpartitioned grids."
+        assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
+        assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time2)
 
-    if args.couple_to_icon_atmo or args.couple_to_elmer_ice:
+    if coupling_config.defines_coupling():
         # TODO: introduce minimal stub implementation
         # TODO consider introducing an ebfm_adapter_config.yaml
-        coupler = coupling.init(
-            coupler_config=args.coupler_config,
-            ebfm_coupling_config=Path("dummies") / "EBFM" / "ebfm-config.yaml",
-            couple_with_icon_atmo=args.couple_to_icon_atmo,
-            couple_with_elmer_ice=args.couple_to_elmer_ice,
-        )
+        coupler = coupling.init(coupling_config=coupling_config)
         coupling.setup(coupler, grid["mesh"], time2)
     else:
-        coupler = NoCoupler("ebfm")
+        coupler = NoCoupler(component_name=coupling_config.component_name)
 
     # Time-loop
     logger.info("Entering time loop...")
@@ -266,12 +277,12 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         if not grid["is_partitioned"] and not coupler.has_coupling:
-            if grid["input_type"] is GridInputType.MATLAB:
+            if grid_config.grid_type is GridInputType.MATLAB:
                 gridtype = "structured"
-                #           if grid['input_type'] is GridInputType.MATLAB or
+                #           if grid_config.grid_type is GridInputType.MATLAB or
                 #                grid['input_type'] is GridInputType.ELMER_XIOS:
                 #               ...
-                #           if grid['input_type'] is GridInputType.MATLAB:
+                #           if grid_config.grid_type is GridInputType.MATLAB:
                 #               assert (grid['input_type'] is GridInputType.MATLAB), \
                 #                 "Output writing currently only implemented for MATLAB and ELMER_XIOS input grids."
                 io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time2, C, gridtype=gridtype)

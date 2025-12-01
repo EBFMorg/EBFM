@@ -6,6 +6,14 @@ from enum import Enum
 
 
 class GridInputType(Enum):
-    MATLAB = "matlab"  # .mat grid file with elevation
-    CUSTOM = "custom"  # Elmer/Ice mesh file for xy-coordinates and separate NetCDF elevation file
-    ELMER = "elmer"  # Elmer/Ice mesh file with elevation in z-coordinate
+    # .mat grid file with elevation
+    MATLAB = "matlab"
+
+    # Elmer/Ice mesh file for xy-coordinates and separate NetCDF elevation file
+    CUSTOM = "custom"
+
+    # Elmer/Ice mesh file for xy-coordinates and separate unstructured NetCDF elevation file obtained from XIOS
+    XIOS_CUSTOM = "xios_custom"
+
+    # Elmer/Ice mesh file with elevation in z-coordinate
+    ELMER = "elmer"

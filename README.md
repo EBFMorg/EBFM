@@ -6,15 +6,17 @@ SPDX-License-Identifier: BSD-3-Clause
 
 # Energy balance and firn model (EBFM)
 
+[![PyPI version](https://img.shields.io/pypi/v/ebfm)](https://pypi.org/p/ebfm/) ![License](https://img.shields.io/pypi/l/ebfm)
+
 This repository provides a Python implementation of an energy balance and firn model (EBFM).
 
 Using YAC, this model can be coupled to other models.
 
-## Basic installation 
+## Basic installation
 
 ### Create virtual environment
 
-You can use an arbitrary location to create your virtual environment. 
+You can use an arbitrary location to create your virtual environment.
 A common choice is `.venv`. In the following, we will use `$VENV` as a placeholder and the path to the virtual environment `.venv` should be set as follows:
 
 ```sh
@@ -28,7 +30,7 @@ python3 -m venv $VENV
 source $VENV/bin/activate
 ```
 
-Check if your virtual environment is activated. You should see the name within parentheses just before your command prompt, in this case it should say `(.venv)`. 
+Check if your virtual environment is activated. You should see the name within parentheses just before your command prompt, in this case it should say `(.venv)`.
 
 If you want to know more about virtual environments, please refer to the [Python documentation](https://docs.python.org/3/library/venv.html). \
 If you intend to develop EBFM, please take a look at the [developer notes](https://github.com/wardvp/EBFM/edit/matthias-ibach-patch-1/README.md?pr=%2Fwardvp%2FEBFM%2Fpull%2F23#developer-notes) further down in the `README`.
@@ -38,7 +40,7 @@ If you intend to develop EBFM, please take a look at the [developer notes](https
 You can then install EBFM directly into you virtual environment by running the following command:
 
 ```sh
-pip3 install "EBFM @ git+https://github.com/wardvp/EBFM.git"
+pip3 install EBFM
 ```
 
 This will install the basic version of EBFM without coupling.
@@ -47,35 +49,26 @@ This will install the basic version of EBFM without coupling.
 
 Please check your installation by running `ebfm --help` to print the help message and `ebfm --version` to print the installed version.
 
-## Installation with coupling features 
+## Installation with coupling features
 
-### Create virtual environment
-
-If you want to install EBFM with coupling features, it is recommended to install YAC with the Python bindings. 
+Before installing EBFM with coupling features, you must install YAC with the Python bindings. Similar to the instructions above, we will use a virtual environment to install all required dependencies.
 During YAC’s configuration step, set the installation prefix to your virtual environment and enable Python bindings (`--prefix=$VENV` `--enable-python-bindings`).
-Make sure to do this *after* creating your virtual environment. 
-The procedure should like this:
+Make sure to do this *after* creating your virtual environment.
+
+The procedure should look similar to below:
 
 ```sh
 python3 -m venv $VENV
 # configure and install YAC with --prefix=$VENV and --enable-python-bindings
 source $VENV/bin/activate
-pip3 install "EBFM[cpl] @ git+https://github.com/wardvp/EBFM.git"
+pip3 install EBFM[cpl]
 ```
 
-Check if your virtual environment is activated. You should see the name within parentheses just before your command prompt, in this case it should say `(.venv)`. 
+Adding `[cpl]` will make sure that additional dependencies needed for coupling, such as `yac`, are present in your virtual environment.
 
-For detailed instructions on how to install YAC properly, see the YAC documentation on [Python bindings](https://yac.gitlab-pages.dkrz.de/YAC-dev/d7/d9e/pythonbindings.html).
+If you see any errors during the process, please make sure that your virtual environment is activated. If this is the case, you should see the name within parentheses just before your command prompt, in this case it should say `(.venv)`.
 
-### Install EBFM with coupling features
-
-You can then install EBFM with coupling features directly into you virtual environment by running the following command:
-
-```sh
-pip3 install "EBFM[cpl] @ git+https://github.com/wardvp/EBFM.git"
-```
-
-This will include the optional dependencies `[cpl]` needed for coupling, such as `yac`.
+If during the installation of EBFM it appears that `yac` is missing, please double-check with `pip3 freeze` that the package has been installed properly. For detailed instructions on how to install YAC properly and guidance for troubleshooting, see the YAC documentation on [Python bindings](https://yac.gitlab-pages.dkrz.de/YAC-dev/d7/d9e/pythonbindings.html).
 
 ## Running EBFM
 
@@ -87,7 +80,7 @@ ebfm --matlab-mesh examples/dem_and_mask.mat
 
 ### Mesh data
 
-The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data. 
+The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data.
 EBFM supports the following formats:
 
 * MATLAB Mesh: An example is given in `examples/dem_and_mask.mat`. This mesh
@@ -171,7 +164,7 @@ ebfm ...
 ```
 
 Note that the coupling uses the Python bindings of YAC. Additionally, EBFM must
-be run in a MPMD (multiple process multiple data) run. 
+be run in a MPMD (multiple process multiple data) run.
 Follow the install instructions from above and run the example command for a coupled simulation with Elmer/Ice and ICON:
 
 ```sh
@@ -243,7 +236,7 @@ install `pre-commit`).
 To concatenate multiple optional dependencies, please run
 
 ```sh
-pip3 install "EBFM[dev,cpl] @ git+https://github.com/wardvp/EBFM.git"
+pip3 install EBFM[dev,cpl]
 ```
 
 ### pre-commit

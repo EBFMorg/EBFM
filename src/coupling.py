@@ -9,6 +9,7 @@ from collections import namedtuple
 from typing import Dict
 
 from elmer.mesh import Mesh as Grid  # for now use an alias
+from ebfm.config import CouplingConfig
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
@@ -320,6 +321,7 @@ class YACCoupler(Coupler):
                 logger.debug(f"Receiving field {field_name} from ICON atmosphere...")
                 # Only get the first element, since we only have collection size of 1
                 received_data[field_name] = self._get(field_name)[0]
+                logger.debug(f"Received field '{field_name}' from ICON. Data: {received_data[field_name]}")
             else:
                 logger.debug(f"Skipping field {field_name} as it is not part of ICON atmosphere exchange.")
 
@@ -365,7 +367,7 @@ class YACCoupler(Coupler):
                 ), f"Field '{field_name}' is not a target field for Elmer/Ice exchange, but has role '{role}'."
                 # Only get the first element, since we only have collection size of 1
                 received_data[field_name] = self._get(field_name)[0]
-                logger.debug(received_data)
+                logger.debug(f"Received field '{field_name}' from Elmer/Ice. Data: {received_data[field_name]}")
 
         return received_data
 
@@ -374,26 +376,21 @@ class YACCoupler(Coupler):
         del self.interface
 
 
-def init(
-    coupler_config: Path, ebfm_coupling_config: Path, couple_with_icon_atmo: bool, couple_with_elmer_ice: bool
-) -> Coupler:
+def init(coupling_config: CouplingConfig) -> Coupler:
     """Create interface to the coupler and register component
 
     @param[in] path to global Coupler configuration file
-    @param[in] ebfm_coupling_config path to local configuration of coupling for EBFM
-    @param[in] couple_with_icon_atmo whether to couple with ICON atmosphere
-    @param[in] couple_with_elmer_ice whether to couple with Elmer/Ice
 
     @returns Coupler object
     """
 
-    # TODO: use ebfm_coupling_config for EBFM specific configuration?
+    # TODO: use coupling_config for EBFM specific configuration?
 
-    component_name = "ebfm"  # TODO: get from ebfm_coupling_config?
-    coupler = YACCoupler(component_name, coupler_config)
+    component_name = coupling_config.component_name
+    coupler = YACCoupler(component_name, coupling_config.coupler_config)
 
-    coupler.couple_to_icon_atmo = couple_with_icon_atmo
-    coupler.couple_to_elmer_ice = couple_with_elmer_ice
+    coupler.couple_to_icon_atmo = coupling_config.couple_to_icon_atmo
+    coupler.couple_to_elmer_ice = coupling_config.couple_to_elmer_ice
 
     # TODO: yac_cget_comp_comm(comp_id, elmer_comm) needed?
 
@@ -408,7 +405,7 @@ def setup(coupler: Coupler, grid: Grid, time: Dict[str, float]):
     @param[in] grid Grid used by EBFM where coupling happens
     @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
     """
-    grid_name = "ebfm_grid"  # TODO: get from ebfm_coupling_config?
+    grid_name = "ebfm_grid"  # TODO: get from coupling_config?
 
     coupler.add_grid(grid_name, grid)
     coupler.add_couples(time)
