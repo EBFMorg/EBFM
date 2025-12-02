@@ -156,60 +156,43 @@ def main(OUTFILE, io, OUT, grid, t, time, C):
             # Define standard output variables
             for entry in OUTFILE["varsout"]:
                 varname = entry[0]
-                var_units = entry[1]
-                var_desc = entry[3]
 
-                # Check if variable is a `sub` variable
-                if varname.startswith("sub"):
-                    if grid["is_unstructured"]:
+                dimensions: tuple
+                chunksizes: tuple
+
+                if grid["is_unstructured"]:
+                    # Check if variable is a `sub` variable
+                    if varname.startswith("sub"):
                         # Define variable as 3D: (time, y, nl)
-                        nc_var = io["nc_file"].createVariable(
-                            varname,
-                            np.float32,
-                            ("time", "y", "nl"),
-                            zlib=True,
-                            complevel=4,
-                            fill_value=-9999.0,  # Fill missing values
-                            chunksizes=(1, grid["lat"].shape[0], grid["nl"]),
-                        )
-                    else:  # structured grid
-                        # Define variable as 4D: (time, y, x, nl)
-                        nc_var = io["nc_file"].createVariable(
-                            varname,
-                            np.float32,
-                            ("time", "y", "x", "nl"),
-                            zlib=True,
-                            complevel=4,
-                            fill_value=-9999.0,  # Fill missing values
-                            chunksizes=(1, grid["x_2D"].shape[0], grid["x_2D"].shape[1], grid["nl"]),
-                        )
-                else:
-                    if grid["is_unstructured"]:
+                        dimensions = ("time", "y", "nl")
+                        chunksizes = (1, grid["lat"].shape[0], grid["nl"])
+                    else:
                         # Define variable as 2D: (time, y)
-                        nc_var = io["nc_file"].createVariable(
-                            varname,
-                            np.float32,
-                            ("time", "y"),
-                            zlib=True,
-                            complevel=4,
-                            fill_value=-9999.0,
-                            chunksizes=(1, grid["lat"].shape[0]),
-                        )
-                    else:  # structured grid
+                        dimensions = ("time", "y")
+                        chunksizes = (1, grid["lat"].shape[0])
+                else:
+                    # Check if variable is a `sub` variable
+                    if varname.startswith("sub"):
+                        # Define variable as 4D: (time, y, x, nl)
+                        dimensions = ("time", "y", "x", "nl")
+                        chunksizes = (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1], grid["nl"])
+                    else:
                         # Define variable as 3D: (time, y, x)
-                        nc_var = io["nc_file"].createVariable(
-                            varname,
-                            np.float32,
-                            ("time", "y", "x"),
-                            zlib=True,
-                            complevel=4,
-                            fill_value=-9999.0,
-                            chunksizes=(1, grid["x_2D"].shape[0], grid["x_2D"].shape[1]),
-                        )
+                        dimensions = ("time", "y", "x")
+                        chunksizes = (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1])
 
+                nc_var = io["nc_file"].createVariable(
+                    varname=varname,
+                    datatype=np.float32,
+                    dimensions=dimensions,
+                    zlib=True,
+                    complevel=4,
+                    fill_value=-9999.0,  # Fill missing values
+                    chunksizes=chunksizes,
+                )
                 # Assign metadata
-                nc_var.units = var_units
-                nc_var.description = var_desc
+                nc_var.units = entry[1]
+                nc_var.description = entry[3]
 
             # Define a time variable to track simulation steps
             nc_time = io["nc_file"].createVariable("time", np.float64, ("time",), zlib=True, fill_value=-9999.0)
