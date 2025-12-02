@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import os
-from datetime import datetime
 from typing import Any
 import numpy as np
 from numpy import ndarray, dtype
@@ -18,6 +17,8 @@ from elmer.mesh import Mesh
 from ebfm.config import GridConfig
 from ebfm.grid import GridInputType
 
+from ebfm.constants import DAYS_PER_YEAR, SECONDS_PER_DAY
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,25 +26,15 @@ logger = logging.getLogger(__name__)
 
 def init_config():
     """
-    Set model parameters, specify grid parameters, model time period, I/O, and physics settings.
-    Returns:
+    Set model parameters, specify grid parameters, I/O, and physics settings.
+
+    @param[in] time_config Time configuration object.
+
+    @returns:
         grid (dict): Grid-related parameters.
-        time (dict): Time-related parameters.
         io (dict): Input/output parameters.
         phys (dict): Model physics settings.
     """
-
-    # ---------------------------------------------------------------------
-    # Time parameters
-    # ---------------------------------------------------------------------
-    time = {}
-    time["ts"] = datetime.strptime("1-Jan-1979 00:00", "%d-%b-%Y %H:%M")  # Start date and time
-    time["te"] = datetime.strptime("2-Jan-1979 09:00", "%d-%b-%Y %H:%M")  # End date and time
-    time["dt"] = 0.125  # Time step in days
-
-    # Calculate the number of time steps
-    time["tn"] = int(round((time["te"] - time["ts"]).total_seconds() / 86400 / time["dt"])) + 1
-    time["dT_UTC"] = 1  # Time difference relative to UTC in hours
 
     # ---------------------------------------------------------------------
     # Grid parameters
@@ -91,7 +82,7 @@ def init_config():
     os.makedirs(io["rebootdir"], exist_ok=True)
 
     # Return the initialized parameters
-    return grid, time, io, phys
+    return grid, io, phys
 
 
 def init_constants():
@@ -154,8 +145,8 @@ def init_constants():
     # ---------------------------------------------------------------------
     # Other constants
     # ---------------------------------------------------------------------
-    C["yeardays"] = 365.242199  # Days in a year
-    C["dayseconds"] = 24 * 3600  # Seconds per day
+    C["yeardays"] = DAYS_PER_YEAR
+    C["dayseconds"] = SECONDS_PER_DAY
 
     return C
 

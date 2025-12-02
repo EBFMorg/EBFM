@@ -64,7 +64,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     IN["Dair"] = IN["Pres"] / (C["Rd"] * IN["T"])
 
     # Time since last snowfall event
-    snowfall_mask = (IN["snow"] / (time["dt"] * 24 * 3600)) > C["Pthres"]
+    snowfall_mask = (IN["snow"] / (time["dt"] * C["dayseconds"])) > C["Pthres"]
     OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
     if t == 1:
         OUT["timelastsnow"][:] = time["TCUR"]

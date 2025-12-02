@@ -11,6 +11,9 @@ from pathlib import Path
 
 from ebfm.grid import GridInputType
 
+from datetime import datetime, timedelta
+from ebfm.constants import SECONDS_PER_DAY
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -109,3 +112,64 @@ class GridConfig:
                 "Please refer to the documentation for correct configuration."
             )
             raise Exception("Invalid grid configuration.")
+
+
+class TimeConfig:
+    """
+    Time configuration.
+    """
+
+    start_time: datetime  # Start time of the simulation
+    end_time: datetime  # End time of the simulation
+    time_step: timedelta  # Time step of the simulation
+    dT_UTC: int  # Time difference relative to UTC in hours
+
+    def __init__(self, args: Namespace):
+        """
+        Initialize time configuration from command line arguments.
+
+        @param[in] args command line arguments
+        """
+        time_format = "%d-%b-%Y %H:%M"
+
+        self.start_time = datetime.strptime(args.start_time, time_format)
+        self.end_time = datetime.strptime(args.end_time, time_format)
+        assert self.start_time < self.end_time, "Start time must be before end time."
+
+        assert args.time_step > 0, "Time step must be positive."
+        self.time_step = timedelta(days=args.time_step)
+
+        if self.time_step.total_seconds() > SECONDS_PER_DAY:
+            logger.warning(
+                f"Time step is {self.time_step.total_seconds()} seconds. Time steps larger than one day are not "
+                f"recommended since this may lead to unexpected behavior or very long runtimes."
+            )
+        if SECONDS_PER_DAY % self.time_step.total_seconds() != 0:
+            logger.warning(
+                f"Time step of {self.time_step.total_seconds()} seconds does not evenly divide one "
+                f"day ({SECONDS_PER_DAY} seconds). This may lead to unexpected behavior."
+            )
+
+        self.dT_UTC = 1  # Time difference relative to UTC in hours (hard-coded for now)
+
+    def tn(self) -> int:
+        """Calculate the number of time steps.
+
+        @returns Number of time steps
+        """
+        total_seconds = (self.end_time - self.start_time).total_seconds()
+        step_seconds = self.time_step.total_seconds()
+        return int(round(total_seconds / step_seconds)) + 1
+
+    def to_dict(self) -> dict:
+        """Convert time configuration to a dictionary.
+
+        @returns Dictionary representation of the time configuration
+        """
+        return {
+            "ts": self.start_time,
+            "te": self.end_time,
+            "dt": self.time_step.total_seconds() / SECONDS_PER_DAY,  # Convert to days
+            "tn": self.tn(),
+            "dT_UTC": self.dT_UTC,
+        }

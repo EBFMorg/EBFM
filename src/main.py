@@ -16,7 +16,7 @@ from ebfm import (
 )
 from ebfm import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.grid import GridInputType
-from ebfm.config import CouplingConfig, GridConfig
+from ebfm.config import CouplingConfig, GridConfig, TimeConfig
 
 from mpi4py import MPI
 from utils import setup_logging
@@ -126,6 +126,29 @@ def main():
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
+    time_group = parser.add_argument_group("time configuration")
+
+    time_group.add_argument(
+        "--start-time",
+        type=str,
+        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM', e.g., '01-Jan-1979 00:00'.",
+        default="1-Jan-1979 00:00",
+    )
+
+    time_group.add_argument(
+        "--end-time",
+        type=str,
+        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM', e.g., '02-Jan-1979 09:00'.",
+        default="2-Jan-1979 09:00",
+    )
+
+    time_group.add_argument(
+        "--time-step",
+        type=float,
+        help="Time step of the simulation in days, e.g., 0.125 for 3 hours.",
+        default=0.125,
+    )
+
     parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
 
     parallel_group.add_argument(
@@ -178,11 +201,14 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
     coupling_config = CouplingConfig(args, component_name="ebfm")
     grid_config = GridConfig(args)
+    time_config = TimeConfig(args)
 
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
-    grid, time2, io, phys = INIT.init_config()
+    grid, io, phys = INIT.init_config()
+    time = time_config.to_dict()
+
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
 
@@ -193,23 +219,23 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
         assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
 
-    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time2)
+    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time)
 
     if coupling_config.defines_coupling():
         # TODO: introduce minimal stub implementation
         # TODO consider introducing an ebfm_adapter_config.yaml
         coupler = coupling.init(coupling_config=coupling_config)
-        coupling.setup(coupler, grid["mesh"], time2)
+        coupling.setup(coupler, grid["mesh"], time)
     else:
         coupler = NoCoupler(component_name=coupling_config.component_name)
 
     # Time-loop
     logger.info("Entering time loop...")
-    for t in range(1, time2["tn"] + 1):
+    for t in range(1, time["tn"] + 1):
         # Print time to screen
-        time2 = LOOP_general_functions.print_time(t, time2)
+        time = LOOP_general_functions.print_time(t, time)
 
-        logger.info(f'Time step {t} of {time2["tn"]} (dt = {time2["dt"]} days)')
+        logger.info(f'Time step {t} of {time["tn"]} (dt = {time["dt"]} days)')
 
         # Read and prepare climate input
         if coupler and coupler.couple_to_icon_atmo:
@@ -226,7 +252,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             logger.debug("Received the following data from ICON:", data_from_icon)
 
             IN["P"] = (
-                data_from_icon["pr"] * time2["dt"] * C["dayseconds"] * 1e-3
+                data_from_icon["pr"] * time["dt"] * C["dayseconds"] * 1e-3
             )  # convert units from kg m-2 s-1 to m w.e.
             IN["snow"] = data_from_icon["pr_snow"]
             IN["SWin"] = data_from_icon["rsds"]
@@ -238,13 +264,13 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             IN["q"][:] = 0  # TODO: Read q from ICON instead and convert to RH
             IN["Pres"][:] = 101500  # TODO: Read Pres from ICON instead
 
-        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time2, OUT, coupler)
+        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
         # Run surface energy balance model
-        OUT = LOOP_EBM.main(C, OUT, IN, time2, grid, coupler)
+        OUT = LOOP_EBM.main(C, OUT, IN, time, grid, coupler)
 
         # Run snow & firn model
-        OUT = LOOP_SNOW.main(C, OUT, IN, time2["dt"], grid, phys)
+        OUT = LOOP_SNOW.main(C, OUT, IN, time["dt"], grid, phys)
 
         # Calculate surface mass balance
         OUT = LOOP_mass_balance.main(OUT, IN, C)
@@ -274,7 +300,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             assert (
                 grid_config.grid_type is GridInputType.MATLAB
             ), "Output writing currently only implemented for MATLAB input grids."
-            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time2, C)
+            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, C)
             pass
         elif grid["is_partitioned"] or coupler.has_coupling:
             logger.warning("Skipping writing output to file for coupled or partitioned runs.")
