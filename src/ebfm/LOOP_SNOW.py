@@ -4,6 +4,8 @@
 
 import numpy as np
 
+from ebfm.constants import SECONDS_PER_HOUR
+
 
 def main(C, OUT, IN, dt, grid, phys):
     """
@@ -292,7 +294,7 @@ def main(C, OUT, IN, dt, grid, phys):
             if nl > 1:
                 z_i[:, 1:] = np.cumsum(OUT["subZ"][:, :-1] * (3.25 - SI[:, :-1]), axis=1)
             gamma_drift = np.maximum(0, SI * np.exp(-z_i / 0.1))
-            tau = 48 * 2 * 3600
+            tau = 48 * 2 * SECONDS_PER_HOUR
             np.seterr(divide="ignore")
             tau_i = tau / gamma_drift
 

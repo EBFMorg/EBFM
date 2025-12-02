@@ -32,11 +32,12 @@ cpl = [
 ebfm = "main:main"
 
 [build-system]
-requires = ["setuptools", "setuptools-git-versioning"]
+requires = ["setuptools", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools-git-versioning]
-enabled = true
+[tool.setuptools_scm]
+version_scheme = "post-release"
+local_scheme = "node-and-date"
 
 [tool.black]
 line-length = 120
