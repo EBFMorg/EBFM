@@ -13,7 +13,7 @@ class GridInputType(Enum):
     CUSTOM = "custom"
 
     # Elmer/Ice mesh file for xy-coordinates and separate unstructured NetCDF elevation file obtained from XIOS
-    XIOS_CUSTOM = "xios_custom"
+    ELMERXIOS = "elmerxios"
 
     # Elmer/Ice mesh file with elevation in z-coordinate
     ELMER = "elmer"

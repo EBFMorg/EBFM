@@ -101,7 +101,7 @@ class GridConfig:
             self.mesh_file = args.elmer_mesh
             self.dem_file = args.netcdf_mesh
         elif args.netcdf_mesh_unstructured and args.elmer_mesh:
-            self.grid_type = GridInputType.XIOS_CUSTOM
+            self.grid_type = GridInputType.ELMERXIOS
             self.mesh_file = args.elmer_mesh
             self.dem_file = args.netcdf_mesh_unstructured
         elif args.elmer_mesh:
