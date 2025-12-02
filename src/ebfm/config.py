@@ -139,6 +139,17 @@ class TimeConfig:
         assert args.time_step > 0, "Time step must be positive."
         self.time_step = timedelta(days=args.time_step)
 
+        if self.time_step.total_seconds() > SECONDS_PER_DAY:
+            logger.warning(
+                f"Time step is {self.time_step.total_seconds()} seconds. Time steps larger than one day are not "
+                f"recommended since this may lead to unexpected behavior or very long runtimes."
+            )
+        if SECONDS_PER_DAY % self.time_step.total_seconds() != 0:
+            logger.warning(
+                f"Time step of {self.time_step.total_seconds()} seconds does not evenly divide one "
+                f"day ({SECONDS_PER_DAY} seconds). This may lead to unexpected behavior."
+            )
+
         self.dT_UTC = 1  # Time difference relative to UTC in hours (hard-coded for now)
 
     def tn(self) -> int:
