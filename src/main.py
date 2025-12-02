@@ -97,7 +97,7 @@ def extract_active_coupling_features(args: argparse.Namespace) -> List[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument(
         "--version",
@@ -138,15 +138,15 @@ def main():
     time_group.add_argument(
         "--start-time",
         type=str,
-        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM', e.g., '01-Jan-1979 00:00'.",
+        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM'",
         default="1-Jan-1979 00:00",
     )
 
     time_group.add_argument(
         "--end-time",
         type=str,
-        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM', e.g., '02-Jan-1979 09:00'.",
-        default="2-Jan-1979 09:00",
+        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM'",
+        default="2-Jan-1979 00:00",
     )
 
     time_group.add_argument(
