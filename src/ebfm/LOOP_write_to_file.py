@@ -141,17 +141,17 @@ def main(OUTFILE, io, OUT, grid, t, time, C):
             # Create NetCDF file
             nc_filepath = os.path.join(io["outdir"], "model_output.nc")
             io["nc_file"] = Dataset(nc_filepath, "w", format="NETCDF4")
+            io["nc_file"].createDimension("time", None)  # Unlimited time dimension
+
             if grid["is_unstructured"]:
                 # Define dimensions
-                io["nc_file"].createDimension("time", None)  # Unlimited time dimension
                 io["nc_file"].createDimension("y", grid["lat"].shape[0])  # 2D grid rows
-                io["nc_file"].createDimension("nl", grid["nl"])  # Vertical layers for `sub` variables
             else:  # structured grid
                 # Define dimensions
-                io["nc_file"].createDimension("time", None)  # Unlimited time dimension
                 io["nc_file"].createDimension("y", grid["x_2D"].shape[0])  # 2D grid rows
                 io["nc_file"].createDimension("x", grid["x_2D"].shape[1])  # 2D grid columns
-                io["nc_file"].createDimension("nl", grid["nl"])  # Vertical layers for `sub` variables
+
+            io["nc_file"].createDimension("nl", grid["nl"])  # Vertical layers for `sub` variables
 
             # Define standard output variables
             for entry in OUTFILE["varsout"]:
