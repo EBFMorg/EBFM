@@ -153,6 +153,7 @@ def init_constants():
 
 def init_grid(grid, io, config: GridConfig):
     grid["is_partitioned"] = config.is_partitioned
+    grid["is_unstructured"] = config.is_unstructured
 
     # Read grid from Elmer, elevations from BedMachine
     if config.dem_file:

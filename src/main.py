@@ -304,14 +304,13 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         if not grid["is_partitioned"] and not coupler.has_coupling:
             if grid_config.grid_type is GridInputType.MATLAB:
-                gridtype = "structured"
                 #           if grid_config.grid_type is GridInputType.MATLAB or
                 #                grid['input_type'] is GridInputType.ELMER_XIOS:
                 #               ...
                 #           if grid_config.grid_type is GridInputType.MATLAB:
                 #               assert (grid['input_type'] is GridInputType.MATLAB), \
                 #                 "Output writing currently only implemented for MATLAB and ELMER_XIOS input grids."
-                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, C, gridtype=gridtype)
+                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, C)
             else:
                 logger.warning("Skipping writing output to file for Elmer input grids.")
         elif grid["is_partitioned"] or coupler.has_coupling:
