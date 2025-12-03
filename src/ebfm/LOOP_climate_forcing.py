@@ -6,6 +6,8 @@ import numpy as np
 
 from coupler import Coupler
 
+from ebfm.constants import SECONDS_PER_DAY, DAYS_PER_YEAR
+
 
 def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     """
@@ -43,7 +45,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     ###########################################################
 
     # Annual snow accumulation
-    OUT["ys"] = (1.0 - (1.0 / (C["yeardays"] / time["dt"]))) * OUT["ys"] + IN["P"] * 1e3
+    OUT["ys"] = (1.0 - (1.0 / (DAYS_PER_YEAR / time["dt"]))) * OUT["ys"] + IN["P"] * 1e3
     logys = np.log(OUT["ys"])
     IN["yearsnow"] = np.tile(OUT["ys"][:, np.newaxis], (1, grid["nl"]))
     IN["logyearsnow"] = np.tile(logys[:, np.newaxis], (1, grid["nl"]))
@@ -64,7 +66,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     IN["Dair"] = IN["Pres"] / (C["Rd"] * IN["T"])
 
     # Time since last snowfall event
-    snowfall_mask = (IN["snow"] / (time["dt"] * C["dayseconds"])) > C["Pthres"]
+    snowfall_mask = (IN["snow"] / (time["dt"] * SECONDS_PER_DAY)) > C["Pthres"]
     OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
     if t == 1:
         OUT["timelastsnow"][:] = time["TCUR"]
@@ -109,7 +111,7 @@ def set_random_weather_data(IN, C, time, grid):
     ##############################
     # Example: Random Conditions
     ##############################
-    yearfrac = time["TCUR"].timetuple().tm_yday / C["yeardays"]
+    yearfrac = time["TCUR"].timetuple().tm_yday / DAYS_PER_YEAR
 
     # Air temperature (K)
     T_amplitude = 10.0  # Seasonal temperature amplitude (K)

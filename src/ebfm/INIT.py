@@ -17,7 +17,6 @@ from elmer.mesh import Mesh
 from ebfm.config import GridConfig
 from ebfm.grid import GridInputType
 
-from ebfm.constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 from ebfm.constants.materials import Ice, FreshSnow
 
 
@@ -125,12 +124,6 @@ def init_constants():
     C["Trunoff"] = 0.001  # Slush runoff time-scale (days)
     C["geothermal_flux"] = 0.0  # Geothermal heat flux (W m-2)
     C["perc_depth"] = 6.0  # Characteristic deep percolation depth (m)
-
-    # ---------------------------------------------------------------------
-    # Other constants
-    # ---------------------------------------------------------------------
-    C["yeardays"] = DAYS_PER_YEAR
-    C["dayseconds"] = SECONDS_PER_DAY
 
     return C
 

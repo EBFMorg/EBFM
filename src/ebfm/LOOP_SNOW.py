@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from ebfm.constants import SECONDS_PER_HOUR
+from ebfm.constants import DAYS_PER_YEAR, SECONDS_PER_HOUR, SECONDS_PER_DAY
 from ebfm.constants.materials import Water, Ice, Firn
 
 
@@ -204,8 +204,8 @@ def main(C, OUT, IN, dt, grid, phys):
         subZ_old = OUT["subZ"].copy()
         mliqmax = np.zeros((gpsum, nl))
 
-        dt_yearfrac = dt / C["yeardays"]
-        dt_seconds = dt * C["dayseconds"]
+        dt_yearfrac = dt / DAYS_PER_YEAR
+        dt_seconds = dt * SECONDS_PER_DAY
 
         # ------ FIRN COMPACTION ------ #
         if phys["snow_compaction"] in ["firn_only", "firn+snow"]:
@@ -276,14 +276,14 @@ def main(C, OUT, IN, dt, grid, phys):
 
             # Update densities
             OUT["subD"][cond_snow] += (
-                dt * C["dayseconds"] * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
+                dt * SECONDS_PER_DAY * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
             )
             OUT["subD"][cond_snow] = np.minimum(OUT["subD"][cond_snow], Ice.DENSITY)
 
             # Store densification by overburden pressure
             OUT["Dens_overb_pres"] = np.zeros_like(OUT["subD"])
             OUT["Dens_overb_pres"][cond_snow] = (
-                dt * C["dayseconds"] * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
+                dt * SECONDS_PER_DAY * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
             )
 
             # ------ DRIFTING SNOW DENSIFICATION ------ #
@@ -348,7 +348,7 @@ def main(C, OUT, IN, dt, grid, phys):
         c_eff_temp = c_eff[:, 1:]
         kk_temp = kk[:, 1:]
         dt_stab = (
-            0.5 * np.min(c_eff_temp, axis=1) * np.min(z_temp, axis=1) ** 2 / np.max(kk_temp, axis=1) / C["dayseconds"]
+            0.5 * np.min(c_eff_temp, axis=1) * np.min(z_temp, axis=1) ** 2 / np.max(kk_temp, axis=1) / SECONDS_PER_DAY
         )
 
         # ------ Heat Conduction Loop ------
@@ -377,7 +377,7 @@ def main(C, OUT, IN, dt, grid, phys):
             )
 
             # Update layer-wise temperatures
-            C_day_dt = C["dayseconds"] * dt_temp[cond_dt]
+            C_day_dt = SECONDS_PER_DAY * dt_temp[cond_dt]
             OUT["subT"][cond_dt, 1] = subT_old[cond_dt, 1] + C_day_dt * (kdTdz[cond_dt, 2] - kdTdz[cond_dt, 1]) / (
                 c_eff[cond_dt, 1]
                 * (0.5 * OUT["subZ"][cond_dt, 0] + 0.5 * OUT["subZ"][cond_dt, 1] + 0.25 * OUT["subZ"][cond_dt, 2])
@@ -676,9 +676,9 @@ def main(C, OUT, IN, dt, grid, phys):
         ###########################################
 
         # Update runoff of irreducible water below the model bottom
-        OUT["runoff_irr_deep_mean"] = OUT["runoff_irr_deep_mean"] * (1 - dt / C["yeardays"]) + OUT[
+        OUT["runoff_irr_deep_mean"] = OUT["runoff_irr_deep_mean"] * (1 - dt / DAYS_PER_YEAR) + OUT[
             "runoff_irr_deep"
-        ] * (dt / C["yeardays"])
+        ] * (dt / DAYS_PER_YEAR)
 
         # Calculate total runoff [in meters water equivalent per timestep]
         OUT["runoff"] = 1e-3 * (

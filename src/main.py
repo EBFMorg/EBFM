@@ -17,6 +17,7 @@ from ebfm import (
 from ebfm import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.grid import GridInputType
 from ebfm.config import CouplingConfig, GridConfig, TimeConfig
+from ebfm.constants import SECONDS_PER_DAY
 
 from mpi4py import MPI
 from utils import setup_logging
@@ -252,7 +253,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             logger.debug("Received the following data from ICON:", data_from_icon)
 
             IN["P"] = (
-                data_from_icon["pr"] * time["dt"] * C["dayseconds"] * 1e-3
+                data_from_icon["pr"] * time["dt"] * SECONDS_PER_DAY * 1e-3
             )  # convert units from kg m-2 s-1 to m w.e.
             IN["snow"] = data_from_icon["pr_snow"]
             IN["SWin"] = data_from_icon["rsds"]
