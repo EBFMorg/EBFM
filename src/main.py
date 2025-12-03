@@ -17,6 +17,7 @@ from ebfm import (
 from ebfm import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.grid import GridInputType
 from ebfm.config import CouplingConfig, GridConfig, TimeConfig
+from ebfm.constants import SECONDS_PER_DAY
 
 from mpi4py import MPI
 from utils import setup_logging
@@ -213,11 +214,11 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
-    grid, io, phys = INIT.init_config()
+    io, phys = INIT.init_config()
     time = time_config.to_dict()
 
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, io, grid_config)
+    grid = INIT.init_grid(grid_config)
 
     # Ensure shading routine is only used in uncoupled runs on unpartitioned MATLAB grids;
     # see https://github.com/EBFMorg/EBFM/issues/11 for details.
@@ -226,7 +227,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
         assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
 
-    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time)
+    OUT, IN, OUTFILE = INIT.init_initial_conditions(grid, io, time)
 
     if coupling_config.defines_coupling():
         # TODO: introduce minimal stub implementation
@@ -259,7 +260,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             logger.debug("Received the following data from ICON:", data_from_icon)
 
             IN["P"] = (
-                data_from_icon["pr"] * time["dt"] * C["dayseconds"] * 1e-3
+                data_from_icon["pr"] * time["dt"] * SECONDS_PER_DAY * 1e-3
             )  # convert units from kg m-2 s-1 to m w.e.
             IN["snow"] = data_from_icon["pr_snow"]
             IN["SWin"] = data_from_icon["rsds"]
@@ -280,7 +281,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         OUT = LOOP_SNOW.main(C, OUT, IN, time["dt"], grid, phys)
 
         # Calculate surface mass balance
-        OUT = LOOP_mass_balance.main(OUT, IN, C)
+        OUT = LOOP_mass_balance.main(OUT, IN)
 
         if coupler.couple_to_elmer_ice:
             # Exchange data with Elmer

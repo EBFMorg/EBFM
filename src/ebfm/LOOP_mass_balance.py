@@ -4,15 +4,16 @@
 
 import numpy as np
 
+from ebfm.constants.materials import Ice
 
-def main(OUT, IN, C):
+
+def main(OUT, IN):
     """
     Update the climatic mass balance and snow mass.
 
     Parameters:
     - OUT: Dictionary containing output variables.
     - IN: Dictionary containing input climatic variables.
-    - C: Dictionary containing constants like Dice.
 
     Returns:
     - Updated `OUT` dictionary.
@@ -33,6 +34,6 @@ def main(OUT, IN, C):
 
     # Snow mass
     OUT["snowmass"] = np.maximum(OUT["snowmass"] + OUT["smb"], 0)
-    OUT["snowmass"][np.all(OUT["subD"] >= C["Dice"], axis=1)] = 0
+    OUT["snowmass"][np.all(OUT["subD"] >= Ice.DENSITY, axis=1)] = 0
 
     return OUT
