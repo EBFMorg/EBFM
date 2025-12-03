@@ -97,7 +97,7 @@ def extract_active_coupling_features(args: argparse.Namespace) -> List[str]:
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument(
         "--version",
@@ -126,20 +126,27 @@ def main():
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
+    input_group.add_argument(
+        "--netcdf-mesh-unstructured",
+        type=Path,
+        help="Path to the unstructured NetCDF mesh file. Optional if using --elmer-mesh."
+        " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+    )
+
     time_group = parser.add_argument_group("time configuration")
 
     time_group.add_argument(
         "--start-time",
         type=str,
-        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM', e.g., '01-Jan-1979 00:00'.",
+        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM'",
         default="1-Jan-1979 00:00",
     )
 
     time_group.add_argument(
         "--end-time",
         type=str,
-        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM', e.g., '02-Jan-1979 09:00'.",
-        default="2-Jan-1979 09:00",
+        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM'",
+        default="2-Jan-1979 00:00",
     )
 
     time_group.add_argument(
@@ -297,11 +304,10 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         if not grid["is_partitioned"] and not coupler.has_coupling:
-            assert (
-                grid_config.grid_type is GridInputType.MATLAB
-            ), "Output writing currently only implemented for MATLAB input grids."
-            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, C)
-            pass
+            if grid_config.grid_type is GridInputType.MATLAB:
+                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, C)
+            else:
+                logger.warning("Skipping writing output to file for Elmer input grids.")
         elif grid["is_partitioned"] or coupler.has_coupling:
             logger.warning("Skipping writing output to file for coupled or partitioned runs.")
         else:

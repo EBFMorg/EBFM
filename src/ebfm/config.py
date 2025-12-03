@@ -62,8 +62,9 @@ class GridConfig:
 
     grid_type: GridInputType  # Name of the grid used in coupling
     mesh_file: Path  # Path to the grid file
-    dem_file: Path  # Path to the DEM file (only relevant for CUSTOM grid type)
+    dem_file: Path = None  # Path to the DEM file (only relevant for CUSTOM grid type)
     is_partitioned: bool  # Whether the grid is partitioned
+    is_unstructured: bool = False  # Whether the grid is unstructured
     partition_id: int  # Partition ID (only relevant if is_partitioned is True)
 
     def __init__(self, args: Namespace):
@@ -103,6 +104,11 @@ class GridConfig:
             self.grid_type = GridInputType.CUSTOM
             self.mesh_file = args.elmer_mesh
             self.dem_file = args.netcdf_mesh
+        elif args.netcdf_mesh_unstructured and args.elmer_mesh:
+            self.grid_type = GridInputType.ELMERXIOS
+            self.mesh_file = args.elmer_mesh
+            self.dem_file = args.netcdf_mesh_unstructured
+            self.is_unstructured = True
         elif args.elmer_mesh:
             self.grid_type = GridInputType.ELMER
             self.mesh_file = args.elmer_mesh

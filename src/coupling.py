@@ -360,6 +360,7 @@ class YACCoupler(Coupler):
         received_data = {}
         for field_name, field in self.target_fields.items():
             if field_name in elmer_fields:
+                logger.debug(f"EBFM: {field.component_name}, {field.grid_name}, {field.name}")
                 role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
                 assert (
                     role == yac.ExchangeType.TARGET
