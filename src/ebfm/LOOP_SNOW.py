@@ -5,7 +5,7 @@
 import numpy as np
 
 from ebfm.constants import DAYS_PER_YEAR, SECONDS_PER_HOUR, SECONDS_PER_DAY
-from ebfm.constants.materials import Water, Ice, Firn
+from ebfm.constants.materials import Water, Ice, Firn, FreshSnow
 
 
 def main(C, OUT, IN, dt, grid, phys):
@@ -49,7 +49,7 @@ def main(C, OUT, IN, dt, grid, phys):
             OUT["Dfreshsnow_W"] = 266.86 * (0.5 * (1 + np.tanh(IN["WS"] / 5))) ** 8.8
             OUT["Dfreshsnow"] = OUT["Dfreshsnow_T"] + OUT["Dfreshsnow_W"]
         else:
-            OUT["Dfreshsnow"] = np.full_like(IN["snow"], C["Dfreshsnow"])
+            OUT["Dfreshsnow"] = np.full_like(IN["snow"], FreshSnow.DENSITY)
 
         # Update layer depths and properties
         shift_snowfall = IN["snow"] * Water.DENSITY / OUT["Dfreshsnow"]
