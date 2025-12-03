@@ -206,11 +206,11 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
-    grid, io, phys = INIT.init_config()
+    io, phys = INIT.init_config()
     time = time_config.to_dict()
 
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, io, grid_config)
+    grid = INIT.init_grid(grid_config)
 
     # Ensure shading routine is only used in uncoupled runs on unpartitioned MATLAB grids;
     # see https://github.com/EBFMorg/EBFM/issues/11 for details.

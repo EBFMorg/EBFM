@@ -28,25 +28,14 @@ logger = logging.getLogger(__name__)
 
 def init_config():
     """
-    Set model parameters, specify grid parameters, I/O, and physics settings.
+    Set model parameters, I/O, and physics settings.
 
     @param[in] time_config Time configuration object.
 
     @returns:
-        grid (dict): Grid-related parameters.
         io (dict): Input/output parameters.
         phys (dict): Model physics settings.
     """
-
-    # ---------------------------------------------------------------------
-    # Grid parameters
-    # ---------------------------------------------------------------------
-    grid = {}
-    grid["utmzone"] = 33  # UTM zone
-    grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
-    grid["nl"] = 50  # Number of vertical layers
-    grid["doubledepth"] = True  # Double vertical layer depth at specified layers (True/False)
-    grid["split"] = np.array([15, 25, 35])  # Vertical layer numbers at which layer depth doubles
 
     # ---------------------------------------------------------------------
     # Model physics
@@ -84,7 +73,7 @@ def init_config():
     os.makedirs(io["rebootdir"], exist_ok=True)
 
     # Return the initialized parameters
-    return grid, io, phys
+    return io, phys
 
 
 def init_constants():
@@ -146,7 +135,16 @@ def init_constants():
     return C
 
 
-def init_grid(grid, io, config: GridConfig):
+def init_grid(config: GridConfig):
+    # ---------------------------------------------------------------------
+    # Grid parameters
+    # ---------------------------------------------------------------------
+    grid = {}
+    grid["utmzone"] = 33  # UTM zone
+    grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
+    grid["nl"] = 50  # Number of vertical layers
+    grid["doubledepth"] = True  # Double vertical layer depth at specified layers (True/False)
+    grid["split"] = np.array([15, 25, 35])  # Vertical layer numbers at which layer depth doubles
     grid["is_partitioned"] = config.is_partitioned
 
     if config.grid_type is GridInputType.CUSTOM:  # Read grid from Elmer, elevations from BedMachine
