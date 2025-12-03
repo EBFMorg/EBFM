@@ -240,7 +240,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     logger.info("Entering time loop...")
     for t in range(1, time["tn"] + 1):
         # Print time to screen
-        time = LOOP_general_functions.print_time(t, time)
+        time["TCUR"] = LOOP_general_functions.print_time(t, time["ts"], time["dt"])
 
         logger.info(f'Time step {t} of {time["tn"]} (dt = {time["dt"]} days)')
 
