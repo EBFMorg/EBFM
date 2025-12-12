@@ -2,9 +2,8 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from pathlib import Path
 from couplers import Coupler
-from couplers.base import Grid, Dict, EBFMCouplingConfig
+from couplers.base import Grid, Dict, CouplingConfig
 
 import logging
 
@@ -20,9 +19,9 @@ class DummyCoupler(Coupler):
     couple_to_icon_atmo: bool = False
     couple_to_elmer_ice: bool = False
 
-    def __init__(self, component_name: str, coupler_config: Path, component_coupling_config: EBFMCouplingConfig):
-        self.component_name = component_name
-        logger.debug(f"DummyCoupler created for component '{component_name}'.")
+    def __init__(self, coupling_config: CouplingConfig):
+        self.component_name = coupling_config.component_name
+        logger.debug(f"DummyCoupler created for component '{self.component_name}'.")
 
     def setup(self, grid: Grid, time: Dict[str, float]):
         """Setup the coupling interface (does nothing for DummyCoupler)

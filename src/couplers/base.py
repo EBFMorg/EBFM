@@ -2,14 +2,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from pathlib import Path
 from typing import Dict
 import numpy as np
 
 from elmer.mesh import Mesh as Grid  # for now use an alias
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
-from ebfm.config import EBFMCouplingConfig
+from ebfm.config import CouplingConfig
 
 import logging
 
@@ -43,12 +42,11 @@ class Coupler:
         else:
             raise ValueError(f"Unknown component name '{component_name}' for coupling check.")
 
-    def __init__(self, component_name: str, coupler_config: Path, component_coupling_config: EBFMCouplingConfig):
+    def __init__(self, coupling_config: CouplingConfig):
         """
         Create Coupler object
 
-        @param[in] component_name name of this component in the coupler configuration
-        @param[in] coupler_config path to the coupler configuration file
+        @param[in] coupling_config configuration of the coupling
         """
         raise NotImplementedError("Coupler is an abstract base class and cannot be instantiated directly.")
 

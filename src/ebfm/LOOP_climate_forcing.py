@@ -6,6 +6,8 @@ import numpy as np
 
 from couplers import Coupler
 
+from datetime import datetime, timedelta
+
 
 def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     """
@@ -64,7 +66,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     IN["Dair"] = IN["Pres"] / (C["Rd"] * IN["T"])
 
     # Time since last snowfall event
-    snowfall_mask = (IN["snow"] / (time["dt"] * 24 * 3600)) > C["Pthres"]
+    snowfall_mask = (IN["snow"] / (time["dt"] * C["dayseconds"])) > C["Pthres"]
     OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
     if t == 1:
         OUT["timelastsnow"][:] = time["TCUR"]
@@ -121,7 +123,11 @@ def set_random_weather_data(IN, C, time, grid):
     # Precipitation (m w.e.)
     P_annual_sea_level = 0.5  # Annual precipitation at sea level (m w.e.)
     P_z_gradient = 0.1  # Precipitation - elevation gradient (% m-1)
-    if time["TCUR"].isocalendar()[1] != time["TPREV"].isocalendar()[1]:
+    t_prev: datetime = time["TCUR"] - timedelta(days=time["dt"])
+    day_of_week_prev_step = t_prev.isoweekday()
+    day_of_week = time["TCUR"].isoweekday()
+    # trigger precitipation event once every day of week "1"
+    if (day_of_week == 1) and (day_of_week != day_of_week_prev_step):
         IN["P"][:] = (P_annual_sea_level / 52.0) * (1 + P_z_gradient * grid["z"] / 100.0)
     else:
         IN["P"][:] = 0.0

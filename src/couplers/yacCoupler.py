@@ -3,13 +3,14 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import yac
-from pathlib import Path
 import numpy as np
 from collections import namedtuple
 
 import logging
 
-from couplers.base import Coupler, Grid, Dict, EBFMCouplingConfig
+from couplers.base import Coupler, Grid, Dict, CouplingConfig
+
+# from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
 logger = logging.getLogger(__name__)
 
@@ -47,22 +48,18 @@ class YACCoupler(Coupler):
     source_fields: Dict[str, yac.Field] = {}
     target_fields: Dict[str, yac.Field] = {}
 
-    def __init__(self, component_name: str, coupler_config: Path, component_coupling_config: EBFMCouplingConfig):
+    def __init__(self, coupling_config: CouplingConfig):
         """Create interface to the coupler and register component
 
-        @param[in] component_name name of this component in the coupler configuration
-        @param[in] path to global Coupler configuration file
-        @param[in] component_coupling_config dictionary with coupling configuration for this component
-
-        @returns Coupler object
+        @param[in] coupling_config coupling configuration of this component
         """
         logger.debug(f"YAC version is {yac.version()}")
         self.interface = yac.YAC()
-        self.component_name = component_name
-        self.interface.read_config_yaml(str(coupler_config))
-        self.component = self.interface.def_comp(component_name)
-        self.couple_to_icon_atmo = component_coupling_config.couple_to_icon_atmo
-        self.couple_to_elmer_ice = component_coupling_config.couple_to_elmer_ice
+        self.component_name = coupling_config.component_name
+        self.interface.read_config_yaml(str(coupling_config.coupler_config))
+        self.component = self.interface.def_comp(self.component_name)
+        self.couple_to_icon_atmo = coupling_config.couple_to_icon_atmo
+        self.couple_to_elmer_ice = coupling_config.couple_to_elmer_ice
 
     def add_grid(self, grid_name, grid):
         """
@@ -333,6 +330,7 @@ class YACCoupler(Coupler):
                 logger.debug(f"Receiving field {field_name} from ICON atmosphere...")
                 # Only get the first element, since we only have collection size of 1
                 received_data[field_name] = self._get(field_name)[0]
+                logger.debug(f"Received field '{field_name}' from ICON. Data: {received_data[field_name]}")
             else:
                 logger.debug(f"Skipping field {field_name} as it is not part of ICON atmosphere exchange.")
 
@@ -371,12 +369,14 @@ class YACCoupler(Coupler):
         received_data = {}
         for field_name, field in self.target_fields.items():
             if field_name in elmer_fields:
+                logger.debug(f"EBFM: {field.component_name}, {field.grid_name}, {field.name}")
                 role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
                 assert (
                     role == yac.ExchangeType.TARGET
                 ), f"Field '{field_name}' is not a target field for Elmer/Ice exchange, but has role '{role}'."
                 # Only get the first element, since we only have collection size of 1
                 received_data[field_name] = self._get(field_name)[0]
+                logger.debug(f"Received field '{field_name}' from Elmer/Ice. Data: {received_data[field_name]}")
 
         return received_data
 
