@@ -309,30 +309,9 @@ def init_grid(grid, io, config: GridConfig):
         grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
-    elif grid["input_type"] is GridInputType.ELMER_XIOS:
-        grid = read_elmer_xios_grid(grid=grid, gridfile=config.dem_file)
-        grid["gpsum"] = grid["z"].shape[0]
-        grid["mask"] = (grid["h"] > 1.0) * 1.0
-        grid["x"] = np.zeros_like(grid["z"])
-        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
-    return grid
-
-
-def read_elmer_xios_grid(grid, gridfile: Path):
-    import netCDF4 as nc
-
-    print(gridfile)
-    with nc.Dataset(gridfile) as file:
-        grid["lat"] = file["mesh2D_node_x"][:]
-        grid["lon"] = file["mesh2D_node_y"][:]
-        grid["x"] = file["x"][:]
-        grid["y"] = file["y"][:]
-        grid["z"] = np.squeeze(file["zs"][:].data)
-        grid["h"] = np.squeeze(file["h"][:].data)
     return grid
 
 
