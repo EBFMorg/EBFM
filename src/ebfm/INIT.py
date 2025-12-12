@@ -270,6 +270,9 @@ def init_grid(grid, io, config: GridConfig):
         grid["ind"] = np.where(grid["mask_2D"].flatten() == 1)
         grid["xind"], grid["yind"] = np.where(grid["mask_2D"] == 1)
 
+        # TODO: needed to avoid KeyError, would lead to failure if used with coupling
+        grid["mesh"] = None
+
         # ---------------------------------------------------------------------
         # Grid slope and aspect
         # ---------------------------------------------------------------------
@@ -316,6 +319,9 @@ def init_grid(grid, io, config: GridConfig):
         grid["x"] = np.zeros_like(grid["z"])
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
+
+        # TODO: needed to avoid KeyError, would lead to failure if used with coupling
+        grid["mesh"] = None
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
