@@ -17,10 +17,9 @@ from ebfm import (
 from ebfm import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.grid import GridInputType
 from ebfm.config import CouplingConfig, GridConfig, TimeConfig
+from ebfm.logger import Logger, setup_logging, log_levels_map, getLogger
 
 from mpi4py import MPI
-from utils import setup_logging
-import logging
 
 from typing import List
 
@@ -32,15 +31,8 @@ except ImportError as e:
     coupling_supported = False
     coupling_import_error = e
 
-log_levels = {
-    "file": logging.DEBUG,  # log level for logging to file
-    0: logging.INFO,  # log level for rank 0
-    # 1: logging.DEBUG,  # to log other ranks to console define log level here
-}
-setup_logging(log_levels=log_levels)
-
 # logger for this module
-logger = logging.getLogger(__name__)
+logger: Logger = None  # will be set later
 
 
 def add_coupling_arguments(parser: argparse.ArgumentParser):
@@ -172,6 +164,22 @@ def main():
         "If not provided, the MPI rank + 1 will be used as partition ID.",
     )
 
+    logger_group = parser.add_argument_group("logging configuration")
+
+    logger_group.add_argument(
+        "--log-level-console",
+        type=str,
+        choices=list(log_levels_map.keys()),
+        default="INFO",
+        help="Log level for console output for all MPI ranks (unless overridden by custom settings in utils.py).",
+    )
+
+    logger_group.add_argument(
+        "--log-file",
+        type=Path,
+        help="If provided, log output will be written to the specified file (one file per MPI rank).",
+    )
+
     # Add args for features requiring 'import coupling'
     add_coupling_arguments(parser)
 
@@ -196,6 +204,14 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     else:
         from coupler import NoCoupler
 
+    # TODO: replace MPI.COMM_WORLD with communicator from ebfm; either from couplers comm splitting or default comm
+    setup_logging(
+        stdout_log_level=log_levels_map[args.log_level_console],
+        file=args.log_file,
+        comm=MPI.COMM_WORLD,
+    )
+
+    logger = getLogger(__name__)
     logger.info(f"Starting EBFM version {ebfm.get_version()}...")
 
     logger.info("Done parsing command line arguments.")
