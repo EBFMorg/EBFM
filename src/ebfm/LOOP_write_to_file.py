@@ -9,7 +9,7 @@ from netCDF4 import Dataset, date2num
 from ebfm.LOOP_general_functions import is_first_time_step, is_final_time_step
 
 
-def main(OUTFILE, io, OUT, grid, t, time, C):
+def main(OUTFILE, io, OUT, grid, t, time):
     # Specify variables to be written
     if is_first_time_step(t, time):
         OUTFILE["varsout"] = [
