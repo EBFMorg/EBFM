@@ -126,7 +126,7 @@ class TimeConfig:
     """
 
     start_time: datetime  # Start time of the simulation (i.e., time at the beginning of the first time step)
-    end_time: datetime  # End time of the simulation (i.e., time after the last time step)
+    end_time: datetime  # End time of the simulation (i.e., time at the end of the last time step)
     time_step: timedelta  # Time step of the simulation
     dT_UTC: int  # Time difference relative to UTC in hours
 
