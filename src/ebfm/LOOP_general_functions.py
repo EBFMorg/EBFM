@@ -5,13 +5,12 @@
 from datetime import datetime, timedelta
 
 
-def is_first_time_step(t: int, time: dict) -> bool:
+def is_first_time_step(t: int) -> bool:
     """
     Check if the current time step is the first time step.
 
     Parameters:
         t (int): Current time step (0-based index).
-        time (dict): Dictionary containing time-related variables, including 'tn' (total number of time steps).
 
     Returns:
         bool: True if the current time step is the first time step, False otherwise.

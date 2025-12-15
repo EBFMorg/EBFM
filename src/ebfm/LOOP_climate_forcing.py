@@ -70,7 +70,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     # Time since last snowfall event
     snowfall_mask = (IN["snow"] / (time["dt"] * C["dayseconds"])) > C["Pthres"]
     OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
-    if is_first_time_step(t, time):
+    if is_first_time_step(t):
         OUT["timelastsnow"][:] = time["TCUR"]
 
     # Potential temperature and lapse rate

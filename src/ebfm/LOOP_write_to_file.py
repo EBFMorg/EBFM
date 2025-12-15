@@ -11,7 +11,7 @@ from ebfm.LOOP_general_functions import is_first_time_step, is_final_time_step
 
 def main(OUTFILE, io, OUT, grid, t, time):
     # Specify variables to be written
-    if is_first_time_step(t, time):
+    if is_first_time_step(t):
         OUTFILE["varsout"] = [
             ["smb", "m w.e.", "sum", "Climatic mass balance"],
             ["Tsurf", "K", "mean", "Surface temperature"],
@@ -88,7 +88,7 @@ def main(OUTFILE, io, OUT, grid, t, time):
         """
 
         # Save output to binary files at the first time step
-        if is_first_time_step(t, time):
+        if is_first_time_step(t):
             if not os.path.exists(io["outdir"]):
                 os.makedirs(io["outdir"])
 
@@ -136,7 +136,7 @@ def main(OUTFILE, io, OUT, grid, t, time):
         time_calendar = "gregorian"
 
         # Initialize NetCDF file at the first time step
-        if is_first_time_step(t, time):
+        if is_first_time_step(t):
             if not os.path.exists(io["outdir"]):
                 os.makedirs(io["outdir"])
 
