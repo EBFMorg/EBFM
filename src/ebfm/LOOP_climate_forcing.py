@@ -124,7 +124,7 @@ def set_random_weather_data(IN, C, time, grid):
     # Precipitation (m w.e.)
     P_annual_sea_level = 0.5  # Annual precipitation at sea level (m w.e.)
     P_z_gradient = 0.1  # Precipitation - elevation gradient (% m-1)
-    t_prev:  = time["TCUR"] - timedelta(days=time["dt"])
+    t_prev: datetime = time["TCUR"] - timedelta(days=time["dt"])
     day_of_week_prev_step = t_prev.isoweekday()
     day_of_week = time["TCUR"].isoweekday()
     # trigger precitipation event once every day of week "1"
