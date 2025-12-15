@@ -242,7 +242,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["x_2D"] = input_data["x"][0][0]
         grid["y_2D"] = input_data["y"][0][0]
         grid["z_2D"] = input_data["z"][0][0]
-        grid["mask_2D"] = input_data["mask"][0][0]
+        mask_2D = input_data["mask"][0][0]
 
         # Determine domain extent
         grid["has_shading"] = True
@@ -255,20 +255,20 @@ def init_grid(grid, io, config: GridConfig):
             grid["x_2D"] = np.flipud(grid["x_2D"])
             grid["y_2D"] = np.flipud(grid["y_2D"])
             grid["z_2D"] = np.flipud(grid["z_2D"])
-            grid["mask_2D"] = np.flipud(grid["mask_2D"])
+            mask_2D = np.flipud(mask_2D)
 
         _, fx = np.gradient(grid["x_2D"])
         if fx[0, 0] < 0:
             grid["x_2D"] = np.fliplr(grid["x_2D"])
             grid["y_2D"] = np.fliplr(grid["y_2D"])
             grid["z_2D"] = np.fliplr(grid["z_2D"])
-            grid["mask_2D"] = np.fliplr(grid["mask_2D"])
+            mask_2D = np.fliplr(mask_2D)
 
         # Calculate grid spacing
         grid["dx"] = grid["x_2D"][0][1] - grid["x_2D"][0][0]
 
         # Create 1-D mask
-        grid["mask"] = grid["mask_2D"][grid["mask_2D"] == 1]
+        grid["mask"] = mask_2D[mask_2D == 1]
         grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # Calculate latitude & longitude fields (from the original UTM coordinates)
@@ -283,12 +283,12 @@ def init_grid(grid, io, config: GridConfig):
         grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
 
         # Store 1-D (vectorized) grid information
-        mask_flat = grid["mask_2D"].flatten()
+        mask_flat = mask_2D.flatten()
         grid["x"] = grid["x_2D"].flatten()[mask_flat == 1]
         grid["y"] = grid["y_2D"].flatten()[mask_flat == 1]
         grid["z"] = grid["z_2D"].flatten()[mask_flat == 1]
         grid["ind"] = np.where(mask_flat == 1)
-        grid["xind"], grid["yind"] = np.where(grid["mask_2D"] == 1)
+        grid["xind"], grid["yind"] = np.where(mask_2D == 1)
 
         # ---------------------------------------------------------------------
         # Grid slope and aspect
