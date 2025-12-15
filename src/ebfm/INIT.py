@@ -287,7 +287,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["x"] = grid["x_2D"].flatten()[mask_flat == 1]
         grid["y"] = grid["y_2D"].flatten()[mask_flat == 1]
         grid["z"] = grid["z_2D"].flatten()[mask_flat == 1]
-        grid["ind"] = np.where(grid["mask_2D"].flatten() == 1)
+        grid["ind"] = np.where(mask_flat == 1)
         grid["xind"], grid["yind"] = np.where(grid["mask_2D"] == 1)
 
         # ---------------------------------------------------------------------
