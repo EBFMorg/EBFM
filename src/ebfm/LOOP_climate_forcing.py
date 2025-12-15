@@ -6,7 +6,7 @@ import numpy as np
 
 from coupler import Coupler
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from ebfm.constants import SECONDS_PER_DAY, DAYS_PER_YEAR
 
 
