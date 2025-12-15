@@ -151,6 +151,19 @@ def init_constants():
     return C
 
 
+def compute_number_of_glacier_cells(grid):
+    """
+    Computes the number of glacier cells in the grid based on the mask.
+
+    Parameters:
+        grid (dict): Dictionary containing grid-related parameters
+
+    Returns:
+        int: Number of glacier cells (gpsum)
+    """
+    return np.sum(grid["mask"] == 1)
+
+
 def init_grid(grid, io, config: GridConfig):
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
@@ -187,7 +200,7 @@ def init_grid(grid, io, config: GridConfig):
         else:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
 
-        grid["gpsum"] = np.sum(grid["mask"])  # number of glacier grid cells
+        grid["gpsum"] = compute_number_of_glacier_cells(grid)
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
@@ -214,7 +227,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-        grid["gpsum"] = np.sum(grid["mask"] == 1)  # number of modelled grid cells
+        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
@@ -254,8 +267,7 @@ def init_grid(grid, io, config: GridConfig):
         # Calculate grid spacing
         grid["dx"] = grid["x_2D"][0][1] - grid["x_2D"][0][0]
 
-        # Calculate number of modeled grid cells (gpsum)
-        grid["gpsum"] = np.sum(grid["mask_2D"] == 1)
+        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # Create 1-D mask
         grid["mask"] = grid["mask_2D"][grid["mask_2D"] == 1]
