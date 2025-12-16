@@ -337,8 +337,7 @@ def init_grid(grid, io, config: GridConfig):
         # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
         grid["az_maxgridangle"] = -np.pi * (-1.0 + 2.0 * (np.arange(1, grid["nr_az_steps"] + 1) / grid["nr_az_steps"]))
 
-        yl = grid["Ly"]
-        xl = grid["Lx"]
+        xl, yl = grid["x_2D"].shape
 
         # loop over the azimuth angles to determine gridded maximum grid angles per angle
         grid["maxgridangle_mask"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
@@ -369,30 +368,15 @@ def init_grid(grid, io, config: GridConfig):
             m = az_rad > 0.75 * np.pi
             ddy_mask[m] = 1.0
 
-            x2d = np.asarray(grid["x_2D"], dtype=np.float64)
-            y2d = np.asarray(grid["y_2D"], dtype=np.float64)
-            z2d = np.asarray(grid["z_2D"], dtype=np.float64)
-
-            xl, yl = x2d.shape
-
-            i0, j0 = np.where(mask_2D == 1)
-            npts = ddx_mask.size
-
-            sx = ddx_mask
-            sy = ddy_mask
-            x0 = grid["x"]
-            y0 = grid["y"]
-            z0 = grid["z"]
-
-            best = np.full(npts, -np.inf, dtype=np.float64)
-
             # from every grid cell step in the direction of the azimuth until the grid end is reached
             # and detect maximum grid angle along the path
+            i0, j0 = np.where(mask_2D == 1)
+            max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
             count = 1
-            active = np.ones(npts, dtype=bool)
+            active = np.ones(grid["gpsum"], dtype=bool)
             while active.any():
-                kk = np.round(j0 + sx * count).astype(np.int64)
-                ll = np.round(i0 + sy * count).astype(np.int64)
+                kk = np.round(j0 + ddx_mask * count).astype(np.int64)
+                ll = np.round(i0 + ddy_mask * count).astype(np.int64)
 
                 inb = (kk >= 0) & (kk < yl) & (ll >= 0) & (ll < xl) & active
                 if not inb.any():
@@ -401,21 +385,21 @@ def init_grid(grid, io, config: GridConfig):
                 llv = ll[inb]
                 kkv = kk[inb]
 
-                dx = x2d[llv, kkv] - x0[inb]
-                dy = y2d[llv, kkv] - y0[inb]
-                dist = np.hypot(dx, dy)
+                dx = grid["x_2D"][llv, kkv] - grid["x"][inb]
+                dy = grid["y_2D"][llv, kkv] - grid["y"][inb]
+                dist = np.hypot(dx, dy)  # walk distance from start to target
 
-                dz = z2d[llv, kkv] - z0[inb]
-                ang = np.arctan(dz / dist)
+                dz = grid["z_2D"][llv, kkv] - grid["z"][inb]
+                ang = np.arctan(dz / dist)  # grid angle from start to target
 
-                best[inb] = np.maximum(best[inb], ang)
+                max_angle[inb] = np.maximum(max_angle[inb], ang)  # update max grid angle when needed
 
-                active &= (kk >= 0) & (kk < yl) & (ll >= 0) & (ll < xl)
+                active &= (kk >= 0) & (kk < yl) & (ll >= 0) & (ll < xl)  # continue walk until domain edge is reached
 
                 count += 1
 
-            # create lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
-            grid["maxgridangle_mask"][:, n] = best
+            # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
+            grid["maxgridangle_mask"][:, n] = max_angle
 
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
