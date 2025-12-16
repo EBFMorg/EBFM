@@ -332,13 +332,15 @@ def init_grid(grid, io, config: GridConfig):
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
         # -----------------------------------------------------------------------------------------------------
-        grid["nr_az_steps"] = 24
+        grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
 
         # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
         grid["az_maxgridangle"] = -np.pi * (-1.0 + 2.0 * (np.arange(1, grid["nr_az_steps"] + 1) / grid["nr_az_steps"]))
 
         yl = grid["Ly"]
         xl = grid["Lx"]
+
+        # loop over the azimuth angles to determine gridded maximum grid angles per angle
         grid["maxgridangle_mask"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
         for n in range(grid["nr_az_steps"]):
             az_rad = np.full(int(grid["gpsum"]), grid["az_maxgridangle"][n], dtype=float)
@@ -384,7 +386,7 @@ def init_grid(grid, io, config: GridConfig):
 
             best = np.full(npts, -np.inf, dtype=np.float64)
 
-            # from every grid cell step in the direction of the azimuth until grid boundary is reached
+            # from every grid cell step in the direction of the azimuth until the grid end is reached
             # and detect maximum grid angle along the path
             count = 1
             active = np.ones(npts, dtype=bool)
@@ -412,11 +414,8 @@ def init_grid(grid, io, config: GridConfig):
 
                 count += 1
 
-            maxgridangle = np.zeros((xl, yl), dtype=np.float64)
-            maxgridangle[i0, j0] = best
-
-            # create 2-D array with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
-            grid["maxgridangle_mask"][:, n] = maxgridangle.flatten()[mask_flat == 1]
+            # create lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
+            grid["maxgridangle_mask"][:, n] = best
 
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
