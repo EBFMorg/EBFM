@@ -335,14 +335,14 @@ def init_grid(grid, io, config: GridConfig):
         grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
 
         # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
-        grid["az_maxgridangle"] = -np.pi * (-1.0 + 2.0 * (np.arange(1, grid["nr_az_steps"] + 1) / grid["nr_az_steps"]))
+        grid["az_array"] = -np.pi * (-1.0 + 2.0 * (np.arange(1, grid["nr_az_steps"] + 1) / grid["nr_az_steps"]))
 
         xl, yl = grid["x_2D"].shape
 
         # loop over the azimuth angles to determine gridded maximum grid angles per angle
-        grid["maxgridangle_mask"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
+        grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
         for n in range(grid["nr_az_steps"]):
-            az = np.full(int(grid["gpsum"]), grid["az_maxgridangle"][n], dtype=float)
+            az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
 
             # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
             ddx = np.empty_like(az, dtype=float)
@@ -399,8 +399,7 @@ def init_grid(grid, io, config: GridConfig):
                 count += 1
 
             # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
-            grid["maxgridangle_mask"][:, n] = max_angle
-            print(np.mean(max_angle))
+            grid["maxgridangle"][:, n] = max_angle
 
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
