@@ -184,7 +184,6 @@ def init_grid(grid, io, config: GridConfig):
             mesh: Mesh = read_elmer_mesh(mesh_root=config.mesh_file)
 
         grid["x"], grid["y"] = mesh.x_vertices, mesh.y_vertices
-        # grid["x"] = np.zeros_like(grid["z"])  # remove?
         if config.grid_type is GridInputType.CUSTOM:
             grid["z"] = read_dem(config.dem_file, grid["x"], grid["y"])
             grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
