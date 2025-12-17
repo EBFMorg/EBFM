@@ -24,6 +24,17 @@ class Coupler:
 
     @property
     def has_coupling(self) -> bool:
+        deprecation(
+            logger,
+            "Coupler.has_coupling is deprecated, use Coupler.has_coupling_to(comp_name) if you want to check for "
+            "specific components.\n"
+            "### Design recommendations ###\n"
+            "It is recommended to follow the strategy pattern and initialize your Coupler as a DummyCoupler, "
+            "YACCoupler or similar to avoid general has_coupling checks since this usually leads to a better design.\n"
+            "Alternatively, you can check for the type of your coupler. A DummyCoupler never has a coupling and you "
+            "can use this to perform checks similar to has_coupling.\n"
+            "##############################",
+        )
         return_value = self._couple_to_elmer_ice or self._couple_to_icon_atmo
         logger.debug(f"Component {self.component_name} has_coupling={return_value}")
         return return_value

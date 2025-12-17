@@ -335,7 +335,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     logger.info("Time loop completed.")
 
-    coupler.finalize()
+    if coupler.has_coupling:
+        coupler.finalize()
 
     logger.info("Closing down EBFM.")
 
