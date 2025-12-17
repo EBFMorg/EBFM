@@ -16,8 +16,8 @@ class DummyCoupler(Coupler):
     This can be used when no coupling is required.
     """
 
-    couple_to_icon_atmo: bool = False
-    couple_to_elmer_ice: bool = False
+    _couple_to_icon_atmo: bool = False
+    _couple_to_elmer_ice: bool = False
 
     def __init__(self, coupling_config: CouplingConfig):
         self.component_name = coupling_config.component_name

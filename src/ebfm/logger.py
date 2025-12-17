@@ -91,3 +91,21 @@ def setup_logging(
     root_logger.addHandler(stderr_handler)
 
     root_logger.debug("Logging setup complete.")
+
+
+def deprecation(logger: Logger, message: str):
+    """
+    Log a deprecation warning message.
+
+    @param logger: The logger to use for logging the deprecation warning.
+    @param message: The deprecation warning message to log.
+    """
+    is_fatal = False  # Set to True to raise an exception instead of a warning
+    level = logging.DEBUG
+
+    if is_fatal:
+        level = logging.ERROR
+        logger.error(f"DEPRECATION: {message}")
+        raise DeprecationWarning(message)
+    else:
+        logger.log(level, f"DEPRECATION: {message}")

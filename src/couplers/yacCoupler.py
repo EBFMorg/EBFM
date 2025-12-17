@@ -6,7 +6,7 @@ import yac
 import numpy as np
 from collections import namedtuple
 
-import logging
+from ebfm import logging
 
 from couplers.base import Coupler, Grid, Dict, CouplingConfig
 
@@ -58,8 +58,8 @@ class YACCoupler(Coupler):
         self.component_name = coupling_config.component_name
         self.interface.read_config_yaml(str(coupling_config.coupler_config))
         self.component = self.interface.def_comp(self.component_name)
-        self.couple_to_icon_atmo = coupling_config.couple_to_icon_atmo
-        self.couple_to_elmer_ice = coupling_config.couple_to_elmer_ice
+        self._couple_to_icon_atmo = coupling_config.couple_to_icon_atmo
+        self._couple_to_elmer_ice = coupling_config.couple_to_elmer_ice
 
     def add_grid(self, grid_name, grid):
         """
@@ -102,10 +102,10 @@ class YACCoupler(Coupler):
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
 
-        if self.couple_to_elmer_ice:
+        if self._couple_to_elmer_ice:
             self.construct_coupling_elmer_ice(time)
 
-        if self.couple_to_icon_atmo:
+        if self._couple_to_icon_atmo:
             self.construct_coupling_icon_atmo(time)
 
     def construct_coupling_elmer_ice(self, time: Dict[str, float]):
@@ -165,7 +165,7 @@ class YACCoupler(Coupler):
                 self.target_fields[field_definition.name] = field
 
     def construct_coupling_icon_atmo(self, time: Dict[str, float]):
-        assert self.couple_to_icon_atmo, "Cannot construct coupling to ICON if 'couple_to_icon_atmo' is False."
+        assert self._couple_to_icon_atmo, "Cannot construct coupling to ICON if '_couple_to_icon_atmo' is False."
 
         FieldDefinition = namedtuple("FieldDefinition", ["exchange_type", "name", "metadata"])
         # TODO: Get hard-coded data below from dummies/EBFM/ebfm-config.yaml
@@ -290,7 +290,9 @@ class YACCoupler(Coupler):
 
         @returns dictionary of exchanged field data
         """
-        assert self.couple_to_icon_atmo, "Cannot exchange data with ICON atmosphere if 'couple_to_icon_atmo' is False."
+        assert (
+            self._couple_to_icon_atmo
+        ), "Cannot exchange data with ICON atmosphere if '_couple_to_icon_atmo' is False."
 
         icon_fields = set(
             [

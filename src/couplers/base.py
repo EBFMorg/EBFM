@@ -11,6 +11,7 @@ from elmer.mesh import Mesh as Grid  # for now use an alias
 from ebfm.config import CouplingConfig
 
 import logging
+from ebfm.logger import deprecation
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +19,28 @@ logger = logging.getLogger(__name__)
 class Coupler:
     component_name: str  # name of this component in the coupler configuration
 
-    couple_to_elmer_ice: bool  # whether to couple with Elmer/Ice
-    couple_to_icon_atmo: bool  # whether to couple with ICON atmosphere
+    _couple_to_elmer_ice: bool  # whether to couple with Elmer/Ice
+    _couple_to_icon_atmo: bool  # whether to couple with ICON atmosphere
 
     @property
     def has_coupling(self) -> bool:
-        return_value = self.couple_to_elmer_ice or self.couple_to_icon_atmo
+        return_value = self._couple_to_elmer_ice or self._couple_to_icon_atmo
         logger.debug(f"Component {self.component_name} has_coupling={return_value}")
         return return_value
+
+    @property
+    def couple_to_elmer_ice(self) -> bool:
+        deprecation(
+            logger, 'Coupler.couple_to_elmer_ice is deprecated, use Coupler.has_coupling_to("elmer_ice") instead.'
+        )
+        return self._couple_to_elmer_ice
+
+    @property
+    def couple_to_icon_atmo(self) -> bool:
+        deprecation(
+            logger, 'Coupler.couple_to_icon_atmo is deprecated, use Coupler.has_coupling_to("icon_atmo") instead.'
+        )
+        return self._couple_to_icon_atmo
 
     def has_coupling_to(self, component_name: str) -> bool:
         """
@@ -36,9 +51,9 @@ class Coupler:
         @returns True if coupling to the specified component is enabled, False otherwise
         """
         if component_name == "icon_atmo":
-            return self.couple_to_icon_atmo
+            return self._couple_to_icon_atmo
         elif component_name == "elmer_ice":
-            return self.couple_to_elmer_ice
+            return self._couple_to_elmer_ice
         else:
             raise ValueError(f"Unknown component name '{component_name}' for coupling check.")
 
