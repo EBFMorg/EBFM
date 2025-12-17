@@ -237,7 +237,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     # Ensure shading routine is only used in uncoupled runs on unpartitioned MATLAB grids;
     # see https://github.com/EBFMorg/EBFM/issues/11 for details.
-    if grid["has_shading"]:
+    if grid["classical_shading"]:
         assert grid_config.is_partitioned is False, "Shading routine only implemented for unpartitioned grids."
         assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
         assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
@@ -255,6 +255,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     # Time-loop
     logger.info("Entering time loop...")
     for t in range(1, time["tn"] + 1):
+
         # Print time to screen
         time["TCUR"] = LOOP_general_functions.print_time(t, time["ts"], time["dt"])
 
