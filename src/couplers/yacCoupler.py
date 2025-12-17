@@ -24,6 +24,76 @@ field {name}:
    - metadata:  {metadata}
 """
 
+FieldDefinition = namedtuple("FieldDefinition", ["exchange_type", "name", "metadata"])
+
+# TODO: Get hard-coded data below from dummies/EBFM/ebfm-config.yaml
+all_field_definitions = {
+    Component.elmer_ice: [
+        FieldDefinition(
+            exchange_type=yac.ExchangeType.SOURCE,
+            name="T_ice",
+            metadata="Near surface temperature at Ice surface (in K)",
+        ),
+        FieldDefinition(
+            exchange_type=yac.ExchangeType.SOURCE,
+            name="smb",
+            metadata="??? (in ???)",
+        ),
+        FieldDefinition(
+            exchange_type=yac.ExchangeType.SOURCE,
+            name="runoff",
+            metadata="Runoff (in ???)",
+        ),
+        FieldDefinition(
+            exchange_type=yac.ExchangeType.TARGET,
+            name="h",
+            metadata="Surface height (in m)",
+        ),
+    ],
+    Component.icon_atmo: [
+        # FieldDefinition(
+        #     exchange_type=yac.ExchangeType.SOURCE,
+        #     name="albedo",
+        #     metadata="Albedo of the ice surface (in ???)"
+        # ),
+        FieldDefinition(
+            exchange_type=yac.ExchangeType.TARGET,
+            name="pr",
+            metadata="Precipitation rate (in kg m-2 s-1)",
+        ),
+        FieldDefinition(
+            exchange_type=yac.ExchangeType.TARGET,
+            name="pr_snow",
+            metadata="Precipitation rate of snow (in kg m-2 s-1)",
+        ),
+        FieldDefinition(
+            exchange_type=yac.ExchangeType.TARGET,
+            name="rsds",
+            metadata="Downward shortwave radiation flux (in W m-2)",
+        ),
+        FieldDefinition(
+            exchange_type=yac.ExchangeType.TARGET,
+            name="rlds",
+            metadata="Downward longwave radiation flux (in W m-2)",
+        ),
+        FieldDefinition(
+            exchange_type=yac.ExchangeType.TARGET, name="sfcwind", metadata="Wind speed at surface (in m s-1)"
+        ),
+        FieldDefinition(exchange_type=yac.ExchangeType.TARGET, name="clt", metadata="Cloud cover (in fraction)"),
+        FieldDefinition(exchange_type=yac.ExchangeType.TARGET, name="tas", metadata="Temperature at surface (in K)"),
+        # FieldDefinition(
+        #     exchange_type=yac.ExchangeType.TARGET,
+        #     name="huss",
+        #     metadata="Specific humidity at surface (in kg kg-1)"
+        # ),
+        # FieldDefinition(
+        #     exchange_type=yac.ExchangeType.TARGET,
+        #     name="sfcPressure",
+        #     metadata="Surface pressure (in Pa)"
+        # ),
+    ],
+}
+
 
 def days_to_iso(days: float) -> str:
     """
@@ -102,49 +172,16 @@ class YACCoupler(Coupler):
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
 
-        # TODO: Make this more generic.
-        """
         for component, is_coupled in self._couples_to.items():
             if is_coupled:
                 self.construct_coupling_to(component, time)
-        """
 
-        if self._couples_to[Component.elmer_ice]:
-            self.construct_coupling_elmer_ice(time)
-
-        if self._couples_to[Component.icon_atmo]:
-            self.construct_coupling_icon_atmo(time)
-
-    def construct_coupling_elmer_ice(self, time: Dict[str, float]):
-        component = Component.elmer_ice
+    def construct_coupling_to(self, component: Component, time: Dict[str, float]):
         assert self._couples_to[
             component
         ], f"Cannot construct coupling to {component=} because {self._couples_to[component]=}'."
 
-        FieldDefinition = namedtuple("FieldDefinition", ["exchange_type", "name", "metadata"])
-        # TODO: Get hard-coded data below from dummies/EBFM/ebfm-config.yaml
-        field_definitions = [
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.SOURCE,
-                name="T_ice",
-                metadata="Near surface temperature at Ice surface (in K)",
-            ),
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.SOURCE,
-                name="smb",
-                metadata="??? (in ???)",
-            ),
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.SOURCE,
-                name="runoff",
-                metadata="Runoff (in ???)",
-            ),
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.TARGET,
-                name="h",
-                metadata="Surface height (in m)",
-            ),
-        ]
+        field_definitions = all_field_definitions[component]
 
         timestep_value = days_to_iso(time["dt"])
         collection_size = 1  # TODO: Dummy value for now; make configurable if needed
@@ -166,84 +203,6 @@ class YACCoupler(Coupler):
                 field.grid_name,
                 field_definition.name,
                 field_definition.metadata.encode("utf-8"),
-            )
-
-            if field_definition.exchange_type == yac.ExchangeType.SOURCE:
-                self.source_fields[field_definition.name] = field
-
-            elif field_definition.exchange_type == yac.ExchangeType.TARGET:
-                self.target_fields[field_definition.name] = field
-
-    def construct_coupling_icon_atmo(self, time: Dict[str, float]):
-        component = Component.icon_atmo
-        assert self._couples_to[
-            component
-        ], f"Cannot construct coupling to {component=} because {self._couples_to[component]=}'."
-
-        FieldDefinition = namedtuple("FieldDefinition", ["exchange_type", "name", "metadata"])
-        # TODO: Get hard-coded data below from dummies/EBFM/ebfm-config.yaml
-        field_definitions = [
-            # FieldDefinition(
-            #     exchange_type=yac.ExchangeType.SOURCE,
-            #     name="albedo",
-            #     metadata="Albedo of the ice surface (in ???)"
-            # ),
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.TARGET,
-                name="pr",
-                metadata="Precipitation rate (in kg m-2 s-1)",
-            ),
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.TARGET,
-                name="pr_snow",
-                metadata="Precipitation rate of snow (in kg m-2 s-1)",
-            ),
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.TARGET,
-                name="rsds",
-                metadata="Downward shortwave radiation flux (in W m-2)",
-            ),
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.TARGET,
-                name="rlds",
-                metadata="Downward longwave radiation flux (in W m-2)",
-            ),
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.TARGET, name="sfcwind", metadata="Wind speed at surface (in m s-1)"
-            ),
-            FieldDefinition(exchange_type=yac.ExchangeType.TARGET, name="clt", metadata="Cloud cover (in fraction)"),
-            FieldDefinition(
-                exchange_type=yac.ExchangeType.TARGET, name="tas", metadata="Temperature at surface (in K)"
-            ),
-            # FieldDefinition(
-            #     exchange_type=yac.ExchangeType.TARGET,
-            #     name="huss",
-            #     metadata="Specific humidity at surface (in kg kg-1)"
-            # ),
-            # FieldDefinition(
-            #     exchange_type=yac.ExchangeType.TARGET,
-            #     name="sfcPressure",
-            #     metadata="Surface pressure (in Pa)"
-            # ),
-        ]
-
-        timestep_value = days_to_iso(time["dt"])
-        collection_size = 1  # TODO: Dummy value for now; make configurable if needed
-
-        Timestep = namedtuple("Timestep", ["value", "format"])
-        timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
-
-        for field_definition in field_definitions:
-            field = yac.Field.create(
-                field_definition.name,
-                self.component,
-                self.corner_points,
-                collection_size,
-                timestep.value,
-                timestep.format,
-            )
-            self.interface.def_field_metadata(
-                field.component_name, field.grid_name, field_definition.name, field_definition.metadata.encode("utf-8")
             )
 
             if field_definition.exchange_type == yac.ExchangeType.SOURCE:
