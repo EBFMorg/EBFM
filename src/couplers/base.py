@@ -89,6 +89,29 @@ class Coupler:
         """
         raise NotImplementedError("add_couples method must be implemented in subclasses.")
 
+    def exchange_elmer_ice(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+        """Exchange data with Elmer Ice component
+
+        @param[in] put_data dictionary of field names and their data to be exchanged with Elmer Ice component
+
+        @returns dictionary of exchanged field data
+        """
+        deprecation(
+            logger, 'Coupler.exchange_elmer_ice(data) is deprecated, use Coupler.exchange("elmer_ice", data) instead.'
+        )
+        return self.exchange("elmer_ice", data_to_exchange)
+
+    def exchange_icon_atmo(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+        """Exchange data with ICON atmosphere component
+
+        @param[in] put_data dictionary of field names and their data to be exchanged with ICON atmosphere component
+        @returns dictionary of exchanged field data
+        """
+        deprecation(
+            logger, 'Coupler.exchange_icon_atmo(data) is deprecated, use Coupler.exchange("icon_atmo", data) instead.'
+        )
+        return self.exchange("icon_atmo", data_to_exchange)
+
     def exchange(self, component_name: str, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
         """Exchange data with another component
 

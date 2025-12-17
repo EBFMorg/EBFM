@@ -277,13 +277,13 @@ class YACCoupler(Coupler):
 
     def exchange(self, component_name: str, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
         if component_name == "icon_atmo":
-            return self.exchange_icon_atmo(data_to_exchange)
+            return self._exchange_icon_atmo(data_to_exchange)
         elif component_name == "elmer_ice":
-            return self.exchange_elmer_ice(data_to_exchange)
+            return self._exchange_elmer_ice(data_to_exchange)
         else:
             raise ValueError(f"Unknown component name '{component_name}' for data exchange.")
 
-    def exchange_icon_atmo(self, put_data: Dict[str, np.array]) -> Dict[str, np.array]:
+    def _exchange_icon_atmo(self, put_data: Dict[str, np.array]) -> Dict[str, np.array]:
         """Exchange data with ICON atmosphere component
 
         @param[in] put_data dictionary of field names and their data to be exchanged with ICON atmosphere component
@@ -338,11 +338,10 @@ class YACCoupler(Coupler):
 
         return received_data
 
-    def exchange_elmer_ice(self, put_data: Dict[str, np.array]) -> Dict[str, np.array]:
+    def _exchange_elmer_ice(self, put_data: Dict[str, np.array]) -> Dict[str, np.array]:
         """Exchange data with Elmer Ice component
 
         @param[in] put_data dictionary of field names and their data to be exchanged with Elmer Ice component
-        @param[in] get_keys list of field names to be received from Elmer Ice component
 
         @returns dictionary of exchanged field data
         """
@@ -398,5 +397,6 @@ class YACCoupler(Coupler):
 
     def finalize(self):
         """Finalize the coupling interface"""
+        logger.info("Finalizing YAC Coupling...")
         del self.interface
         logger.info("YAC Coupling finalized.")

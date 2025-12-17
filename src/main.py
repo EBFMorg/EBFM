@@ -268,7 +268,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "albedo": OUT["albedo"],
             }
 
-            data_from_icon = coupler.exchange("icon_atmo", data_to_icon)
+            data_from_icon = coupler.exchange_icon_atmo(data_to_icon)
 
             logger.debug("Done.")
             logger.debug("Received the following data from ICON:", data_from_icon)
@@ -307,7 +307,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "T_ice": OUT["T_ice"],
                 "runoff": OUT["runoff"],
             }
-            data_from_elmer = coupler.exchange("elmer_ice", data_to_elmer)
+            data_from_elmer = coupler.exchange_elmer_ice(data_to_elmer)
             logger.debug("Done.")
             logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
 
@@ -335,7 +335,6 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     logger.info("Time loop completed.")
 
-    logger.debug("Finalizing coupling...")
     coupler.finalize()
 
     logger.info("Closing down EBFM.")
