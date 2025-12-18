@@ -8,6 +8,7 @@ from collections import namedtuple
 
 from ebfm import logging
 
+from typing import List
 from couplers.base import Coupler, Grid, Dict, CouplingConfig, Component
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
@@ -49,6 +50,16 @@ all_field_definitions = {
             name="h",
             metadata="Surface height (in m)",
         ),
+        # FieldDefinition(
+        #     exchange_type=yac.ExchangeType.TARGET,
+        #     name="dhdx",
+        #     metadata="Surface slope in x direction",
+        # ),
+        # FieldDefinition(
+        #     exchange_type=yac.ExchangeType.TARGET,
+        #     name="dhdy",
+        #     metadata="Surface slope in y direction",
+        # ),
     ],
     Component.icon_atmo: [
         # FieldDefinition(
@@ -94,33 +105,6 @@ all_field_definitions = {
     ],
 }
 
-all_fields = {
-    Component.elmer_ice: set(
-        [
-            "smb",
-            "T_ice",
-            "runoff",
-            "h",
-            # 'dhdx',
-            # 'dhdy',
-        ]
-    ),
-    Component.icon_atmo: set(
-        [
-            # 'albedo',
-            "pr",
-            "pr_snow",
-            "rsds",
-            "rlds",
-            "clt",
-            "sfcwind",
-            "tas",
-            # 'huss',
-            # 'sfcPressure'
-        ]
-    ),
-}
-
 
 def days_to_iso(days: float) -> str:
     """
@@ -140,10 +124,7 @@ class YACCoupler(Coupler):
     component: yac.Component = None
     grid: yac.UnstructuredGrid = None
     corner_points: yac.Points = None
-    # TODO use a single dictionary for both source and target fields;
-    # TODO provide properties to create dicts containing source_fields and target_fields by comparing to exchange_type
-    source_fields: Dict[str, yac.Field] = {}
-    target_fields: Dict[str, yac.Field] = {}
+    fields: Dict[Component, yac.Field] = {}
 
     def __init__(self, coupling_config: CouplingConfig):
         """Create interface to the coupler and register component
@@ -201,6 +182,7 @@ class YACCoupler(Coupler):
 
         for component, is_coupled in self._couples_to.items():
             if is_coupled:
+                self.fields[component] = list()  # create empty list for fields of current component
                 self.construct_coupling_to(component, time)
 
     def construct_coupling_to(self, component: Component, time: Dict[str, float]):
@@ -208,15 +190,13 @@ class YACCoupler(Coupler):
             component
         ], f"Cannot construct coupling to {component=} because {self._couples_to[component]=}'."
 
-        field_definitions = all_field_definitions[component]
-
         timestep_value = days_to_iso(time["dt"])
         collection_size = 1  # TODO: Dummy value for now; make configurable if needed
 
         Timestep = namedtuple("Timestep", ["value", "format"])
         timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
 
-        for field_definition in field_definitions:
+        for field_definition in all_field_definitions[component]:
             field = yac.Field.create(
                 field_definition.name,
                 self.component,
@@ -232,28 +212,25 @@ class YACCoupler(Coupler):
                 field_definition.metadata.encode("utf-8"),
             )
 
-            if field_definition.exchange_type == yac.ExchangeType.SOURCE:
-                self.source_fields[field_definition.name] = field
-
-            elif field_definition.exchange_type == yac.ExchangeType.TARGET:
-                self.target_fields[field_definition.name] = field
+            self.fields[component].append(field)
 
     def construct_coupling_post_sync(self):
         # after synchronisation or the end of the definition phase YAC can be queried about various information
 
-        for field in self.target_fields.values():
-            is_defined = self.interface.get_field_is_defined(field.component_name, field.grid_name, field.name)
-            assert is_defined, (
-                f"Field '{field.name}' is not defined in YAC for component '{field.component_name}' and "
-                f"grid '{field.grid_name}'."
-            )
+        for component, fields in self.fields.items():
+            for field in fields:
+                is_defined = self.interface.get_field_is_defined(field.component_name, field.grid_name, field.name)
+                assert is_defined, (
+                    f"Field '{field.name}' is not defined in YAC for component '{field.component_name}' and "
+                    f"grid '{field.grid_name}'."
+                )
 
-            field_role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
-            assert (
-                field_role == yac.ExchangeType.TARGET
-            ), f"Field '{field.name}' is no TARGET as expected but a {field_role}."
-            field_info = self.field_information(field)
-            logger.info(field_info)
+                field_role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
+
+                if field_role is yac.ExchangeType.TARGET:
+                    logger.debug(f"Field {field.name}: SOURCE {component.name} -> TARGET {field.component_name}")
+                    field_info = self.field_information(field)
+                    logger.info(field_info)
 
     def field_information(self, field: yac.Field) -> str:
         src_comp, src_grid, src_field = self.interface.get_field_source(
@@ -265,58 +242,44 @@ class YACCoupler(Coupler):
             name=field.name, comp=src_comp, grid=src_grid, timestep=src_field_timestep, metadata=src_field_metadata
         )
 
-    def _put(self, field_name: str, field_data: np.array):
-        field: yac.Field = self.source_fields[field_name]
-        field.put(field_data)
-
-    def _get(self, field_name: str) -> np.array:
-        field: yac.Field = self.target_fields[field_name]
-        data, action = field.get()
-        return data
-
     def exchange(self, component_name: str, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
-        component = Component[component_name]
-        return self._exchange_with(component, data_to_exchange)  # must support all components in Component
-
-    def _exchange_with(self, component: Component, put_data: Dict[str, np.array]) -> Dict[str, np.array]:
         """Exchange data with component
 
-        @param[in] put_data dictionary of field names and their data to be exchanged with component
+        @param[in] data_to_exchange dictionary of field names and their data to be exchanged with component
 
         @returns dictionary of exchanged field data
         """
+        component = Component[component_name]
+
         assert self._couples_to[
             component
         ], f"Cannot exchange data with {component=} because {self._couples_to[component]=}'."
 
-        fields = all_fields[component]
-
-        for field_name, field in self.source_fields.items():
-            logger.debug(f"Checking field {field_name} for {component.name} exchange...")
-            if field_name in fields:
-                role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
-                assert (
-                    role == yac.ExchangeType.SOURCE
-                ), f"Field '{field_name}' is not a target field for {component.name} exchange, but has role '{role}'."
-                logger.debug(f"Sending field {field_name} to {component.name}...")
-                self._put(field_name, put_data[field_name])
-            else:
-                logger.debug(f"Skipping field {field_name} as it is not part of {component.name} exchange.")
+        fields: List[yac.Field] = self.fields[component]
 
         received_data = {}
-        for field_name, field in self.target_fields.items():
-            logger.debug(f"Checking field {field_name} for {component.name} exchange...")
-            if field_name in fields:
-                role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
-                assert (
-                    role == yac.ExchangeType.TARGET
-                ), f"Field '{field_name}' is not a target field for {component.name} exchange, but has role '{role}'."
-                logger.debug(f"Receiving field {field_name} from {component.name}...")
-                # Only get the first element, since we only have collection size of 1
-                received_data[field_name] = self._get(field_name)[0]
-                logger.debug(f"Received field '{field_name}' from {component.name}. Data: {received_data[field_name]}")
+        put_fields = []
+        get_fields = []
+
+        for field in fields:
+            field_role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
+            if field_role is yac.ExchangeType.SOURCE:
+                put_fields.append(field)
+            elif field_role is yac.ExchangeType.TARGET:
+                get_fields.append(field)
             else:
-                logger.debug(f"Skipping field {field_name} as it is not part of {component.name} exchange.")
+                raise Exception(f"Unexpected {field.exchange_type=}")
+
+        for field in put_fields:
+            logger.debug(f"Sending field {field.name} to {component.name}...")
+            field.put(data_to_exchange[field.name])
+            logger.debug(f"Sending field {field.name} to {component.name} complete.")
+
+        for field in get_fields:
+            logger.debug(f"Receiving field {field.name} to {component.name}...")
+            data, _ = field.get()
+            received_data[field.name] = data[0]
+            logger.debug(f"Receiving field {field.name} to {component.name} complete.")
 
         return received_data
 
