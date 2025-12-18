@@ -25,7 +25,7 @@ from mpi4py import MPI
 from typing import List
 
 try:
-    import coupling  # noqa: E402
+    from couplers.yacCoupler import YACCoupler  # noqa: E402
 
     coupling_supported = True
 except ImportError as e:
@@ -131,21 +131,24 @@ def main():
     time_group.add_argument(
         "--start-time",
         type=str,
-        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM'",
+        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM' "
+        "(i.e., time at the beginning of the first time step)",
         default="1-Jan-1979 00:00",
     )
 
     time_group.add_argument(
         "--end-time",
         type=str,
-        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM'",
+        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM' "
+        "(i.e., time at the end of the last time step)",
         default="2-Jan-1979 00:00",
     )
 
     time_group.add_argument(
         "--time-step",
         type=float,
-        help="Time step of the simulation in days, e.g., 0.125 for 3 hours.",
+        help="Time step of the simulation in days, e.g., 0.125 for 3 hours. "
+        "Note: The difference between end-time and start-time must be divisible by the time step.",
         default=0.125,
     )
 
@@ -203,7 +206,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 """
         )
     else:
-        from coupler import NoCoupler
+        from couplers.dummyCoupler import DummyCoupler
 
     # TODO: replace MPI.COMM_WORLD with communicator from ebfm; either from couplers comm splitting or default comm
     setup_logging(
@@ -223,7 +226,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     logger.debug("Reading configuration and checking for consistency.")
 
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    coupling_config = CouplingConfig(args, component_name="ebfm")
+    coupling_config = CouplingConfig(args, component_name="ebfm")  # TODO: get from EBFM's coupling configuration?
     grid_config = GridConfig(args)
     time_config = TimeConfig(args)
 
@@ -246,20 +249,24 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     OUT, IN, OUTFILE = INIT.init_initial_conditions(grid, io, time)
 
     if coupling_config.defines_coupling():
-        # TODO: introduce minimal stub implementation
-        # TODO consider introducing an ebfm_adapter_config.yaml
-        coupler = coupling.init(coupling_config=coupling_config)
-        coupling.setup(coupler, grid["mesh"], time)
+        coupler = YACCoupler(coupling_config=coupling_config)
+        coupler.setup(grid["mesh"], time)
     else:
-        coupler = NoCoupler(component_name=coupling_config.component_name)
+        coupler = DummyCoupler(coupling_config=coupling_config)
+        # TODO: some grids that are not used in coupling currently do not have grid["mesh"]
+        try:
+            grid["mesh"]
+        except KeyError:
+            grid["mesh"] = None  # add dummy to make coupler.setup pass.
+        coupler.setup(grid, time)  # TODO: factor out as soon as all grids have grid["mesh"]
 
     # Time-loop
     logger.info("Entering time loop...")
-    for t in range(1, time["tn"] + 1):
+    for t in range(time["tn"]):
         # Print time to screen
         time["TCUR"] = LOOP_general_functions.print_time(t, time["ts"], time["dt"])
 
-        logger.info(f'Time step {t} of {time["tn"]} (dt = {time["dt"]} days)')
+        logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
         # Read and prepare climate input
         if coupler and coupler.couple_to_icon_atmo:
@@ -322,7 +329,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         if not grid["is_partitioned"] and not coupler.has_coupling:
             if grid_config.grid_type is GridInputType.MATLAB:
-                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, C)
+                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time)
             else:
                 logger.warning("Skipping writing output to file for Elmer input grids.")
         elif grid["is_partitioned"] or coupler.has_coupling:
@@ -338,7 +345,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     logger.info("Time loop completed.")
 
     if coupler.has_coupling:
-        coupling.finalize(coupler)
+        coupler.finalize()
 
     logger.info("Closing down EBFM.")
 

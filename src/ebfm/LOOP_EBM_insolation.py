@@ -140,7 +140,7 @@ def main(grid, time2, OUT):
         # Build the final shade 2D array
         shade_2D = np.ones((xl, yl), dtype=int)
         shade_2D.flat[grid["ind"]] = shade
-        OUT["shade"] = shade_2D.flatten()[grid["mask_2D"].flatten() == 1]
+        OUT["shade"] = shade_2D.flatten()[grid["ind"]]
     else:
         # TODO: Shading based on lookup tables from Elmer/Ice
         # For now: assume flat surface and no shading by surrounding terrain

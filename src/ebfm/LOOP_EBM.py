@@ -15,7 +15,7 @@ from ebfm import (
 from ebfm import LOOP_EBM_SWout, LOOP_EBM_insolation
 from ebfm.constants import SECONDS_PER_DAY
 
-from coupler import Coupler
+from couplers import Coupler
 
 
 def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:

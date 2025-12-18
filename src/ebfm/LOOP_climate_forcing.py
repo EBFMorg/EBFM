@@ -4,10 +4,12 @@
 
 import numpy as np
 
-from coupler import Coupler
+from couplers import Coupler
 
 from datetime import datetime, timedelta
 from ebfm.constants import SECONDS_PER_DAY, DAYS_PER_YEAR
+
+from ebfm.LOOP_general_functions import is_first_time_step
 
 
 def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
@@ -69,7 +71,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     # Time since last snowfall event
     snowfall_mask = (IN["snow"] / (time["dt"] * SECONDS_PER_DAY)) > C["Pthres"]
     OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
-    if t == 1:
+    if is_first_time_step(t):
         OUT["timelastsnow"][:] = time["TCUR"]
 
     # Potential temperature and lapse rate

@@ -6,10 +6,12 @@ import os
 import numpy as np
 from netCDF4 import Dataset, date2num
 
+from ebfm.LOOP_general_functions import is_first_time_step, is_final_time_step
 
-def main(OUTFILE, io, OUT, grid, t, time, C):
+
+def main(OUTFILE, io, OUT, grid, t, time):
     # Specify variables to be written
-    if t == 1:
+    if is_first_time_step(t):
         OUTFILE["varsout"] = [
             ["smb", "m w.e.", "sum", "Climatic mass balance"],
             ["Tsurf", "K", "mean", "Surface temperature"],
@@ -55,13 +57,13 @@ def main(OUTFILE, io, OUT, grid, t, time, C):
         temp_long = np.float64(OUT[varname])
 
         # Initialize TEMP storage
-        if (t - 1) % io["freqout"] == 0:
+        if t % io["freqout"] == 0:
             OUTFILE.setdefault("TEMP", {})
             OUTFILE["TEMP"][varname] = np.zeros_like(temp_long)
 
         # Handle type: sample, mean, or sum
         if var_type == "sample":
-            if (t + io["freqout"] // 2) % io["freqout"] == 0:
+            if (t + 1 + io["freqout"] // 2) % io["freqout"] == 0:  # TODO: correct?
                 OUTFILE["TEMP"][varname] = temp_long
         elif var_type == "mean":
             OUTFILE["TEMP"][varname] += temp_long / io["freqout"]
@@ -86,7 +88,7 @@ def main(OUTFILE, io, OUT, grid, t, time, C):
         """
 
         # Save output to binary files at the first time step
-        if t == 1:
+        if is_first_time_step(t):
             if not os.path.exists(io["outdir"]):
                 os.makedirs(io["outdir"])
 
@@ -97,14 +99,14 @@ def main(OUTFILE, io, OUT, grid, t, time, C):
                 io["fid"][varname] = open(filepath, "wb")
 
         # Write variables to binary files when `freqout` is met
-        if t % io["freqout"] == 0:
+        if (t + 1) % io["freqout"] == 0:  # TODO: correct?
             for entry in OUTFILE["varsout"]:
                 varname = entry[0]
                 OUTFILE[varname] = OUTFILE["TEMP"][varname]
                 io["fid"][varname].write(OUTFILE[varname].astype("float32").tobytes())
 
         # Close all file streams and save run metadata at the final time step
-        if t == time["tn"]:
+        if is_final_time_step(t, time):
             for file in io["fid"].values():
                 file.close()
 
@@ -134,7 +136,7 @@ def main(OUTFILE, io, OUT, grid, t, time, C):
         time_calendar = "gregorian"
 
         # Initialize NetCDF file at the first time step
-        if t == 1:
+        if is_first_time_step(t):
             if not os.path.exists(io["outdir"]):
                 os.makedirs(io["outdir"])
 
@@ -203,8 +205,8 @@ def main(OUTFILE, io, OUT, grid, t, time, C):
             nc_time.description = "Time at which data is recorded, in days since 1970-01-01 00:00:00"
 
         # Write data to NetCDF at the specified frequency (e.g., for average/summed values)
-        if t % io["freqout"] == 0:
-            time_index = t // io["freqout"] - 1  # Determine the time slice index
+        if (t + 1) % io["freqout"] == 0:  # TODO: correct?
+            time_index = t // io["freqout"]  # Determine the time slice index
 
             # Calculate time in "days since 1970-01-01"
             time_days_since_1970 = date2num(time["TCUR"], units=time_units, calendar=time_calendar)
@@ -229,7 +231,7 @@ def main(OUTFILE, io, OUT, grid, t, time, C):
                     io["nc_file"][varname][time_index, :, :] = var_2D
 
         # Close the NetCDF file at the final time step
-        if t == time["tn"]:
+        if is_final_time_step(t, time):
             io["nc_file"].close()
 
         return True
