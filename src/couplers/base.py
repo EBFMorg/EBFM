@@ -92,7 +92,7 @@ class Coupler:
         Performs initialization operations after init and before entering the
         time loop
 
-        @param[in] grid Grid used by EBFM where coupling happens
+        @param[in] grid Grid used by EBFM where coupling fields are defined
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
         if isinstance(grid, dict):
@@ -109,7 +109,7 @@ class Coupler:
         """
         Implementation of Coupler.setup
 
-        @param[in] grid Grid used by EBFM where coupling happens
+        @param[in] grid Grid used by EBFM where coupling fields are defined
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
         raise NotImplementedError("setup method must be implemented in subclasses.")
