@@ -16,3 +16,6 @@ class OASISCoupler(Coupler):
 
     # TODO: Implement OASISCoupler methods
     # Serves as example for Strategy Pattern implementation of Coupler subclasses
+
+    def __init__(self, coupling_config):
+        raise NotImplementedError("OASISCoupler is not yet implemented.")
