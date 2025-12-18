@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from importlib.metadata import version, PackageNotFoundError
+import logging  # noqa: F401
 
 try:
     __version__ = version("EBFM")
