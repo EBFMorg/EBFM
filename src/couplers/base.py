@@ -37,6 +37,11 @@ class Coupler:
 
     @property
     def has_coupling(self) -> bool:
+        """
+        Check if coupling to any component is enabled
+
+        @returns True if coupling to any component is enabled, False otherwise
+        """
         deprecation(
             logger,
             "Coupler.has_coupling is deprecated, use Coupler.has_coupling_to(comp_name) if you want to check for "
@@ -114,20 +119,21 @@ class Coupler:
         """
         raise NotImplementedError("setup method must be implemented in subclasses.")
 
-    def add_grid(self, grid_name: str, grid: Grid):
+    def _add_grid(self, grid_name: str, grid: Grid):
         """
         Add grid to the Coupler interface
         """
         raise NotImplementedError("add_grid method must be implemented in subclasses.")
 
-    def add_couples(self, time: Dict[str, float]):
+    def _add_couples(self, time: Dict[str, float]):
         """
         Add coupling definitions to the Coupler interface
         """
         raise NotImplementedError("add_couples method must be implemented in subclasses.")
 
     def exchange_elmer_ice(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
-        """Exchange data with Elmer Ice component
+        """
+        Exchange data with Elmer Ice component
 
         @param[in] put_data dictionary of field names and their data to be exchanged with Elmer Ice component
 
@@ -139,7 +145,8 @@ class Coupler:
         return self.exchange(Component.elmer_ice.name, data_to_exchange)
 
     def exchange_icon_atmo(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
-        """Exchange data with ICON atmosphere component
+        """
+        Exchange data with ICON atmosphere component
 
         @param[in] put_data dictionary of field names and their data to be exchanged with ICON atmosphere component
         @returns dictionary of exchanged field data
@@ -150,7 +157,8 @@ class Coupler:
         return self.exchange(Component.icon_atmo.name, data_to_exchange)
 
     def exchange(self, component_name: str, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
-        """Exchange data with another component
+        """
+        Exchange data with another component
 
         @param[in] component_name name of the component to exchange data with
         @param[in] data_to_exchange dictionary of field names and their data to be exchanged
