@@ -39,7 +39,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     ###########################################################
     # SPECIFY/READ METEO FORCING
     ###########################################################
-    if not cpl.couple_to_icon_atmo:
+    if not cpl.has_coupling_to("icon_atmo"):
         IN = set_random_weather_data(IN, C, time, grid)
 
     ###########################################################
@@ -57,7 +57,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
         "VP0"
     ] * np.exp(C["Ls"] / C["Rv"] * (1.0 / 273.15 - 1.0 / IN["T"])) * (IN["T"] < 273.15)
 
-    if cpl.couple_to_icon_atmo:  # q from ICON, calculate VP and RH
+    if cpl.has_coupling_to("icon_atmo"):  # q from ICON, calculate VP and RH
         IN["VP"] = IN["q"] * IN["Pres"] / C["eps"]
         IN["RH"] = IN["VP"] / VPsat
     else:  # RH from input, calculate VP and q
