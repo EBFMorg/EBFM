@@ -342,7 +342,7 @@ class YACCoupler(Coupler):
             name=field.name, comp=src_comp, grid=src_grid, timestep=src_field_timestep, metadata=src_field_metadata
         )
 
-    def _setup(self, grid: Dict | Grid, time: Dict[str, float]):
+    def setup(self, grid: Dict | Grid, time: Dict[str, float]):
         """
         Setup the coupling interface
 
