@@ -247,17 +247,18 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time)
 
+    # TODO: some grids currently do not have grid["mesh"]
+    try:
+        grid["mesh"]
+    except KeyError:
+        grid["mesh"] = None  # add dummy to make coupler.setup pass.
+
     if coupling_config.defines_coupling():
         coupler = YACCoupler(coupling_config=coupling_config)
-        coupler.setup(grid["mesh"], time)
     else:
         coupler = DummyCoupler(coupling_config=coupling_config)
-        # TODO: some grids that are not used in coupling currently do not have grid["mesh"]
-        try:
-            grid["mesh"]
-        except KeyError:
-            grid["mesh"] = None  # add dummy to make coupler.setup pass.
-        coupler.setup(grid, time)  # TODO: factor out as soon as all grids have grid["mesh"]
+
+    coupler.setup(grid["mesh"], time)
 
     # Time-loop
     logger.info("Entering time loop...")
@@ -268,7 +269,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
         # Read and prepare climate input
-        if coupler and coupler.couple_to_icon_atmo:
+        if coupler.has_coupling_to("icon_atmo"):
             # Exchange data with ICON
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
@@ -276,7 +277,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "albedo": OUT["albedo"],
             }
 
-            data_from_icon = coupler.exchange_icon_atmo(data_to_icon)
+            data_from_icon = coupler.exchange("icon_atmo", data_to_icon)
 
             logger.debug("Done.")
             logger.debug("Received the following data from ICON:", data_from_icon)
@@ -305,7 +306,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         # Calculate surface mass balance
         OUT = LOOP_mass_balance.main(OUT, IN, C)
 
-        if coupler.couple_to_elmer_ice:
+        if coupler.has_coupling_to("elmer_ice"):
             # Exchange data with Elmer
             logger.info("Data exchange with Elmer/Ice")
             logger.debug("Started...")
@@ -315,7 +316,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "T_ice": OUT["T_ice"],
                 "runoff": OUT["runoff"],
             }
-            data_from_elmer = coupler.exchange_elmer_ice(data_to_elmer)
+            data_from_elmer = coupler.exchange("elmer_ice", data_to_elmer)
             logger.debug("Done.")
             logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
 
@@ -326,25 +327,28 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             # IN['dhdy'] = data_from_elmer('dhdy')
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
-        if not grid["is_partitioned"] and not coupler.has_coupling:
+        # TODO: should be supported for all cases to avoid case distinction here
+        if not grid["is_partitioned"] and isinstance(coupler, DummyCoupler):
             if grid_config.grid_type is GridInputType.MATLAB:
                 io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time)
             else:
                 logger.warning("Skipping writing output to file for Elmer input grids.")
-        elif grid["is_partitioned"] or coupler.has_coupling:
+        elif grid["is_partitioned"] or not isinstance(coupler, DummyCoupler):
             logger.warning("Skipping writing output to file for coupled or partitioned runs.")
         else:
             logger.error("Unhandled case in output writing.")
             raise Exception("Unhandled case in output writing.")
 
     # Write restart file
-    if not grid["is_partitioned"] and not coupler.has_coupling:
+    # TODO: should be supported for all cases to avoid case distinction here
+    if not grid["is_partitioned"] and isinstance(coupler, DummyCoupler):
         FINAL_create_restart_file.main(OUT, io)
+    else:
+        logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
 
     logger.info("Time loop completed.")
 
-    if coupler.has_coupling:
-        coupler.finalize()
+    coupler.finalize()
 
     logger.info("Closing down EBFM.")
 

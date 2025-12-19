@@ -157,6 +157,26 @@ class YACCoupler(Coupler):
         self._couples_to[Component.icon_atmo] = coupling_config.couple_to_icon_atmo
         self._couples_to[Component.elmer_ice] = coupling_config.couple_to_elmer_ice
 
+    def setup(self, grid: Dict | Grid, time: Dict[str, float]):
+        """
+        Setup the coupling interface
+
+        Performs initialization operations after init and before entering the
+        time loop
+
+        @param[in] grid Grid used by EBFM where coupling happens
+        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
+        """
+
+        grid_name = "ebfm_grid"  # TODO: get from ebfm_coupling_config?
+
+        self._add_grid(grid_name, grid)
+
+        timestep_value = days_to_iso(time["dt"])
+        timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
+
+        self._add_couples(timestep)
+
     def exchange(self, component_name: str, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
         """
         Exchange data with component
@@ -341,23 +361,3 @@ class YACCoupler(Coupler):
         return field_template.format(
             name=field.name, comp=src_comp, grid=src_grid, timestep=src_field_timestep, metadata=src_field_metadata
         )
-
-    def _setup(self, grid: Dict | Grid, time: Dict[str, float]):
-        """
-        Setup the coupling interface
-
-        Performs initialization operations after init and before entering the
-        time loop
-
-        @param[in] grid Grid used by EBFM where coupling happens
-        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
-        """
-
-        grid_name = "ebfm_grid"  # TODO: get from ebfm_coupling_config?
-
-        self._add_grid(grid_name, grid)
-
-        timestep_value = days_to_iso(time["dt"])
-        timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
-
-        self._add_couples(timestep)
