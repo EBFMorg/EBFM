@@ -289,7 +289,7 @@ class YACCoupler(Coupler):
         self._couples_to[Component.icon_atmo] = coupling_config.couple_to_icon_atmo
         self._couples_to[Component.elmer_ice] = coupling_config.couple_to_elmer_ice
 
-    def setup(self, grid: Dict | Grid, time: Dict[str, float]):
+    def setup(self, grid: Grid, time: Dict[str, float]):
         """
         Setup the coupling interface
 

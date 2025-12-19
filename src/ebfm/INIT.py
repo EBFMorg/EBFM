@@ -191,14 +191,16 @@ def init_grid(grid, io, config: GridConfig):
         if config.grid_type is GridInputType.ELMERXIOS:
             grid = read_dem_xios(config.dem_file, grid)
 
-        if config.grid_type is GridInputType.ELMERXIOS:
-            min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
+        # if config.grid_type is GridInputType.ELMERXIOS:
+        #     min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
 
-            # treats grid cells as glacier where ice thickness exceeds threshold
-            grid["mask"] = (grid["h"] > min_thickness_glacier).astype(int)
-        else:
-            grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
+        #     # treats grid cells as glacier where ice thickness exceeds threshold
+        #     grid["mask"] = (grid["h"] > min_thickness_glacier).astype(int)
+        # else:
+        #     grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
 
+        grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
+        
         grid["gpsum"] = compute_number_of_glacier_cells(grid)
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
