@@ -4,11 +4,11 @@
 
 import yac
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ebfm import logging
 
-from typing import List
+from typing import Set, Callable
 from couplers.base import Coupler, Grid, Dict, CouplingConfig, Component
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
@@ -26,97 +26,229 @@ field {name}:
 """
 
 
-@dataclass
-class FieldDefinition:
-    name: str  # name of the field
-    exchange_type: yac.ExchangeType = None  # optional for consistency checks by model configuration
-    metadata: str = None  # optional to allow model providing metadata
-
-
-@dataclass
+@dataclass(frozen=True)
 class Timestep:
     value: str  # value of the timestep in specified format
     format: yac.TimeUnit  # format of the timestep value
 
 
+@dataclass(frozen=True)
+class Field:
+    """
+    Object for definition of a field to be exchanged via YAC.
+    """
+
+    name: str  # name of the field
+    component: Component  # component this field belongs to
+    timestep: Timestep  # timestep of the field
+    metadata: str = None  # optional to allow model providing metadata
+    exchange_type: yac.ExchangeType = None  # optional for consistency checks by model configuration
+    yac_field: yac.Field = None  # optional if YAC field has been created
+
+    def construct_yac_field(
+        self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, corner_points: yac.Points
+    ) -> "Field":
+        """
+        Create a new Field instance with the provided YAC field.
+
+        @param[in] yac_interface handle to YAC interface
+        @param[in] yac_component handle to YAC component object
+        @param[in] collection_size size of the collection for this field
+        @param[in] corner_points yac.Points of the grid for this field
+
+        @returns New Field instance with the provided YAC field
+        """
+        assert not self.yac_field, f"Field '{self.name}' for component '{self.name}' has already been created in YAC."
+
+        yac_field = yac.Field.create(
+            self.name,
+            yac_component,
+            corner_points,
+            collection_size,
+            self.timestep.value,
+            self.timestep.format,
+        )
+
+        # add optional metadata
+        if self.metadata:
+            yac_interface.def_field_metadata(
+                yac_field.component_name,
+                yac_field.grid_name,
+                yac_field.name,
+                self.metadata.encode("utf-8"),
+            )
+
+        # perform optional consistency check
+        if self.exchange_type:
+            field_role = yac_interface.get_field_role(yac_field.component_name, yac_field.grid_name, yac_field.name)
+            assert field_role == self.exchange_type, (
+                f"Field '{self.name}' role mismatch: expected '{self.exchange_type}', " f"got '{field_role}'."
+            )
+
+        return replace(self, yac_field=yac_field)
+
+
+class FieldCollection:
+    """
+    Collection of fields.
+
+    Can be used to collect fields and perform filtering operations for components, exchange types, etc.
+
+    Example:
+        fields = FieldCollection()
+        fields.add(Field(..., exchange_type=yac.ExchangeType.SOURCE))
+        fields.add(Field(..., exchange_type=yac.ExchangeType.TARGET))
+        source_fields = fields.filter(lambda f: f.exchange_type == yac.ExchangeType.SOURCE)
+    """
+
+    def __init__(self, fields: Set[Field] = None):
+        """
+        Initialize FieldCollection.
+        """
+        self._fields = fields if fields is not None else set()
+
+    def __iter__(self):
+        return iter(self._fields)
+
+    def is_empty(self) -> bool:
+        return len(self._fields) == 0
+
+    def all(self) -> Set[Field]:
+        return set(self._fields)
+
+    def filter(self, condition: Callable[[Field], bool]) -> "FieldCollection":
+        return FieldCollection(set(d for d in self._fields if condition(d)))
+
+    def add(self, field: Field):
+        assert field not in self._fields, f"Field {field} with name {field.name} already exists in FieldCollection."
+        self._fields.add(field)
+
+
 # TODO: Get hard-coded data below from dummies/EBFM/ebfm-config.yaml
-# TODO: Move Timestep inside FieldDefinition (would allow having different timesteps per field)
-all_field_definitions = {
-    Component.elmer_ice: [
-        FieldDefinition(
-            exchange_type=yac.ExchangeType.SOURCE,
+def get_field_definitions(time: Dict[str, float]) -> Set[Field]:
+    """
+    Get field definitions for EBFM coupling.
+
+    @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
+    """
+
+    timestep_value = days_to_iso(time["dt"])
+    timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
+
+    return {
+        Field(
             name="T_ice",
+            component=Component.elmer_ice,
+            timestep=timestep,
             metadata="Near surface temperature at Ice surface (in K)",
-        ),
-        FieldDefinition(
             exchange_type=yac.ExchangeType.SOURCE,
+        ),
+        Field(
             name="smb",
+            component=Component.elmer_ice,
+            timestep=timestep,
             metadata="??? (in ???)",
-        ),
-        FieldDefinition(
             exchange_type=yac.ExchangeType.SOURCE,
+        ),
+        Field(
             name="runoff",
+            component=Component.elmer_ice,
+            timestep=timestep,
             metadata="Runoff (in ???)",
+            exchange_type=yac.ExchangeType.SOURCE,
         ),
-        FieldDefinition(
-            exchange_type=yac.ExchangeType.TARGET,
+        Field(
             name="h",
+            component=Component.elmer_ice,
+            timestep=timestep,
             metadata="Surface height (in m)",
+            exchange_type=yac.ExchangeType.TARGET,
         ),
-        # FieldDefinition(
-        #     exchange_type=yac.ExchangeType.TARGET,
+        # Field(
         #     name="dhdx",
+        #     component=Component.elmer_ice,
+        #     timestep=timestep,
         #     metadata="Surface slope in x direction",
-        # ),
-        # FieldDefinition(
         #     exchange_type=yac.ExchangeType.TARGET,
+        # ),
+        # Field(
         #     name="dhdy",
+        #     component=Component.elmer_ice,
+        #     timestep=timestep,
         #     metadata="Surface slope in y direction",
+        #     exchange_type=yac.ExchangeType.TARGET,
         # ),
-    ],
-    Component.icon_atmo: [
-        # FieldDefinition(
-        #     exchange_type=yac.ExchangeType.SOURCE,
+        # Field(
         #     name="albedo",
-        #     metadata="Albedo of the ice surface (in ???)"
+        #     component=Component.icon_atmo,
+        #     timestep=timestep,
+        #     metadata="Albedo of the ice surface (in ???)",
+        #     exchange_type=yac.ExchangeType.SOURCE,
         # ),
-        FieldDefinition(
-            exchange_type=yac.ExchangeType.TARGET,
+        Field(
             name="pr",
+            component=Component.icon_atmo,
+            timestep=timestep,
             metadata="Precipitation rate (in kg m-2 s-1)",
-        ),
-        FieldDefinition(
             exchange_type=yac.ExchangeType.TARGET,
+        ),
+        Field(
             name="pr_snow",
+            component=Component.icon_atmo,
+            timestep=timestep,
             metadata="Precipitation rate of snow (in kg m-2 s-1)",
-        ),
-        FieldDefinition(
             exchange_type=yac.ExchangeType.TARGET,
+        ),
+        Field(
             name="rsds",
+            component=Component.icon_atmo,
+            timestep=timestep,
             metadata="Downward shortwave radiation flux (in W m-2)",
-        ),
-        FieldDefinition(
             exchange_type=yac.ExchangeType.TARGET,
+        ),
+        Field(
             name="rlds",
+            component=Component.icon_atmo,
+            timestep=timestep,
             metadata="Downward longwave radiation flux (in W m-2)",
+            exchange_type=yac.ExchangeType.TARGET,
         ),
-        FieldDefinition(
-            exchange_type=yac.ExchangeType.TARGET, name="sfcwind", metadata="Wind speed at surface (in m s-1)"
+        Field(
+            name="sfcwind",
+            component=Component.icon_atmo,
+            timestep=timestep,
+            metadata="Wind speed at surface (in m s-1)",
+            exchange_type=yac.ExchangeType.TARGET,
         ),
-        FieldDefinition(exchange_type=yac.ExchangeType.TARGET, name="clt", metadata="Cloud cover (in fraction)"),
-        FieldDefinition(exchange_type=yac.ExchangeType.TARGET, name="tas", metadata="Temperature at surface (in K)"),
-        # FieldDefinition(
-        #     exchange_type=yac.ExchangeType.TARGET,
+        Field(
+            name="clt",
+            component=Component.icon_atmo,
+            timestep=timestep,
+            metadata="Cloud cover (in fraction)",
+            exchange_type=yac.ExchangeType.TARGET,
+        ),
+        Field(
+            name="tas",
+            component=Component.icon_atmo,
+            timestep=timestep,
+            metadata="Temperature at surface (in K)",
+            exchange_type=yac.ExchangeType.TARGET,
+        ),
+        # Field(
         #     name="huss",
+        #     component=Component.icon_atmo,
+        #     timestep=timestep,
         #     metadata="Specific humidity at surface (in kg kg-1)"
-        # ),
-        # FieldDefinition(
         #     exchange_type=yac.ExchangeType.TARGET,
-        #     name="sfcPressure",
-        #     metadata="Surface pressure (in Pa)"
         # ),
-    ],
-}
+        # Field(
+        #     name="sfcPressure",
+        #     component=Component.icon_atmo,
+        #     timestep=timestep,
+        #     metadata="Surface pressure (in Pa)"
+        #     exchange_type=yac.ExchangeType.TARGET,
+        # ),
+    }
 
 
 def days_to_iso(days: float) -> str:
@@ -137,7 +269,7 @@ class YACCoupler(Coupler):
     component: yac.Component = None
     grid: yac.UnstructuredGrid = None
     corner_points: yac.Points = None
-    fields: Dict[Component, yac.Field] = {}
+    fields: FieldCollection = FieldCollection()
 
     def __init__(self, coupling_config: CouplingConfig):
         """
@@ -172,10 +304,9 @@ class YACCoupler(Coupler):
 
         self._add_grid(grid_name, grid)
 
-        timestep_value = days_to_iso(time["dt"])
-        timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
+        field_definitions = get_field_definitions(time)
 
-        self._add_couples(timestep)
+        self._add_couples(FieldCollection(field_definitions))
 
     def exchange(self, component_name: str, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
         """
@@ -192,29 +323,18 @@ class YACCoupler(Coupler):
             component
         ], f"Cannot exchange data with {component=} because {self._couples_to[component]=}'."
 
-        fields: List[yac.Field] = self.fields[component]
+        comp_fields = self.fields.filter(lambda f: f.component == component)
 
-        received_data = {}
-        put_fields = []
-        get_fields = []
-
-        for field in fields:
-            field_role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
-            if field_role is yac.ExchangeType.SOURCE:
-                put_fields.append(field)
-            elif field_role is yac.ExchangeType.TARGET:
-                get_fields.append(field)
-            else:
-                raise Exception(f"Unexpected {field.exchange_type=}")
-
-        for field in put_fields:
+        for field in comp_fields.filter(lambda f: f.exchange_type == yac.ExchangeType.SOURCE):
             logger.debug(f"Sending field {field.name} to {component.name}...")
-            field.put(data_to_exchange[field.name])
+            field.yac_field.put(data_to_exchange[field.name])
             logger.debug(f"Sending field {field.name} to {component.name} complete.")
 
-        for field in get_fields:
+        received_data = {}
+
+        for field in comp_fields.filter(lambda f: f.exchange_type == yac.ExchangeType.TARGET):
             logger.debug(f"Receiving field {field.name} to {component.name}...")
-            data, _ = field.get()
+            data, _ = field.yac_field.get()
             received_data[field.name] = data[0]
             logger.debug(f"Receiving field {field.name} to {component.name} complete.")
 
@@ -250,13 +370,13 @@ class YACCoupler(Coupler):
         self.grid.set_global_index(grid.vertex_ids, yac.Location.CORNER)
         self.corner_points = self.grid.def_points(yac.Location.CORNER, grid.lon, grid.lat)
 
-    def _add_couples(self, timestep: Timestep):
+    def _add_couples(self, field_definitions: FieldCollection):
         """
         Adds coupling definitions to the Coupler interface.
 
-        @param[in] timestep Timestep object representing the timestep size of the fields
+        @param[in] field_definitions FieldDefinitions object containing field definitions for EBFM
         """
-        self._construct_coupling_pre_sync(timestep)
+        self._construct_coupling_pre_sync(field_definitions)
 
         self.interface.sync_def()
 
@@ -264,100 +384,64 @@ class YACCoupler(Coupler):
 
         self.interface.enddef()
 
-    def _construct_coupling_pre_sync(self, timestep: Timestep):
+    def _construct_coupling_pre_sync(self, field_definitions: FieldCollection):
         """
         Constructs the coupling interface with YAC.
 
-        @param[in] timestep Timestep object representing the timestep size of the fields
+        @param[in] field_definitions FieldDefinitions object containing field definitions for EBFM
         """
 
-        assert self.fields == {}, "Coupling fields have already been constructed."
-
-        for component, is_coupled in self._couples_to.items():
-            if is_coupled:
-                assert self.fields.get(component) is None, f"Coupling to {component=} has already been constructed."
-                self.fields[component] = self._construct_coupling_to(component, timestep)
-
-    def _construct_coupling_to(self, component: Component, timestep: Timestep) -> List[yac.Field]:
-        """
-        Constructs coupling fields to a specific Component.
-
-        @param[in] component component to construct coupling to
-        @param[in] timestep Timestep object representing the timestep size of the field
-
-        @returns List of yac.Field objects representing the coupling fields
-        """
-
-        assert self._couples_to[
-            component
-        ], f"Cannot construct coupling to {component=} because {self._couples_to[component]=}'."
+        assert self.fields.is_empty(), "Coupling fields have already been constructed."
 
         collection_size = 1  # TODO: Dummy value for now; make configurable if needed
 
-        fields = list()
+        for field in field_definitions:
+            assert self._couples_to[
+                field.component
+            ], f"Cannot add field '{field.name}' for uncoupled component '{field.component.name}'."
 
-        for field_definition in all_field_definitions[component]:
-            field = yac.Field.create(
-                field_definition.name,
-                self.component,
-                self.corner_points,
-                collection_size,
-                timestep.value,
-                timestep.format,
-            )
-
-            # add optional metadata
-            if field_definition.metadata:
-                self.interface.def_field_metadata(
-                    field.component_name,
-                    field.grid_name,
-                    field_definition.name,
-                    field_definition.metadata.encode("utf-8"),
-                )
-
-            # perform optional consistency check
-            if field_definition.exchange_type:
-                field_role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
-                assert field_role == field_definition.exchange_type, (
-                    f"Field '{field_definition.name}' role mismatch: expected '{field_definition.exchange_type}', "
-                    f"got '{field_role}'."
-                )
-
-            fields.append(field)
-
-        return fields
+            yac_field = field.construct_yac_field(self.interface, self.component, collection_size, self.corner_points)
+            self.fields.add(yac_field)
 
     def _construct_coupling_post_sync(self):
         # after synchronisation or the end of the definition phase YAC can be queried about various information
 
-        for component, fields in self.fields.items():
-            for field in fields:
-                is_defined = self.interface.get_field_is_defined(field.component_name, field.grid_name, field.name)
-                assert is_defined, (
-                    f"Field '{field.name}' is not defined in YAC for component '{field.component_name}' and "
-                    f"grid '{field.grid_name}'."
+        for field in self.fields:
+            yac_field = field.yac_field
+            is_defined = self.interface.get_field_is_defined(
+                yac_field.component_name, yac_field.grid_name, yac_field.name
+            )
+            assert is_defined, (
+                f"Field '{yac_field.name}' is not defined in YAC for component '{yac_field.component_name}' and "
+                f"grid '{yac_field.grid_name}'."
+            )
+
+            field_role = self.interface.get_field_role(yac_field.component_name, yac_field.grid_name, yac_field.name)
+
+            if field_role is yac.ExchangeType.TARGET:
+                logger.debug(
+                    f"Field {yac_field.name}: SOURCE {field.component.name} -> TARGET {yac_field.component_name}"
                 )
+                field_info = self._field_information(field)
+                logger.info(field_info)
 
-                field_role = self.interface.get_field_role(field.component_name, field.grid_name, field.name)
-
-                if field_role is yac.ExchangeType.TARGET:
-                    logger.debug(f"Field {field.name}: SOURCE {component.name} -> TARGET {field.component_name}")
-                    field_info = self._field_information(field)
-                    logger.info(field_info)
-
-    def _field_information(self, field: yac.Field) -> str:
+    def _field_information(self, field: Field) -> str:
         """
-        Get detailed information about a yac.Field.
+        Get detailed information about a Field.
 
         @param[in] field yac.Field to get information about
         @returns Formatted string with field information
         """
+        assert field.yac_field, f"YAC field is not defined for field {field}."
 
         src_comp, src_grid, src_field = self.interface.get_field_source(
-            field.component_name, field.grid_name, field.name
+            field.yac_field.component_name, field.yac_field.grid_name, field.yac_field.name
         )
         src_field_timestep = self.interface.get_field_timestep(src_comp, src_grid, src_field)
         src_field_metadata = self.interface.get_field_metadata(src_comp, src_grid, src_field)
+        assert (
+            field.yac_field.name == field.name
+        ), f"Field name mismatch: expected '{field.name}', got '{field.yac_field.name}'."
         return field_template.format(
             name=field.name, comp=src_comp, grid=src_grid, timestep=src_field_timestep, metadata=src_field_metadata
         )
