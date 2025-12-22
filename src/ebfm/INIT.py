@@ -205,7 +205,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
         grid["mesh"] = mesh
-        grid["has_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
+        grid["classical_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
     elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
@@ -231,7 +231,7 @@ def init_grid(grid, io, config: GridConfig):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-        grid["has_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
+        grid["classical_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
     elif config.grid_type is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
         # ---------------------------------------------------------------------
         # Read and process grid information
@@ -244,7 +244,7 @@ def init_grid(grid, io, config: GridConfig):
         mask_2D = input_data["mask"][0][0]
 
         # Determine domain extent
-        grid["has_shading"] = True
+        grid["classical_shading"] = False
         grid["Lx"], grid["Ly"] = grid["x_2D"].shape
 
         # Flip grid E-W or N-S when needed
@@ -328,6 +328,79 @@ def init_grid(grid, io, config: GridConfig):
         grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
+
+        # -----------------------------------------------------------------------------------------------------
+        # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
+        # -----------------------------------------------------------------------------------------------------
+        grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
+
+        # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
+        grid["az_array"] = -np.pi * (-1.0 + 2.0 * (np.arange(1, grid["nr_az_steps"] + 1) / grid["nr_az_steps"]))
+
+        xl, yl = grid["x_2D"].shape
+
+        # loop over the azimuth angles to determine gridded maximum grid angles per angle
+        grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
+        for n in range(grid["nr_az_steps"]):
+            az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
+
+            # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
+            ddx = np.empty_like(az, dtype=float)
+            ddy = np.empty_like(az, dtype=float)
+            m = az <= -0.75 * np.pi
+            ddx[m] = -np.tan(np.pi + az[m])
+            m = (az <= -0.25 * np.pi) & (az > -0.75 * np.pi)
+            ddx[m] = -1.0
+            m = (az <= 0.25 * np.pi) & (az > -0.25 * np.pi)
+            ddx[m] = np.tan(az[m])
+            m = (az <= 0.75 * np.pi) & (az > 0.25 * np.pi)
+            ddx[m] = 1.0
+            m = az > 0.75 * np.pi
+            ddx[m] = np.tan(np.pi - az[m])
+            m = az <= -0.75 * np.pi
+            ddy[m] = 1.0
+            m = (az <= -0.25 * np.pi) & (az > -0.75 * np.pi)
+            ddy[m] = -np.tan(0.5 * np.pi + az[m])
+            m = (az <= 0.25 * np.pi) & (az > -0.25 * np.pi)
+            ddy[m] = -1.0
+            m = (az <= 0.75 * np.pi) & (az > 0.25 * np.pi)
+            ddy[m] = -np.tan(0.5 * np.pi - az[m])
+            m = az > 0.75 * np.pi
+            ddy[m] = 1.0
+
+            # from every grid cell step in the direction of the azimuth until the grid end is reached
+            # and detect maximum grid angle along the path
+            i0, j0 = np.where(mask_2D == 1)
+            max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
+            count = 1
+            active = np.ones(grid["gpsum"], dtype=bool)
+            while active.any():
+                j = np.round(j0 + ddx * count).astype(np.int64)
+                i = np.round(i0 + ddy * count).astype(np.int64)
+
+                inbound = (j >= 0) & (j < yl) & (i >= 0) & (i < xl) & active
+                if not inbound.any():  # stop when all walks have reached the domain edge
+                    break
+
+                iv = i[inbound]
+                jv = j[inbound]
+
+                dx = grid["x_2D"][iv, jv] - grid["x"][inbound]
+                dy = grid["y_2D"][iv, jv] - grid["y"][inbound]
+                distance = np.hypot(dx, dy)  # walk distance from start to target
+
+                dz = grid["z_2D"][iv, jv] - grid["z"][inbound]
+                grid_angle = np.arctan(dz / distance)  # grid angle from start to target
+
+                max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle when needed
+
+                active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
+
+                count += 1
+
+            # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
+            grid["maxgridangle"][:, n] = max_angle
+
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 

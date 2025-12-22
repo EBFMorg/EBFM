@@ -5,6 +5,8 @@
 import numpy as np
 import datetime
 
+from numpy.ma.core import zeros_like
+
 
 def main(grid, time2, OUT):
     """
@@ -49,6 +51,7 @@ def main(grid, time2, OUT):
     Tcor_ecc = (
         9.87 * np.sin(2.0 * np.radians(B)) - 7.53 * np.cos(np.radians(B)) - 1.5 * np.sin(np.radians(B))
     )  # Correction for eccentricity
+
     Tcor_lon = 4 * (grid["lon"] - 15 * time2["dT_UTC"])  # Correction for longitude within time-zone
     Tcor = Tcor_ecc + Tcor_lon
     LST = time2["TCUR"].hour + time2["TCUR"].minute / 60 + Tcor / 60  # Local Solar Time
@@ -65,11 +68,20 @@ def main(grid, time2, OUT):
     ###########################################################
     # Shading by the surrounding topography
     ###########################################################
+    # Solar elevation angle (radians)
     elevationangle = np.arcsin(
         np.sin(lat_rad) * np.sin(d_rad) + np.cos(lat_rad) * np.cos(d_rad) * np.cos(h_rad)
     )  # SOURCE: Iqbal (1983)
 
-    if grid["has_shading"]:
+    # Azimuth (radians)
+    cos_elevation = np.cos(elevationangle)
+    azimuth = np.where(
+        h < 0,
+        np.arccos((np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)) / cos_elevation),
+        -np.arccos((np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)) / cos_elevation),
+    )
+
+    if grid["classical_shading"]:
         yl = grid["Ly"]
         xl = grid["Lx"]
 
@@ -141,10 +153,26 @@ def main(grid, time2, OUT):
         shade_2D = np.ones((xl, yl), dtype=int)
         shade_2D.flat[grid["ind"]] = shade
         OUT["shade"] = shade_2D.flatten()[grid["ind"]]
-    else:
-        # TODO: Shading based on lookup tables from Elmer/Ice
-        # For now: assume flat surface and no shading by surrounding terrain
-        OUT["shade"] = np.zeros_like(grid["x"])
-        OUT["shade"][elevationangle < 0] = 1
+
+    else:  # shading based on comparison of solar elevation angle with grid angle from look-up table
+        # TODO: Shading based on lookup tables from Elmer/Ice (DONE?)
+
+        # Select nearest pre-computed azimuth angle for every grid cell (1..grid.nr_az_steps)
+        az_nearest = np.rint((np.pi - azimuth) / (2.0 * np.pi) * grid["nr_az_steps"]).astype(int)
+        az_nearest[az_nearest == 0] = grid["nr_az_steps"]
+
+        # Indices into lookup table (0-based for Python)
+        ind_az = az_nearest - 1 + np.arange(grid["gpsum"], dtype=int) * grid["nr_az_steps"]
+
+        # Shading happens when the solar elevation angle <= maximum grid angle
+        temp = grid["maxgridangle"]
+        OUT["shade"] = elevationangle <= temp.flat[ind_az]
+
+        # For now: assume flat surface and no shading by surrounding terrain (no longer needed!)
+        # OUT["shade"] = np.zeros_like(grid["x"])
+        # OUT["shade"][elevationangle < 0] = 1
+
+    OUT["shade_2D"] = zeros_like(grid["x_2D"])
+    OUT["shade_2D"].flat[grid["ind"]] = OUT["shade"]
 
     return OUT

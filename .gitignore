@@ -8,3 +8,9 @@
 build
 Output/*.nc
 Reboot/*.nc
+*.png
+.idea/EBFM_with_YAC.iml
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/misc.xml
+.idea/vcs.xml
+.idea/workspace.xml
