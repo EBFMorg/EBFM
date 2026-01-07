@@ -39,7 +39,7 @@ class Field:
     """
 
     name: str  # name of the field
-    component: Component  # component this field belongs to
+    coupled_component: Component  # component this field couples to
     timestep: Timestep  # timestep of the field
     metadata: str = None  # optional to allow model providing metadata
     exchange_type: yac.ExchangeType = None  # optional for consistency checks by model configuration
@@ -138,28 +138,28 @@ def get_field_definitions(time: Dict[str, float]) -> Set[Field]:
     return {
         Field(
             name="T_ice",
-            component=Component.elmer_ice,
+            coupled_component=Component.elmer_ice,
             timestep=timestep,
             metadata="Near surface temperature at Ice surface (in K)",
             exchange_type=yac.ExchangeType.SOURCE,
         ),
         Field(
             name="smb",
-            component=Component.elmer_ice,
+            coupled_component=Component.elmer_ice,
             timestep=timestep,
             metadata="??? (in ???)",
             exchange_type=yac.ExchangeType.SOURCE,
         ),
         Field(
             name="runoff",
-            component=Component.elmer_ice,
+            coupled_component=Component.elmer_ice,
             timestep=timestep,
             metadata="Runoff (in ???)",
             exchange_type=yac.ExchangeType.SOURCE,
         ),
         Field(
             name="h",
-            component=Component.elmer_ice,
+            coupled_component=Component.elmer_ice,
             timestep=timestep,
             metadata="Surface height (in m)",
             exchange_type=yac.ExchangeType.TARGET,
@@ -187,49 +187,49 @@ def get_field_definitions(time: Dict[str, float]) -> Set[Field]:
         # ),
         Field(
             name="pr",
-            component=Component.icon_atmo,
+            coupled_component=Component.icon_atmo,
             timestep=timestep,
             metadata="Precipitation rate (in kg m-2 s-1)",
             exchange_type=yac.ExchangeType.TARGET,
         ),
         Field(
             name="pr_snow",
-            component=Component.icon_atmo,
+            coupled_component=Component.icon_atmo,
             timestep=timestep,
             metadata="Precipitation rate of snow (in kg m-2 s-1)",
             exchange_type=yac.ExchangeType.TARGET,
         ),
         Field(
             name="rsds",
-            component=Component.icon_atmo,
+            coupled_component=Component.icon_atmo,
             timestep=timestep,
             metadata="Downward shortwave radiation flux (in W m-2)",
             exchange_type=yac.ExchangeType.TARGET,
         ),
         Field(
             name="rlds",
-            component=Component.icon_atmo,
+            coupled_component=Component.icon_atmo,
             timestep=timestep,
             metadata="Downward longwave radiation flux (in W m-2)",
             exchange_type=yac.ExchangeType.TARGET,
         ),
         Field(
             name="sfcwind",
-            component=Component.icon_atmo,
+            coupled_component=Component.icon_atmo,
             timestep=timestep,
             metadata="Wind speed at surface (in m s-1)",
             exchange_type=yac.ExchangeType.TARGET,
         ),
         Field(
             name="clt",
-            component=Component.icon_atmo,
+            coupled_component=Component.icon_atmo,
             timestep=timestep,
             metadata="Cloud cover (in fraction)",
             exchange_type=yac.ExchangeType.TARGET,
         ),
         Field(
             name="tas",
-            component=Component.icon_atmo,
+            coupled_component=Component.icon_atmo,
             timestep=timestep,
             metadata="Temperature at surface (in K)",
             exchange_type=yac.ExchangeType.TARGET,
@@ -323,7 +323,7 @@ class YACCoupler(Coupler):
             component
         ], f"Cannot exchange data with {component=} because {self._couples_to[component]=}'."
 
-        comp_fields = self.fields.filter(lambda f: f.component == component)
+        comp_fields = self.fields.filter(lambda f: f.coupled_component == component)
 
         for field in comp_fields.filter(lambda f: f.exchange_type == yac.ExchangeType.SOURCE):
             logger.debug(f"Sending field {field.name} to {component.name}...")
@@ -397,8 +397,8 @@ class YACCoupler(Coupler):
 
         for field in field_definitions:
             assert self._couples_to[
-                field.component
-            ], f"Cannot add field '{field.name}' for uncoupled component '{field.component.name}'."
+                field.coupled_component
+            ], f"Cannot add field '{field.name}' for uncoupled component '{field.coupled_component.name}'."
 
             yac_field = field.construct_yac_field(self.interface, self.component, collection_size, self.corner_points)
             self.fields.add(yac_field)
@@ -420,7 +420,8 @@ class YACCoupler(Coupler):
 
             if field_role is yac.ExchangeType.TARGET:
                 logger.debug(
-                    f"Field {yac_field.name}: SOURCE {field.component.name} -> TARGET {yac_field.component_name}"
+                    f"Field {yac_field.name}: "
+                    f"SOURCE {field.coupled_component.name} -> TARGET {yac_field.component_name}"
                 )
                 field_info = self._field_information(field)
                 logger.info(field_info)
