@@ -88,14 +88,14 @@ class Field:
         return replace(self, yac_field=yac_field)
 
 
-class FieldCollection:
+class FieldSet:
     """
-    Collection of fields.
+    Set of fields.
 
     Can be used to collect fields and perform filtering operations for components, exchange types, etc.
 
     Example:
-        fields = FieldCollection()
+        fields = FieldSet()
         fields.add(Field(..., exchange_type=yac.ExchangeType.SOURCE))
         fields.add(Field(..., exchange_type=yac.ExchangeType.TARGET))
         source_fields = fields.filter(lambda f: f.exchange_type == yac.ExchangeType.SOURCE)
@@ -103,7 +103,7 @@ class FieldCollection:
 
     def __init__(self, fields: Set[Field] = None):
         """
-        Initialize FieldCollection.
+        Initialize FieldSet.
         """
         self._fields = fields if fields is not None else set()
 
@@ -116,11 +116,11 @@ class FieldCollection:
     def all(self) -> Set[Field]:
         return set(self._fields)
 
-    def filter(self, condition: Callable[[Field], bool]) -> "FieldCollection":
-        return FieldCollection(set(d for d in self._fields if condition(d)))
+    def filter(self, condition: Callable[[Field], bool]) -> "FieldSet":
+        return FieldSet(set(d for d in self._fields if condition(d)))
 
     def add(self, field: Field):
-        assert field not in self._fields, f"Field {field} with name {field.name} already exists in FieldCollection."
+        assert field not in self._fields, f"Field {field} with name {field.name} already exists in FieldSet."
         self._fields.add(field)
 
 
@@ -269,7 +269,7 @@ class YACCoupler(Coupler):
     component: yac.Component = None
     grid: yac.UnstructuredGrid = None
     corner_points: yac.Points = None
-    fields: FieldCollection = FieldCollection()
+    fields: FieldSet = FieldSet()
 
     def __init__(self, coupling_config: CouplingConfig):
         """
@@ -306,7 +306,7 @@ class YACCoupler(Coupler):
 
         field_definitions = get_field_definitions(time)
 
-        self._add_couples(FieldCollection(field_definitions))
+        self._add_couples(FieldSet(field_definitions))
 
     def exchange(self, component_name: str, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
         """
@@ -370,7 +370,7 @@ class YACCoupler(Coupler):
         self.grid.set_global_index(grid.vertex_ids, yac.Location.CORNER)
         self.corner_points = self.grid.def_points(yac.Location.CORNER, grid.lon, grid.lat)
 
-    def _add_couples(self, field_definitions: FieldCollection):
+    def _add_couples(self, field_definitions: FieldSet):
         """
         Adds coupling definitions to the Coupler interface.
 
@@ -384,7 +384,7 @@ class YACCoupler(Coupler):
 
         self.interface.enddef()
 
-    def _construct_coupling_pre_sync(self, field_definitions: FieldCollection):
+    def _construct_coupling_pre_sync(self, field_definitions: FieldSet):
         """
         Constructs the coupling interface with YAC.
 
