@@ -4,7 +4,8 @@
 
 import numpy as np
 
-from ebfm.constants import SECONDS_PER_HOUR
+from ebfm.constants import DAYS_PER_YEAR, SECONDS_PER_HOUR, SECONDS_PER_DAY
+from ebfm.constants.materials import Water, Ice, Firn, FreshSnow
 
 
 def main(C, OUT, IN, dt, grid, phys):
@@ -48,11 +49,11 @@ def main(C, OUT, IN, dt, grid, phys):
             OUT["Dfreshsnow_W"] = 266.86 * (0.5 * (1 + np.tanh(IN["WS"] / 5))) ** 8.8
             OUT["Dfreshsnow"] = OUT["Dfreshsnow_T"] + OUT["Dfreshsnow_W"]
         else:
-            OUT["Dfreshsnow"] = np.full_like(IN["snow"], C["Dfreshsnow"])
+            OUT["Dfreshsnow"] = np.full_like(IN["snow"], FreshSnow.DENSITY)
 
         # Update layer depths and properties
-        shift_snowfall = IN["snow"] * C["Dwater"] / OUT["Dfreshsnow"]
-        shift_riming = OUT["moist_deposition"] * C["Dwater"] / OUT["Dfreshsnow"]
+        shift_snowfall = IN["snow"] * Water.DENSITY / OUT["Dfreshsnow"]
+        shift_riming = OUT["moist_deposition"] * Water.DENSITY / OUT["Dfreshsnow"]
         shift_tot = shift_snowfall + shift_riming
         OUT["surfH"] += shift_tot
 
@@ -197,14 +198,14 @@ def main(C, OUT, IN, dt, grid, phys):
         """
 
         gpsum, nl = grid["gpsum"], grid["nl"]
-        Dice, Dfirn = C["Dice"], C["Dfirn"]
+        Dice, Dfirn = Ice.DENSITY, Firn.DENSITY
 
         subD_old = OUT["subD"].copy()
         subZ_old = OUT["subZ"].copy()
         mliqmax = np.zeros((gpsum, nl))
 
-        dt_yearfrac = dt / C["yeardays"]
-        dt_seconds = dt * C["dayseconds"]
+        dt_yearfrac = dt / DAYS_PER_YEAR
+        dt_seconds = dt * SECONDS_PER_DAY
 
         # ------ FIRN COMPACTION ------ #
         if phys["snow_compaction"] in ["firn_only", "firn+snow"]:
@@ -261,7 +262,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
             # ------ DENSIFICATION BY OVERBURDEN PRESSURE ------ #
             CC5, CC6 = 0.1, 0.023
-            CC7 = 4.0 * 7.62237e6 / 250.0 * OUT["subD"] * 1 / (1 + 60 * OUT["subW"] * 1 / (C["Dwater"] * OUT["subZ"]))
+            CC7 = 4.0 * 7.62237e6 / 250.0 * OUT["subD"] * 1 / (1 + 60 * OUT["subW"] * 1 / (Water.DENSITY * OUT["subZ"]))
 
             # Compute load pressure (Psload)
             OUT_subD_Z = OUT["subD"] * OUT["subZ"] * C["g"]
@@ -275,14 +276,14 @@ def main(C, OUT, IN, dt, grid, phys):
 
             # Update densities
             OUT["subD"][cond_snow] += (
-                dt * C["dayseconds"] * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
+                dt * SECONDS_PER_DAY * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
             )
-            OUT["subD"][cond_snow] = np.minimum(OUT["subD"][cond_snow], C["Dice"])
+            OUT["subD"][cond_snow] = np.minimum(OUT["subD"][cond_snow], Ice.DENSITY)
 
             # Store densification by overburden pressure
             OUT["Dens_overb_pres"] = np.zeros_like(OUT["subD"])
             OUT["Dens_overb_pres"][cond_snow] = (
-                dt * C["dayseconds"] * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
+                dt * SECONDS_PER_DAY * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
             )
 
             # ------ DRIFTING SNOW DENSIFICATION ------ #
@@ -347,7 +348,7 @@ def main(C, OUT, IN, dt, grid, phys):
         c_eff_temp = c_eff[:, 1:]
         kk_temp = kk[:, 1:]
         dt_stab = (
-            0.5 * np.min(c_eff_temp, axis=1) * np.min(z_temp, axis=1) ** 2 / np.max(kk_temp, axis=1) / C["dayseconds"]
+            0.5 * np.min(c_eff_temp, axis=1) * np.min(z_temp, axis=1) ** 2 / np.max(kk_temp, axis=1) / SECONDS_PER_DAY
         )
 
         # ------ Heat Conduction Loop ------
@@ -376,7 +377,7 @@ def main(C, OUT, IN, dt, grid, phys):
             )
 
             # Update layer-wise temperatures
-            C_day_dt = C["dayseconds"] * dt_temp[cond_dt]
+            C_day_dt = SECONDS_PER_DAY * dt_temp[cond_dt]
             OUT["subT"][cond_dt, 1] = subT_old[cond_dt, 1] + C_day_dt * (kdTdz[cond_dt, 2] - kdTdz[cond_dt, 1]) / (
                 c_eff[cond_dt, 1]
                 * (0.5 * OUT["subZ"][cond_dt, 0] + 0.5 * OUT["subZ"][cond_dt, 1] + 0.25 * OUT["subZ"][cond_dt, 2])
@@ -432,7 +433,7 @@ def main(C, OUT, IN, dt, grid, phys):
         # ------ Refreezing and Irreducible Water Storage Limits ------
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]  # Specific heat capacity
         c1 = OUT["cpi"] * OUT["subD"] * OUT["subZ"] * (C["T0"] - OUT["subT"]) / C["Lm"]
-        c2 = OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dice"]
+        c2 = OUT["subZ"] * (1 - OUT["subD"] / Ice.DENSITY) * Ice.DENSITY
         cond1 = c1 >= c2  # No need for separate cond2 as it's just the negation
 
         # Compute refreezing potential (`Wlim`) per layer
@@ -440,12 +441,16 @@ def main(C, OUT, IN, dt, grid, phys):
 
         # Maximum irreducible water storage (`mliqmax`)
         mliqmax = np.zeros_like(OUT["subD"])
-        noice = OUT["subD"] < (C["Dice"] - 1)
-        factor = 3.3 * (C["Dice"] - OUT["subD"][noice]) / C["Dice"]
+        noice = OUT["subD"] < (Ice.DENSITY - 1)
+        factor = 3.3 * (Ice.DENSITY - OUT["subD"][noice]) / Ice.DENSITY
         exp_factor = np.exp(factor)
         irr_factor = 0.0143 * exp_factor / (1 - 0.0143 * exp_factor)
         mliqmax[noice] = (
-            OUT["subD"][noice] * OUT["subZ"][noice] * irr_factor * 0.05 * np.minimum(C["Dice"] - OUT["subD"][noice], 20)
+            OUT["subD"][noice]
+            * OUT["subZ"][noice]
+            * irr_factor
+            * 0.05
+            * np.minimum(Ice.DENSITY - OUT["subD"][noice], 20)
         )
 
         # Available irreducible water storage
@@ -510,7 +515,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
         # Calculate available pore space for storing slush water
         slushspace = np.maximum(
-            OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dwater"] - OUT["subW"], 0.0
+            OUT["subZ"] * (1 - OUT["subD"] / Ice.DENSITY) * Water.DENSITY - OUT["subW"], 0.0
         )  # shape: [grid.gpsum, nl]
 
         # Total available slush space across all layers
@@ -544,7 +549,7 @@ def main(C, OUT, IN, dt, grid, phys):
         # Determine whether cold content or density limits the amount of refreezing
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
         c1 = OUT["cpi"] * OUT["subD"] * OUT["subZ"] * (C["T0"] - OUT["subT"]) / C["Lm"]
-        c2 = OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dice"]
+        c2 = OUT["subZ"] * (1 - OUT["subD"] / Ice.DENSITY) * Ice.DENSITY
         Wlim = np.minimum(c1, c2)
 
         # Available slush water
@@ -571,7 +576,7 @@ def main(C, OUT, IN, dt, grid, phys):
         # Determine whether cold content or density limits the amount of refreezing
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
         c1 = OUT["cpi"] * OUT["subD"] * OUT["subZ"] * (C["T0"] - OUT["subT"]) / C["Lm"]
-        c2 = OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dice"]
+        c2 = OUT["subZ"] * (1 - OUT["subD"] / Ice.DENSITY) * Ice.DENSITY
         Wlim = np.where(c1 >= c2, c2, c1)
 
         # Calculate refreezing amounts
@@ -671,9 +676,9 @@ def main(C, OUT, IN, dt, grid, phys):
         ###########################################
 
         # Update runoff of irreducible water below the model bottom
-        OUT["runoff_irr_deep_mean"] = OUT["runoff_irr_deep_mean"] * (1 - dt / C["yeardays"]) + OUT[
+        OUT["runoff_irr_deep_mean"] = OUT["runoff_irr_deep_mean"] * (1 - dt / DAYS_PER_YEAR) + OUT[
             "runoff_irr_deep"
-        ] * (dt / C["yeardays"])
+        ] * (dt / DAYS_PER_YEAR)
 
         # Calculate total runoff [in meters water equivalent per timestep]
         OUT["runoff"] = 1e-3 * (

@@ -13,6 +13,7 @@ from ebfm import (
     LOOP_EBM_SWin,
 )
 from ebfm import LOOP_EBM_SWout, LOOP_EBM_insolation
+from ebfm.constants import SECONDS_PER_DAY
 
 from couplers import Coupler
 
@@ -115,16 +116,16 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     Emelt = SWin - SWout + LWin - LWout + SHF + LHF + GHF
     Emelt[Tmid < C["T0"]] = 0.0
 
-    OUT["melt"] = C["dayseconds"] * time2["dt"] * Emelt / C["Lm"] / 1e3
+    OUT["melt"] = SECONDS_PER_DAY * time2["dt"] * Emelt / C["Lm"] / 1e3
 
     ###########################################################
     # MOISTURE FLUXES
     ###########################################################
 
-    OUT["moist_deposition"] = C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tmid < C["T0"]) * (LHF > 0)
-    OUT["moist_condensation"] = C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tmid >= C["T0"]) * (LHF > 0)
-    OUT["moist_sublimation"] = -C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tmid < C["T0"]) * (LHF < 0)
-    OUT["moist_evaporation"] = -C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tmid >= C["T0"]) * (LHF < 0)
+    OUT["moist_deposition"] = SECONDS_PER_DAY * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tmid < C["T0"]) * (LHF > 0)
+    OUT["moist_condensation"] = SECONDS_PER_DAY * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tmid >= C["T0"]) * (LHF > 0)
+    OUT["moist_sublimation"] = -SECONDS_PER_DAY * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tmid < C["T0"]) * (LHF < 0)
+    OUT["moist_evaporation"] = -SECONDS_PER_DAY * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tmid >= C["T0"]) * (LHF < 0)
 
     ###########################################################
     # AVOID EVAPORATION OF ABSENT MELT

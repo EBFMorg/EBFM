@@ -17,7 +17,8 @@ from elmer.mesh import Mesh
 from ebfm.config import GridConfig
 from ebfm.grid import GridInputType
 
-from ebfm.constants import DAYS_PER_YEAR, SECONDS_PER_DAY
+from ebfm.constants.materials import Ice, FreshSnow
+
 
 import logging
 
@@ -26,25 +27,14 @@ logger = logging.getLogger(__name__)
 
 def init_config():
     """
-    Set model parameters, specify grid parameters, I/O, and physics settings.
+    Set model parameters, I/O, and physics settings.
 
     @param[in] time_config Time configuration object.
 
     @returns:
-        grid (dict): Grid-related parameters.
         io (dict): Input/output parameters.
         phys (dict): Model physics settings.
     """
-
-    # ---------------------------------------------------------------------
-    # Grid parameters
-    # ---------------------------------------------------------------------
-    grid = {}
-    grid["utmzone"] = 33  # UTM zone
-    grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
-    grid["nl"] = 50  # Number of vertical layers
-    grid["doubledepth"] = True  # Double vertical layer depth at specified layers (True/False)
-    grid["split"] = np.array([15, 25, 35])  # Vertical layer numbers at which layer depth doubles
 
     # ---------------------------------------------------------------------
     # Model physics
@@ -82,7 +72,7 @@ def init_config():
     os.makedirs(io["rebootdir"], exist_ok=True)
 
     # Return the initialized parameters
-    return grid, io, phys
+    return io, phys
 
 
 def init_constants():
@@ -97,9 +87,6 @@ def init_constants():
     # ---------------------------------------------------------------------
     # Energy balance model
     # ---------------------------------------------------------------------
-    C["alb_fresh"] = 0.83  # Albedo fresh snow (fraction)
-    C["alb_ice"] = 0.39  # Albedo ice (fraction)
-    C["alb_firn"] = 0.52  # Albedo firn (fraction)
     C["tstar_wet"] = 15  # Albedo decay time-scale wet snow (days)
     C["tstar_dry"] = 30  # Albedo decay time-scale dry snow (days)
     C["tstar_K"] = 7  # Albedo decay time-scale coefficient
@@ -132,21 +119,11 @@ def init_constants():
     # ---------------------------------------------------------------------
     # Snow model
     # ---------------------------------------------------------------------
-    C["Dfreshsnow"] = 350.0  # Density of fresh snow (kg m-3)
-    C["Dice"] = 900.0  # Density of ice (kg m-3)
-    C["Dfirn"] = 500.0  # Density of firn (kg m-3)
-    C["Dwater"] = 1000.0  # Density of water (kg m-3)
     C["Ec"] = 60000  # Gravitational densification factor
     C["Eg"] = 42400  # Gravitational densification factor
     C["Trunoff"] = 0.001  # Slush runoff time-scale (days)
     C["geothermal_flux"] = 0.0  # Geothermal heat flux (W m-2)
     C["perc_depth"] = 6.0  # Characteristic deep percolation depth (m)
-
-    # ---------------------------------------------------------------------
-    # Other constants
-    # ---------------------------------------------------------------------
-    C["yeardays"] = DAYS_PER_YEAR
-    C["dayseconds"] = SECONDS_PER_DAY
 
     return C
 
@@ -164,7 +141,16 @@ def compute_number_of_glacier_cells(grid):
     return np.sum(grid["mask"] == 1)
 
 
-def init_grid(grid, io, config: GridConfig):
+def init_grid(config: GridConfig):
+    # ---------------------------------------------------------------------
+    # Grid parameters
+    # ---------------------------------------------------------------------
+    grid = {}
+    grid["utmzone"] = 33  # UTM zone
+    grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
+    grid["nl"] = 50  # Number of vertical layers
+    grid["doubledepth"] = True  # Double vertical layer depth at specified layers (True/False)
+    grid["split"] = np.array([15, 25, 35])  # Vertical layer numbers at which layer depth doubles
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
 
@@ -376,12 +362,11 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def init_initial_conditions(C, grid, io, time):
+def init_initial_conditions(grid, io, time):
     """
     Sets the model's initial conditions at the start of the simulation.
 
     Parameters:
-        C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
         grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
         io (dict): Dictionary with I/O settings (e.g. readbootfile, rebootdir, bootfilein, homedir).
 
@@ -431,12 +416,12 @@ def init_initial_conditions(C, grid, io, time):
         OUT["subT"] = np.full((gpsum, nl), 265.0)  # Vertical temperatures (K)
         OUT["subW"] = np.zeros((gpsum, nl))  # Vertical irreducible water content (kg)
         OUT["subS"] = np.zeros((gpsum, nl))  # Vertical slush water content (kg)
-        OUT["subD"] = np.full((gpsum, nl), C["Dice"])  # Vertical densities (kg m-3)
+        OUT["subD"] = np.full((gpsum, nl), Ice.DENSITY)  # Vertical densities (kg m-3)
         OUT["subTmean"] = OUT["subT"]  # Annual mean vertical layer temperature (K)
         OUT["timelastsnow"] = np.full((gpsum,), time["ts"])  # Timestep of last snowfall (days)
         OUT["ys"] = np.full((gpsum,), 500.0)  # Annual snowfall (mm water equivalent)
         OUT["subZ"] = np.full((gpsum, nl), grid["max_subZ"])  # Vertical layer depths (m)
-        OUT["alb_snow"] = np.full((gpsum,), C["alb_fresh"])  # Snow albedo
+        OUT["alb_snow"] = np.full((gpsum,), FreshSnow.ALBEDO)  # Snow albedo
         OUT["snowmass"] = np.zeros((gpsum,))  # Snow mass (m water equivalent)
 
         if grid.get("doubledepth", False):  # Sets layer thicknesses when 'double depth' is active
@@ -461,7 +446,7 @@ def init_initial_conditions(C, grid, io, time):
     OUT["Dfreshsnow"] = np.zeros((gpsum,))  # Fresh snow density (kg m-3)
     OUT["tstar"] = np.zeros((gpsum,))  # Albedo decay timescale (days)
     OUT["runoff_irr_deep_mean"] = np.zeros((gpsum,))  # Runoff irreducible water (m w.e.)
-    OUT["albedo"] = np.full((gpsum,), C["alb_ice"])  # Albedo (fraction)
+    OUT["albedo"] = np.full((gpsum,), Ice.ALBEDO)  # Albedo (fraction)
 
     ######################################################
     # Initialize `IN` (model input variables)

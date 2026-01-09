@@ -4,6 +4,8 @@
 
 import numpy as np
 
+from ebfm.constants.materials import FreshSnow, Firn, Ice
+
 
 def main(C, time, OUT, SWin):
     """
@@ -27,7 +29,7 @@ def main(C, time, OUT, SWin):
     ###########################################################
 
     # Conditions for ice and snow surfaces
-    ice_cond = (OUT["subD"][:, 0] == C["Dice"]) | (OUT["snowmass"] == 0)  # Ice condition
+    ice_cond = (OUT["subD"][:, 0] == Ice.DENSITY) | (OUT["snowmass"] == 0)  # Ice condition
     snow_cond = ~ice_cond  # Snow condition is the complement of ice condition
 
     # For a snow surface
@@ -40,17 +42,17 @@ def main(C, time, OUT, SWin):
 
     alb_snow_decay_cond = snow_cond & (OUT["timelastsnow"] < time["TCUR"])
     OUT["alb_snow"][alb_snow_decay_cond] -= (
-        np.maximum(OUT["alb_snow"][alb_snow_decay_cond] - C["alb_firn"], 0.0)
+        np.maximum(OUT["alb_snow"][alb_snow_decay_cond] - Firn.ALBEDO, 0.0)
         / OUT["tstar"][alb_snow_decay_cond]
         * time["dt"]
     )
 
     fresh_snow_cond = (OUT["timelastsnow"] == time["TCUR"]) | ice_cond
-    OUT["alb_snow"][fresh_snow_cond] = C["alb_fresh"]
+    OUT["alb_snow"][fresh_snow_cond] = FreshSnow.ALBEDO
     OUT["albedo"][snow_cond] = OUT["alb_snow"][snow_cond]
 
     # For an ice surface
-    OUT["albedo"][ice_cond] = C["alb_ice"]
+    OUT["albedo"][ice_cond] = Ice.ALBEDO
 
     ###########################################################
     # Compute Reflected Shortwave Radiation
