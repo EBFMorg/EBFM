@@ -42,7 +42,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     SWin, OUT = LOOP_EBM_SWin.main(C, OUT, IN, grid, cpl)
 
     # TODO: better do this before calling LOOP_EBM.main
-    if cpl.couple_to_icon_atmo:
+    if cpl.has_coupling_to("icon_atmo"):
         LWin = IN["LWin"]
     else:
         LWin = LOOP_EBM_LWin.main(C, IN)
