@@ -269,6 +269,10 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "albedo": OUT["albedo"],
             }
 
+            # TODO: refactor as follows
+            # data_from_icon = coupling.components.icon_atmo.exchange(data_to_icon)
+            # TODO: inside coupling.components.icon_atmo.exchange call Coupler.put / Coupler.get
+            # TODO: add put/get in Coupler abstract base class; remove exchange from Coupler base class
             data_from_icon = coupler.exchange("icon_atmo", data_to_icon)
 
             logger.debug("Done.")
@@ -308,6 +312,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "T_ice": OUT["T_ice"],
                 "runoff": OUT["runoff"],
             }
+            # TODO: refactor as follows
+            # data_from_elmer = coupling.components.elmer_ice.exchange(data_to_elmer)
             data_from_elmer = coupler.exchange("elmer_ice", data_to_elmer)
             logger.debug("Done.")
             logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
