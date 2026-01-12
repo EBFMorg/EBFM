@@ -254,6 +254,14 @@ As soon as pre-commit is set up, you will not be able to commit if any of the ch
 
 Note: You can bypass this check with `--no-verify`. Please note that the CI will also run pre-commit and fail if there are problems in any of the checks. Therefore, it is recommended to use the pre-commit hooks locally before pushing code to this repository and only bypass them if there is a good reason.
 
+**Troubleshooting:** The pre-commit hooks require Python >= 3.10. If your Python version is older you will see an error similar to the following
+
+```sh
+ERROR: Package 'black' required a different Python: 3.9.9 not in `>=3.10`
+```
+
+Please update your Python in this case. Alternatively, you can also set up an independent virtual environment just for running the pre-commit hooks or skip the checks with `--no-verify`.
+
 ### Copyright and licensing
 
 This project uses [REUSE](https://reuse.software/) to track information regarding copyright and licensing. Therefore, all files in this repository are required to provide the corresponding information. Please refer to the documentation of REUSE for details.
