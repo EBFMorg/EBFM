@@ -106,6 +106,7 @@ def read_dem_xios(dem_file: Path, grid: dict):
         np.squeeze(nc["x"][:]).shape == grid["x"].shape
     ), "Surface mesh and Elmer mesh do not have the same number of vertices"
     grid["z"] = np.squeeze(nc["zs"][:]).data
+    grid["h"] = np.squeeze(nc["h"][:]).data
     grid["lat"] = np.squeeze(nc["mesh2D_node_x"][:]).data
     grid["lon"] = np.squeeze(nc["mesh2D_node_y"][:]).data
     return grid
@@ -229,7 +230,6 @@ def write_dem_as_elmer(
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(description="Read Elmer mesh and DEM files.")
     parser.add_argument("elmer_mesh", type=Path, help="Path to the Elmer mesh file.")
     parser.add_argument("dem", type=Path, help="Path to the digital elevation model (DEM) NetCDF file.")
