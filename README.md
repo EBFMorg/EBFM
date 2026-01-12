@@ -260,7 +260,7 @@ Note: You can bypass this check with `--no-verify`. Please note that the CI will
 ERROR: Package 'black' required a different Python: 3.9.9 not in `>=3.10`
 ```
 
-Please update your Python in this care. Alternatively, you can also set up an independent virtual environment just for running the pre-commit hooks or skip the checks with `--no-verify`.
+Please update your Python in this case. Alternatively, you can also set up an independent virtual environment just for running the pre-commit hooks or skip the checks with `--no-verify`.
 
 ### Copyright and licensing
 
