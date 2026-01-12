@@ -136,34 +136,34 @@ def get_field_definitions(time: Dict[str, float]) -> Set[Field]:
     timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
 
     return {
-        Field(
-            name="T_ice",
-            coupled_component=Component.elmer_ice,
-            timestep=timestep,
-            metadata="Near surface temperature at Ice surface (in K)",
-            exchange_type=yac.ExchangeType.SOURCE,
-        ),
-        Field(
-            name="smb",
-            coupled_component=Component.elmer_ice,
-            timestep=timestep,
-            metadata="??? (in ???)",
-            exchange_type=yac.ExchangeType.SOURCE,
-        ),
-        Field(
-            name="runoff",
-            coupled_component=Component.elmer_ice,
-            timestep=timestep,
-            metadata="Runoff (in ???)",
-            exchange_type=yac.ExchangeType.SOURCE,
-        ),
-        Field(
-            name="h",
-            coupled_component=Component.elmer_ice,
-            timestep=timestep,
-            metadata="Surface height (in m)",
-            exchange_type=yac.ExchangeType.TARGET,
-        ),
+        # Field(
+        # name="T_ice",
+        # coupled_component=Component.elmer_ice,
+        # timestep=timestep,
+        # metadata="Near surface temperature at Ice surface (in K)",
+        # exchange_type=yac.ExchangeType.SOURCE,
+        # ),
+        # Field(
+        # name="smb",
+        # coupled_component=Component.elmer_ice,
+        # timestep=timestep,
+        # metadata="??? (in ???)",
+        # exchange_type=yac.ExchangeType.SOURCE,
+        # ),
+        # Field(
+        # name="runoff",
+        # coupled_component=Component.elmer_ice,
+        # timestep=timestep,
+        # metadata="Runoff (in ???)",
+        # exchange_type=yac.ExchangeType.SOURCE,
+        # ),
+        # Field(
+        # name="h",
+        # coupled_component=Component.elmer_ice,
+        # timestep=timestep,
+        # metadata="Surface height (in m)",
+        # exchange_type=yac.ExchangeType.TARGET,
+        # ),
         # Field(
         #     name="dhdx",
         #     component=Component.elmer_ice,
@@ -234,20 +234,20 @@ def get_field_definitions(time: Dict[str, float]) -> Set[Field]:
             metadata="Temperature at surface (in K)",
             exchange_type=yac.ExchangeType.TARGET,
         ),
-        # Field(
-        #     name="huss",
-        #     component=Component.icon_atmo,
-        #     timestep=timestep,
-        #     metadata="Specific humidity at surface (in kg kg-1)"
-        #     exchange_type=yac.ExchangeType.TARGET,
-        # ),
-        # Field(
-        #     name="sfcPressure",
-        #     component=Component.icon_atmo,
-        #     timestep=timestep,
-        #     metadata="Surface pressure (in Pa)"
-        #     exchange_type=yac.ExchangeType.TARGET,
-        # ),
+        Field(
+            name="huss",
+            coupled_component=Component.icon_atmo,
+            timestep=timestep,
+            metadata="Specific humidity at surface (in kg kg-1)",
+            exchange_type=yac.ExchangeType.TARGET,
+        ),
+        Field(
+            name="sfcpres",
+            coupled_component=Component.icon_atmo,
+            timestep=timestep,
+            metadata="Surface pressure (in Pa)",
+            exchange_type=yac.ExchangeType.TARGET,
+        ),
     }
 
 
