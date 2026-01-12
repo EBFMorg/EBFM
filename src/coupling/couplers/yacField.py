@@ -33,6 +33,7 @@ class Field:
     """
 
     name: str  # name of the field
+    # TODO: remove coupler_component and directly store fields in coupling.components.Component?
     coupled_component: Component  # component this field couples to
     timestep: Timestep  # timestep of the field
     metadata: str = None  # optional to allow model providing metadata
