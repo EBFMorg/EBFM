@@ -190,17 +190,7 @@ class YACCoupler(Coupler):
 
         component = self._coupled_components[component_name]
 
-        comp_fields = self.fields.filter(lambda f: f.coupled_component == component)
-
-        for field in comp_fields.filter(lambda f: f.exchange_type == yac.ExchangeType.SOURCE):
-            self.put(component_name, field.name, data_to_exchange[field.name])
-
-        received_data = {}
-
-        for field in comp_fields.filter(lambda f: f.exchange_type == yac.ExchangeType.TARGET):
-            received_data[field.name] = self.get(component_name, field.name)
-
-        return received_data
+        return component.exchange(data_to_exchange)
 
     def finalize(self):
         """

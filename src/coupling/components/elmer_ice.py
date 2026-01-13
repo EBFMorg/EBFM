@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from typing import Dict, Set, TYPE_CHECKING
+import numpy as np
 
 if TYPE_CHECKING:
     from coupling.couplers.base import Coupler
@@ -79,6 +80,28 @@ class ElmerIce(Component):
             # ),
         }
 
+    def _yac_exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+        """
+        Exchange of EBFM with Elmer/Ice using YAC coupler.
+
+        @param[in] data_to_exchange dictionary of field names and their data to be sent
+
+        @returns dictionary of received field data
+        """
+        received_data: Dict[str, np.array] = {}
+
+        # Put data to Elmer/Ice
+        self._coupler.put(self.name, "T_ice", data_to_exchange["T_ice"])
+        self._coupler.put(self.name, "smb", data_to_exchange["smb"])
+        self._coupler.put(self.name, "runoff", data_to_exchange["runoff"])
+
+        # Get data from Elmer/Ice
+        received_data["h"] = self._coupler.get(self.name, "h")
+        # received_data["dhdx"] = self._coupler.get(self.name, "dhdx")
+        # received_data["dhdy"] = self._coupler.get(self.name, "dhdy")
+
+        return received_data
+
     def get_field_definitions(self, time: Dict[str, float]) -> Set[Field]:
         """
         Get field definitions for EBFM coupling.
@@ -91,5 +114,14 @@ class ElmerIce(Component):
         else:
             raise NotImplementedError(
                 f"The component {self.name} was configured with the unsupported coupler {type(self._coupler)}."
-                "Note: ElmerIce component only supports YACCoupler at the moment. "
+                f"Note: {type(self)} only supports YACCoupler at the moment. "
+            )
+
+    def exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+        if self._uses_coupler("YACCoupler"):
+            return self._yac_exchange(data_to_exchange)
+        else:
+            raise NotImplementedError(
+                f"The component {self.name} was configured with the unsupported coupler {type(self._coupler)}."
+                f"Note: {type(self)} only supports YACCoupler at the moment. "
             )

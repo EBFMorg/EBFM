@@ -4,6 +4,7 @@
 
 from abc import ABC, abstractmethod
 from typing import Set, Dict, TYPE_CHECKING
+import numpy as np
 
 
 if TYPE_CHECKING:
@@ -37,6 +38,17 @@ class Component(ABC):
         @returns True if the coupler is of the specified class type, False otherwise
         """
         return self._coupler.__class__.__name__ == coupler_class_type
+
+    @abstractmethod
+    def exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+        """
+        Exchange of EBFM with this component
+
+        @param[in] data_to_exchange dictionary of field names and their data to be sent
+
+        @returns dictionary of received field data
+        """
+        pass
 
     @abstractmethod
     def get_field_definitions(self, time: Dict[str, float]) -> Set["Field"]:
