@@ -66,12 +66,6 @@ class FieldSet:
 
 
 class YACCoupler(Coupler):
-    interface: yac.YAC = None
-    component: yac.Component = None
-    grid: yac.UnstructuredGrid = None
-    corner_points: yac.Points = None
-    fields: FieldSet = FieldSet()
-
     def __init__(self, coupling_config: CouplingConfig):
         """
         Create interface to the coupler and register component
@@ -80,12 +74,17 @@ class YACCoupler(Coupler):
         """
         super().__init__(coupling_config)
         logger.debug(f"YAC version is {yac.version()}")
-        self.interface = yac.YAC()
+        self.interface: yac.YAC = yac.YAC()
 
         if coupling_config.coupler_config:
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
 
-        self.component = self.interface.def_comp(self.component_name)
+        self.component: yac.Component = self.interface.def_comp(self.component_name)
+        self.fields: FieldSet = FieldSet()
+
+        # will be initialized in self._add_grid()
+        self.grid: yac.UnstructuredGrid = None
+        self.corner_points: yac.Points = None
 
     def setup(self, grid: Dict | Grid, time: Dict[str, float]):
         """
