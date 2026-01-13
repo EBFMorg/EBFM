@@ -23,7 +23,7 @@ class DummyCoupler(Coupler):
 
         # DummyCoupler couples to none of the available components
         self._coupled_components = dict()
-        logger.debug(f"DummyCoupler created for component '{self.component_name}'.")
+        logger.debug(f"DummyCoupler created for component '{coupling_config.component_name}'.")
 
     def setup(self, grid: Grid, time: Dict[str, float]):
         """Setup the coupling interface (does nothing for DummyCoupler)

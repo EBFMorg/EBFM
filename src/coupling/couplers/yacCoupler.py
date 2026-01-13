@@ -79,7 +79,7 @@ class YACCoupler(Coupler):
         if coupling_config.coupler_config:
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
 
-        self.component: yac.Component = self.interface.def_comp(self.component_name)
+        self.component: yac.Component = self.interface.def_comp(coupling_config.component_name)
         self.fields: FieldSet = FieldSet()
 
         # will be initialized in self._add_grid()

@@ -36,7 +36,6 @@ class Coupler(ABC):
 
         @param[in] coupling_config configuration of the coupling
         """
-        self.component_name: str = coupling_config.component_name  # name of this component in the coupler configuration
         self._coupled_components: Dict[str, Component] = {}
 
         if coupling_supported:
