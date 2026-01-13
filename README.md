@@ -151,6 +151,36 @@ Usage example for partitioned mesh:
 ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
+### Using `reader.py` to prepare an Elmer mesh with elevation data
+
+The helper script `reader.py` can be used to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
+
+For example, you can run the following command from the repository root (`src`):
+
+```sh
+python3 reader.py ../examples/MESH ../examples/BedMachineGreenland-v5.nc
+```
+
+By default, you must choose whether to write the updated mesh to a new directory, where `../examples/MESH_with_DEM` is the path to the new directory (copies your original `MESH` folder):
+
+```sh
+python3 reader.py ../examples/MESH ../examples/BedMachineGreenland-v5.nc --outpath ../examples/MESH_with_DEM
+```
+
+or modify the mesh in place (overwrites `mesh.nodes`):
+
+```sh
+python3 reader.py ../examples/MESH ../examples/BedMachineGreenland-v5.nc --in-place
+```
+
+The resulting mesh can then be used directly with EBFM:
+
+```sh
+ebfm --elmer-mesh ../examples/MESH_with_DEM
+```
+
+
+
 ### Coupled simulation
 
 The EBFM code allows coupling to other simulation codes. The following arguments
