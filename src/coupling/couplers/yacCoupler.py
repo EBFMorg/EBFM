@@ -93,6 +93,9 @@ class YACCoupler(Coupler):
         Performs initialization operations after init and before entering the
         time loop
 
+        @note This is a collective operation for all components involved in the coupling. It may take some time as it
+              involves significant communication and computes remapping weights.
+
         @param[in] grid Grid used by EBFM where coupling happens
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
