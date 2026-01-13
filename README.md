@@ -210,7 +210,7 @@ mpirun -np 1 ebfm \
 ```
 
 Be aware that the command above requires setting a few environment variables.
-Assuming your project is structured following [this repository](https://gitlab.dkrz.de/k202215/ebfm_dummy),
+Assuming your project is structured following [this repository](https://gitlab.dkrz.de/TerraDT/ebfm_dummy),
 the following settings should help getting started:
 
 ```sh
