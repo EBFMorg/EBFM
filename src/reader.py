@@ -255,7 +255,6 @@ if __name__ == "__main__":
     x = mesh.x_vertices
     y = mesh.y_vertices
     h = read_dem(args.dem, x, y)
-    print(f"{args.in_place=}, {args.outpath=}, {outpath=}")
 
     if outpath != args.elmer_mesh:
         assert args.elmer_mesh.is_dir(), f"{args.elmer_mesh} is no directory or does not exist."
