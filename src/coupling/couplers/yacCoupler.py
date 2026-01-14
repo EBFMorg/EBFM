@@ -74,6 +74,12 @@ class YACCoupler(Coupler):
 
         self._add_couples(FieldSet(field_definitions))
 
+        self.interface.enddef()
+
+        for field in self.fields.all():
+            logger.debug(f"Performing consistency checks for field '{field.name}'...")
+            field.perform_consistency_checks(self.interface)
+
     def _get_field(self, component_name: str, field_name: str) -> Field:
         """
         Get Field object for given component and field name
@@ -181,12 +187,6 @@ class YACCoupler(Coupler):
         self.interface.sync_def()
 
         self._construct_coupling_post_sync()
-
-        self.interface.enddef()
-
-        for field in self.fields.all():
-            logger.debug(f"Performing consistency checks for field '{field.name}'...")
-            field.perform_consistency_checks(self.interface)
 
     def _construct_coupling_pre_sync(self, field_definitions: FieldSet):
         """
