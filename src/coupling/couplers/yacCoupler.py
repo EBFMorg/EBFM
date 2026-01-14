@@ -18,16 +18,6 @@ from coupling.fields import YACField as Field
 logger = logging.getLogger(__name__)
 
 
-field_template = """
-field {name}:
- - source:
-   - component: {comp}
-   - grid:      {grid}
-   - timestep:  {timestep}
-   - metadata:  {metadata}
-"""
-
-
 class YACCoupler(Coupler):
     def __init__(self, coupling_config: CouplingConfig):
         """
@@ -227,26 +217,5 @@ class YACCoupler(Coupler):
                     f"Field {yac_field.name}: "
                     f"SOURCE {field.coupled_component.name} -> TARGET {yac_field.component_name}"
                 )
-                field_info = self._field_information(field)
+                field_info = field.get_info(self.interface)
                 logger.info(field_info)
-
-    def _field_information(self, field: Field) -> str:
-        """
-        Get detailed information about a Field.
-
-        @param[in] field yac.Field to get information about
-        @returns Formatted string with field information
-        """
-        assert field.yac_field, f"YAC field is not defined for field {field}."
-
-        src_comp, src_grid, src_field = self.interface.get_field_source(
-            field.yac_field.component_name, field.yac_field.grid_name, field.yac_field.name
-        )
-        src_field_timestep = self.interface.get_field_timestep(src_comp, src_grid, src_field)
-        src_field_metadata = self.interface.get_field_metadata(src_comp, src_grid, src_field)
-        assert (
-            field.yac_field.name == field.name
-        ), f"Field name mismatch: expected '{field.name}', got '{field.yac_field.name}'."
-        return field_template.format(
-            name=field.name, comp=src_comp, grid=src_grid, timestep=src_field_timestep, metadata=src_field_metadata
-        )

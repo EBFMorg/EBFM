@@ -26,6 +26,16 @@ def days_to_iso(days: float) -> str:
     return dt.isoformat()
 
 
+field_template = """
+field {name}:
+ - source:
+   - component: {comp}
+   - grid:      {grid}
+   - timestep:  {timestep}
+   - metadata:  {metadata}
+"""
+
+
 @dataclass(frozen=True)
 class YACField(Field):
     """
@@ -52,7 +62,9 @@ class YACField(Field):
         """
         assert not self.yac_field, f"Field '{self.name}' for component '{self.name}' has already been created in YAC."
 
-        # TODO: work-around since some components assume that metadata is always set, components should actually check for existence of metadata and only call yac_cget_field_metadata or yac_fget_field_metadata if metadata exists.
+        # TODO: work-around since some components assume that metadata is always set, components should actually check
+        #       for existence of metadata and only call yac_cget_field_metadata or yac_fget_field_metadata if metadata
+        #       exists.
         if not self.metadata:
             self = replace(self, metadata="N/A")
 
@@ -101,4 +113,31 @@ class YACField(Field):
         )
         assert field_role == self.exchange_type, (
             f"Field '{self.name}' role mismatch: expected '{self.exchange_type}', " f"got '{field_role}'."
+        )
+
+    def get_info(self, yac_interface: yac.YAC) -> str:
+        """
+        Get detailed information about a Field.
+
+        @param[in] field yac.Field to get information about
+        @returns Formatted string with field information
+        """
+
+        assert self.yac_field, f"YAC field is not defined for field {self}."
+
+        src_comp, src_grid, src_field = yac_interface.get_field_source(
+            self.yac_field.component_name, self.yac_field.grid_name, self.yac_field.name
+        )
+        src_field_timestep = yac_interface.get_field_timestep(src_comp, src_grid, src_field)
+
+        if self.metadata:  # metadata is optional
+            src_field_metadata = yac_interface.get_field_metadata(src_comp, src_grid, src_field)
+        else:
+            src_field_metadata = "N/A"
+
+        assert (
+            self.yac_field.name == self.name
+        ), f"Field name mismatch: expected '{self.name}', got '{self.yac_field.name}'."
+        return field_template.format(
+            name=self.name, comp=src_comp, grid=src_grid, timestep=src_field_timestep, metadata=src_field_metadata
         )
