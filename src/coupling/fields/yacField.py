@@ -70,11 +70,31 @@ class YACField(Field):
                 self.metadata.encode("utf-8"),
             )
 
-        # perform optional consistency check
-        if self.exchange_type:
-            field_role = yac_interface.get_field_role(yac_field.component_name, yac_field.grid_name, yac_field.name)
-            assert field_role == self.exchange_type, (
-                f"Field '{self.name}' role mismatch: expected '{self.exchange_type}', " f"got '{field_role}'."
-            )
-
         return replace(self, yac_field=yac_field)
+
+    def perform_consistency_checks(self, yac_interface: yac.YAC):
+        """
+        Perform consistency checks on the YACField.
+
+        Ensures that self.yac_field (inside YAC) is consistent with the Field attributes stored here.
+
+        @note should be called after enddef since this is the point where we can guarantee that YAC has all information.
+        """
+
+        assert self.yac_field is not None, f"YAC field for '{self.name}' has not been created yet."
+        assert self.yac_field.component_name == "ebfm", (
+            f"Field '{self.name}' coupled component '{self.coupled_component.name}' does not match "
+            f"YAC component '{self.yac_field.component_name}'."
+        )
+        assert (
+            self.name == self.yac_field.name
+        ), f"Field '{self.name}' name does not match YAC field name '{self.yac_field.name}'."
+        assert self.exchange_type in (yac.ExchangeType.SOURCE, yac.ExchangeType.TARGET), (
+            f"Field '{self.name}' has invalid exchange type '{self.exchange_type}'. " "Must be either SOURCE or TARGET."
+        )
+        field_role = yac_interface.get_field_role(
+            self.yac_field.component_name, self.yac_field.grid_name, self.yac_field.name
+        )
+        assert field_role == self.exchange_type, (
+            f"Field '{self.name}' role mismatch: expected '{self.exchange_type}', " f"got '{field_role}'."
+        )

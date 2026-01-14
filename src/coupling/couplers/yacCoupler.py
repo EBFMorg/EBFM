@@ -184,6 +184,10 @@ class YACCoupler(Coupler):
 
         self.interface.enddef()
 
+        for field in self.fields.all():
+            logger.debug(f"Performing consistency checks for field '{field.name}'...")
+            field.perform_consistency_checks(self.interface)
+
     def _construct_coupling_pre_sync(self, field_definitions: FieldSet):
         """
         Constructs the coupling interface with YAC.
