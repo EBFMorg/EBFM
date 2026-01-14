@@ -50,14 +50,13 @@ class ElmerIce(Component):
                 name="smb",
                 coupled_component=self,
                 timestep=timestep,
-                metadata="??? (in ???)",
                 exchange_type=yac.ExchangeType.SOURCE,
             ),
             YACField(
                 name="runoff",
                 coupled_component=self,
                 timestep=timestep,
-                metadata="Runoff (in ???)",
+                metadata="Runoff",
                 exchange_type=yac.ExchangeType.SOURCE,
             ),
             YACField(

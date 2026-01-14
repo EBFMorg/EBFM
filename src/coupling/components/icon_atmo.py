@@ -43,7 +43,7 @@ class IconAtmo(Component):
             #     name="albedo",
             #     coupled_component=self,
             #     timestep=timestep,
-            #     metadata="Albedo of the ice surface (in ???)",
+            #     metadata="Albedo of the ice surface",
             #     exchange_type=yac.ExchangeType.SOURCE,
             # ),
             YACField(
