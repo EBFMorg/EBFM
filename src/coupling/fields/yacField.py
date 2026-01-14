@@ -52,6 +52,10 @@ class YACField(Field):
         """
         assert not self.yac_field, f"Field '{self.name}' for component '{self.name}' has already been created in YAC."
 
+        # TODO: work-around since some components assume that metadata is always set, components should actually check for existence of metadata and only call yac_cget_field_metadata or yac_fget_field_metadata if metadata exists.
+        if not self.metadata:
+            self = replace(self, metadata="N/A")
+
         yac_field = yac.Field.create(
             self.name,
             yac_component,
