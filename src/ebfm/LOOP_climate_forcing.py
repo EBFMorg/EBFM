@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from couplers import Coupler
+from coupling import Coupler
 
 from datetime import datetime, timedelta
 
