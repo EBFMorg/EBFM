@@ -14,7 +14,7 @@ from ebfm import (
 )
 from ebfm import LOOP_EBM_SWout, LOOP_EBM_insolation
 
-from coupler import Coupler
+from coupling import Coupler
 
 
 def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
@@ -41,7 +41,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     SWin, OUT = LOOP_EBM_SWin.main(C, OUT, IN, grid, cpl)
 
     # TODO: better do this before calling LOOP_EBM.main
-    if cpl.couple_to_icon_atmo:
+    if cpl.has_coupling_to("icon_atmo"):
         LWin = IN["LWin"]
     else:
         LWin = LOOP_EBM_LWin.main(C, IN)

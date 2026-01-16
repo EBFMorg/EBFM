@@ -151,6 +151,19 @@ def init_constants():
     return C
 
 
+def compute_number_of_glacier_cells(grid):
+    """
+    Computes the number of glacier cells in the grid based on the mask.
+
+    Parameters:
+        grid (dict): Dictionary containing grid-related parameters
+
+    Returns:
+        int: Number of glacier cells (gpsum)
+    """
+    return np.sum(grid["mask"] == 1)
+
+
 def init_grid(grid, io, config: GridConfig):
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
@@ -177,8 +190,16 @@ def init_grid(grid, io, config: GridConfig):
             grid["lon"] = np.zeros_like(grid["x"]) + 320  # test values!
         if config.grid_type is GridInputType.ELMERXIOS:
             grid = read_dem_xios(config.dem_file, grid)
-        grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-        grid["gpsum"] = np.sum(grid["mask"] == 1)  # number of modelled grid cells
+
+        if config.grid_type is GridInputType.ELMERXIOS:
+            min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
+
+            # treats grid cells as glacier where ice thickness exceeds threshold
+            grid["mask"] = (grid["h"] > min_thickness_glacier).astype(int)
+        else:
+            grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
+
+        grid["gpsum"] = compute_number_of_glacier_cells(grid)
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
@@ -205,7 +226,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-        grid["gpsum"] = np.sum(grid["mask"] == 1)  # number of modelled grid cells
+        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
@@ -220,7 +241,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["x_2D"] = input_data["x"][0][0]
         grid["y_2D"] = input_data["y"][0][0]
         grid["z_2D"] = input_data["z"][0][0]
-        grid["mask_2D"] = input_data["mask"][0][0]
+        mask_2D = input_data["mask"][0][0]
 
         # Determine domain extent
         grid["has_shading"] = True
@@ -233,23 +254,21 @@ def init_grid(grid, io, config: GridConfig):
             grid["x_2D"] = np.flipud(grid["x_2D"])
             grid["y_2D"] = np.flipud(grid["y_2D"])
             grid["z_2D"] = np.flipud(grid["z_2D"])
-            grid["mask_2D"] = np.flipud(grid["mask_2D"])
+            mask_2D = np.flipud(mask_2D)
 
         _, fx = np.gradient(grid["x_2D"])
         if fx[0, 0] < 0:
             grid["x_2D"] = np.fliplr(grid["x_2D"])
             grid["y_2D"] = np.fliplr(grid["y_2D"])
             grid["z_2D"] = np.fliplr(grid["z_2D"])
-            grid["mask_2D"] = np.fliplr(grid["mask_2D"])
+            mask_2D = np.fliplr(mask_2D)
 
         # Calculate grid spacing
         grid["dx"] = grid["x_2D"][0][1] - grid["x_2D"][0][0]
 
-        # Calculate number of modeled grid cells (gpsum)
-        grid["gpsum"] = np.sum(grid["mask_2D"] == 1)
-
         # Create 1-D mask
-        grid["mask"] = grid["mask_2D"][grid["mask_2D"] == 1]
+        grid["mask"] = mask_2D[mask_2D == 1]
+        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # Calculate latitude & longitude fields (from the original UTM coordinates)
         utmzone = grid["utmzone"]  # Assume this is already part of the grid
@@ -263,12 +282,12 @@ def init_grid(grid, io, config: GridConfig):
         grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
 
         # Store 1-D (vectorized) grid information
-        mask_flat = grid["mask_2D"].flatten()
+        mask_flat = mask_2D.flatten()
         grid["x"] = grid["x_2D"].flatten()[mask_flat == 1]
         grid["y"] = grid["y_2D"].flatten()[mask_flat == 1]
         grid["z"] = grid["z_2D"].flatten()[mask_flat == 1]
-        grid["ind"] = np.where(grid["mask_2D"].flatten() == 1)
-        grid["xind"], grid["yind"] = np.where(grid["mask_2D"] == 1)
+        grid["ind"] = np.where(mask_flat == 1)
+        grid["xind"], grid["yind"] = np.where(mask_2D == 1)
 
         # ---------------------------------------------------------------------
         # Grid slope and aspect
@@ -309,30 +328,9 @@ def init_grid(grid, io, config: GridConfig):
         grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
-    elif grid["input_type"] is GridInputType.ELMER_XIOS:
-        grid = read_elmer_xios_grid(grid=grid, gridfile=config.dem_file)
-        grid["gpsum"] = grid["z"].shape[0]
-        grid["mask"] = (grid["h"] > 1.0) * 1.0
-        grid["x"] = np.zeros_like(grid["z"])
-        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
-    return grid
-
-
-def read_elmer_xios_grid(grid, gridfile: Path):
-    import netCDF4 as nc
-
-    print(gridfile)
-    with nc.Dataset(gridfile) as file:
-        grid["lat"] = file["mesh2D_node_x"][:]
-        grid["lon"] = file["mesh2D_node_y"][:]
-        grid["x"] = file["x"][:]
-        grid["y"] = file["y"][:]
-        grid["z"] = np.squeeze(file["zs"][:].data)
-        grid["h"] = np.squeeze(file["h"][:].data)
     return grid
 
 

@@ -4,9 +4,11 @@
 
 import numpy as np
 
-from coupler import Coupler
+from coupling import Coupler
 
 from datetime import datetime, timedelta
+
+from ebfm.LOOP_general_functions import is_first_time_step
 
 
 def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
@@ -37,7 +39,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     ###########################################################
     # SPECIFY/READ METEO FORCING
     ###########################################################
-    if not cpl.couple_to_icon_atmo:
+    if not cpl.has_coupling_to("icon_atmo"):
         IN = set_random_weather_data(IN, C, time, grid)
 
     ###########################################################
@@ -55,7 +57,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
         "VP0"
     ] * np.exp(C["Ls"] / C["Rv"] * (1.0 / 273.15 - 1.0 / IN["T"])) * (IN["T"] < 273.15)
 
-    if cpl.couple_to_icon_atmo:  # q from ICON, calculate VP and RH
+    if cpl.has_coupling_to("icon_atmo"):  # q from ICON, calculate VP and RH
         IN["VP"] = IN["q"] * IN["Pres"] / C["eps"]
         IN["RH"] = IN["VP"] / VPsat
     else:  # RH from input, calculate VP and q
@@ -68,7 +70,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     # Time since last snowfall event
     snowfall_mask = (IN["snow"] / (time["dt"] * C["dayseconds"])) > C["Pthres"]
     OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
-    if t == 1:
+    if is_first_time_step(t):
         OUT["timelastsnow"][:] = time["TCUR"]
 
     # Potential temperature and lapse rate

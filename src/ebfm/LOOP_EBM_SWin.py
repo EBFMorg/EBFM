@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from coupler import Coupler
+from coupling import Coupler
 
 
 def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
@@ -23,7 +23,7 @@ def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
         tuple: SWin (numpy array of incoming shortwave radiation) and updated OUT dictionary.
     """
 
-    if cpl.couple_to_icon_atmo:
+    if cpl.has_coupling_to("icon_atmo"):
         SWin_diff = (0.8 - 0.65 * (1 - IN["C"])) * IN["SWin"]
         SWin_dir = (0.2 + 0.65 * (1 - IN["C"])) * (1 - OUT["shade"]) * IN["SWin"]
         SWin = SWin_dir + SWin_diff
