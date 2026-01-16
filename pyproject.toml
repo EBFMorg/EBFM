@@ -36,6 +36,7 @@ requires = ["setuptools", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
+git_describe_command = "git describe --tags --dirty --match v*"
 version_scheme = "post-release"
 local_scheme = "node-and-date"
 
