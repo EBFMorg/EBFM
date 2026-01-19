@@ -7,11 +7,11 @@ import numpy as np
 
 from ebfm import logging
 
-from coupling.couplers.base import Coupler, Grid, Dict, CouplingConfig
+from .base import Coupler, Grid, Dict, CouplingConfig
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
-from coupling.fields import FieldSet
-from coupling.fields import YACField as Field
+from ebfm.coupling.fields import FieldSet
+from ebfm.coupling.fields import YACField as Field
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 

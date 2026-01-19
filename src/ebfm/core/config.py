@@ -9,10 +9,10 @@ This file exposes a some configuration dataclasses for EBFM components.
 from argparse import Namespace
 from pathlib import Path
 
-from ebfm.grid import GridInputType
+from .grid import GridInputType
 
 from datetime import datetime, timedelta
-from ebfm.constants import SECONDS_PER_DAY
+from .constants import SECONDS_PER_DAY
 
 import logging
 

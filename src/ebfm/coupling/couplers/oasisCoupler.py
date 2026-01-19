@@ -4,7 +4,7 @@
 
 import logging
 
-from coupling.couplers import Coupler
+from . import Coupler
 
 logger = logging.getLogger(__name__)
 

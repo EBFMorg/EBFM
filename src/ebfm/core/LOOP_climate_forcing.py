@@ -4,11 +4,11 @@
 
 import numpy as np
 
-from coupling import Coupler
+from ebfm.coupling import Coupler
 
 from datetime import datetime, timedelta
 
-from ebfm.LOOP_general_functions import is_first_time_step
+from .LOOP_general_functions import is_first_time_step
 
 
 def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:

@@ -9,8 +9,8 @@ import argparse
 import numpy as np
 from numpy.typing import NDArray
 
-from elmer.mesh import TriangleMesh
-import elmer.parser
+from ebfm.elmer.mesh import TriangleMesh
+import ebfm.elmer.parser
 
 
 def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id: int = -1) -> TriangleMesh:
@@ -47,8 +47,8 @@ def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id:
     ), f"Mesh file {elements_file} does not exist. Please ensure that this file exists in {mesh_root}."
 
     # Parse header, nodes, and elements files
-    n_vertices, n_cells = elmer.parser.parse_header(header_file)
-    global_vertex_ids, x_vertices, y_vertices, z_vertices = elmer.parser.parse_nodes(nodes_file)
+    n_vertices, n_cells = ebfm.elmer.parser.parse_header(header_file)
+    global_vertex_ids, x_vertices, y_vertices, z_vertices = ebfm.elmer.parser.parse_nodes(nodes_file)
     local_vertex_ids = range(len(global_vertex_ids))  # use [0,1,...,n_vertices-1] to identify vertices locally
 
     assert (
@@ -64,7 +64,7 @@ def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id:
         len(z_vertices) == n_vertices
     ), f"Number of vertices in nodes file ({len(z_vertices)}) does not match the header ({n_vertices})."
 
-    global_cell_ids, global_cell_to_vertex = elmer.parser.parse_elements(elements_file)
+    global_cell_ids, global_cell_to_vertex = ebfm.elmer.parser.parse_elements(elements_file)
 
     vertex_l2g = {
         loc: glob for loc, glob in zip(local_vertex_ids, global_vertex_ids)

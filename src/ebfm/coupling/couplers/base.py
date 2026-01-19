@@ -5,22 +5,22 @@
 from typing import Dict
 import numpy as np
 
-from elmer.mesh import Mesh as Grid  # for now use an alias
+from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
-# from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
-from ebfm.config import CouplingConfig
+# from ebfm.core.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
+from ebfm.core.config import CouplingConfig
 
 import logging
 
 from abc import ABC, abstractmethod
 
-from coupling.components import Component
+from ebfm.coupling.components import Component
 
 # TODO: should not be necessary if ElmerIce etc. use a generic Field instead of (YAC)Field
-from coupling.couplers.helpers import coupling_supported
+from .helpers import coupling_supported
 
 if coupling_supported:
-    from coupling.components import ElmerIce, IconAtmo
+    from ebfm.coupling.components import ElmerIce, IconAtmo
 
 logger = logging.getLogger(__name__)
 

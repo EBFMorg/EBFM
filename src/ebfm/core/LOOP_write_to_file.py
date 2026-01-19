@@ -6,7 +6,7 @@ import os
 import numpy as np
 from netCDF4 import Dataset, date2num
 
-from ebfm.LOOP_general_functions import is_first_time_step, is_final_time_step
+from .LOOP_general_functions import is_first_time_step, is_final_time_step
 
 
 def main(OUTFILE, io, OUT, grid, t, time):

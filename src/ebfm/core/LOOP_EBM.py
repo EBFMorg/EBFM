@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from ebfm import (
+from . import (
     LOOP_EBM_SHF,
     LOOP_EBM_GHF,
     LOOP_EBM_LHF,
@@ -12,9 +12,9 @@ from ebfm import (
     LOOP_EBM_LWout,
     LOOP_EBM_SWin,
 )
-from ebfm import LOOP_EBM_SWout, LOOP_EBM_insolation
+from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation
 
-from coupling import Coupler
+from ebfm.coupling import Coupler
 
 
 def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:

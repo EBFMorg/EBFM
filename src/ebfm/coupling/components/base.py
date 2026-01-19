@@ -8,8 +8,8 @@ import numpy as np
 
 
 if TYPE_CHECKING:
-    from coupling.couplers.base import Coupler
-    from coupling.fields.yacField import Field
+    from ebfm.coupling.couplers.base import Coupler
+    from ebfm.coupling.fields.yacField import Field
 
 
 class Component(ABC):

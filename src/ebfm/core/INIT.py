@@ -11,13 +11,13 @@ from pyproj import Transformer
 from netCDF4 import Dataset, num2date
 
 from pathlib import Path
-from reader import read_elmer_mesh, read_dem, read_dem_xios
+from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
-from elmer.mesh import Mesh
-from ebfm.config import GridConfig
-from ebfm.grid import GridInputType
+from ebfm.elmer.mesh import Mesh
+from .config import GridConfig
+from .grid import GridInputType
 
-from ebfm.constants import DAYS_PER_YEAR, SECONDS_PER_DAY
+from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
 import logging
 

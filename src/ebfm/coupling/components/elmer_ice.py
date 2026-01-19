@@ -6,17 +6,17 @@ from typing import Dict, Set, TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from coupling.couplers.base import Coupler
+    from ebfm.coupling.couplers.base import Coupler
 
-from coupling.components.base import Component
+from .base import Component
 
-from coupling.fields import Field
-from coupling.couplers.helpers import coupling_supported
+from ebfm.coupling.fields import Field
+from ebfm.coupling.couplers.helpers import coupling_supported
 
 if coupling_supported:
     # TODO: Try to remove YAC specific imports from here
     import yac
-    from coupling.fields.yacField import YACField, Timestep, days_to_iso
+    from ebfm.coupling.fields.yacField import YACField, Timestep, days_to_iso
 
 
 class ElmerIce(Component):

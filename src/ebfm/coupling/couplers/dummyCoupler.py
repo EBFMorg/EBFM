@@ -4,8 +4,8 @@
 
 import numpy as np
 
-from coupling.couplers import Coupler
-from coupling.couplers.base import Grid, Dict, CouplingConfig
+from . import Coupler
+from .base import Grid, Dict, CouplingConfig
 
 import logging
 

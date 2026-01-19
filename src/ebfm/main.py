@@ -5,8 +5,8 @@
 from pathlib import Path
 import argparse
 
-import ebfm
-from ebfm import (
+import ebfm.core
+from ebfm.core import (
     INIT,
     LOOP_general_functions,
     LOOP_climate_forcing,
@@ -14,12 +14,12 @@ from ebfm import (
     LOOP_SNOW,
     LOOP_mass_balance,
 )
-from ebfm import LOOP_write_to_file, FINAL_create_restart_file
-from ebfm.grid import GridInputType
-from ebfm.config import CouplingConfig, GridConfig, TimeConfig
-from ebfm.logger import Logger, setup_logging, log_levels_map, getLogger
+from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
+from ebfm.core.grid import GridInputType
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig
+from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
-import coupling
+import ebfm.coupling
 
 from mpi4py import MPI
 
@@ -183,16 +183,16 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        ebfm.print_version_and_exit()
+        ebfm.core.print_version_and_exit()
 
     has_active_coupling_features = extract_active_coupling_features(args)
-    if has_active_coupling_features and not coupling.coupling_supported:
+    if has_active_coupling_features and not ebfm.coupling.coupling_supported:
         raise RuntimeError(
             f"""
 Coupling requested via command line argument(s) {has_active_coupling_features}, but the 'coupling' module could not be
 imported due to the following error:
 
-{coupling.coupling_supported_import_error}
+{ebfm.coupling.coupling_supported_import_error}
 
 Hint: If you are missing 'yac', please install YAC and the python bindings as described under
 https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
@@ -207,7 +207,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     )
 
     logger = getLogger(__name__)
-    logger.info(f"Starting EBFM version {ebfm.get_version()}...")
+    logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
 
     logger.info("Done parsing command line arguments.")
     logger.debug("Parsed the following command line arguments:")
@@ -246,9 +246,9 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         grid["mesh"] = None  # add dummy to make coupler.setup pass.
 
     if coupling_config.defines_coupling():
-        coupler = coupling.YACCoupler(coupling_config=coupling_config)
+        coupler = ebfm.coupling.YACCoupler(coupling_config=coupling_config)
     else:
-        coupler = coupling.DummyCoupler(coupling_config=coupling_config)
+        coupler = ebfm.coupling.DummyCoupler(coupling_config=coupling_config)
 
     coupler.setup(grid["mesh"], time)
 
@@ -322,12 +322,12 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         # TODO: should be supported for all cases to avoid case distinction here
-        if not grid["is_partitioned"] and isinstance(coupler, coupling.DummyCoupler):
+        if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
             if grid_config.grid_type is GridInputType.MATLAB:
                 io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time)
             else:
                 logger.warning("Skipping writing output to file for Elmer input grids.")
-        elif grid["is_partitioned"] or not isinstance(coupler, coupling.DummyCoupler):
+        elif grid["is_partitioned"] or not isinstance(coupler, ebfm.coupling.DummyCoupler):
             logger.warning("Skipping writing output to file for coupled or partitioned runs.")
         else:
             logger.error("Unhandled case in output writing.")
@@ -335,7 +335,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
-    if not grid["is_partitioned"] and isinstance(coupler, coupling.DummyCoupler):
+    if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
         FINAL_create_restart_file.main(OUT, io)
     else:
         logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
