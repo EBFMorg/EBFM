@@ -8,6 +8,7 @@ dynamic = [ "version" ]
 authors = [ {name="EBFM Authors"} ]
 license = "BSD-3-Clause"
 readme = "README.md"
+requires-python = ">=3.9"
 dependencies = [
     "mpi4py >= 4.1",
     "mypy >= 1.0",
