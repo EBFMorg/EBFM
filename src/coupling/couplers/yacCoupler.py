@@ -13,6 +13,8 @@ from coupling.couplers.base import Coupler, Grid, Dict, CouplingConfig
 from coupling.fields import FieldSet
 from coupling.fields import YACField as Field
 
+from typing import Union
+
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
 logger = logging.getLogger(__name__)
@@ -39,7 +41,7 @@ class YACCoupler(Coupler):
         self.grid: yac.UnstructuredGrid = None
         self.corner_points: yac.Points = None
 
-    def setup(self, grid: Dict | Grid, time: Dict[str, float]):
+    def setup(self, grid: Union[Dict, Grid], time: Dict[str, float]):
         """
         Setup the coupling interface
 
