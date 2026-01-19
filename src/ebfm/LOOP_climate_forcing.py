@@ -8,8 +8,6 @@ from coupling import Coupler
 
 from datetime import datetime, timedelta
 
-from ebfm.LOOP_general_functions import is_first_time_step
-
 
 def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     """
@@ -70,8 +68,6 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     # Time since last snowfall event
     snowfall_mask = (IN["snow"] / (time["dt"] * C["dayseconds"])) > C["Pthres"]
     OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
-    if is_first_time_step(t):
-        OUT["timelastsnow"][:] = time["TCUR"]
 
     # Potential temperature and lapse rate
     IN["Theta"] = IN["T"] * (C["Pref"] / IN["Pres"]) ** (C["Rd"] / C["Cp"])
