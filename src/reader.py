@@ -106,8 +106,9 @@ def read_dem_xios(dem_file: Path, grid: dict):
         np.squeeze(nc["x"][:]).shape == grid["x"].shape
     ), "Surface mesh and Elmer mesh do not have the same number of vertices"
     grid["z"] = np.squeeze(nc["zs"][:]).data
-    grid["lat"] = np.squeeze(nc["mesh2D_node_x"][:]).data
-    grid["lon"] = np.squeeze(nc["mesh2D_node_y"][:]).data
+    grid["h"] = np.squeeze(nc["h"][:]).data
+    grid["lat"] = nc["mesh2D_node_x"][:]
+    grid["lon"] = nc["mesh2D_node_y"][:]
     return grid
 
 

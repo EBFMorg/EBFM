@@ -199,7 +199,11 @@ def init_grid(grid, io, config: GridConfig):
         else:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
 
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
+        if config.grid_type is GridInputType.ELMERXIOS:
+            grid["gpsum"] = grid["z"].shape[0]
+        else:
+            grid["gpsum"] = compute_number_of_glacier_cells(grid)
+
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
