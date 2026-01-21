@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from coupling.components.base import Component
+from ebfm.coupling.components.base import Component
 from dataclasses import dataclass
 from typing import Set, Callable
 

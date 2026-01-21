@@ -5,7 +5,7 @@
 import yac
 import numpy as np
 
-from ebfm import logging
+from ebfm.core import logging
 
 from .base import Coupler, Grid, Dict, CouplingConfig
 
