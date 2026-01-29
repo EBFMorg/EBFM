@@ -236,7 +236,7 @@ if __name__ == "__main__":
     parser.add_argument("elmer_mesh", type=Path, help="Path to the Elmer mesh file.")
     parser.add_argument("dem", type=Path, help="Path to the digital elevation model (DEM) NetCDF file.")
     parser.add_argument("-o", "--outpath", type=Path, help="Output path to the new mesh with DEM.", default=None)
-    parser.add_argument("-i", "--in-place", help="Make changes to mesh in place", action="store_true")
+    parser.add_argument("-i", "--in-place", help="Make changes to mesh in place (will overwrite existing mesh!)", action="store_true")
     args = parser.parse_args()
 
     outpath: Path

@@ -173,7 +173,7 @@ or modify the mesh in place (overwrites `mesh.nodes`):
 python3 reader.py ../examples/MESH ../examples/BedMachineGreenland-v5.nc --in-place
 ```
 
-The resulting mesh can then be used directly with EBFM:
+The resulting mesh can then be used directly with EBFM similar to the example with the MATLAB file from above:
 
 ```sh
 ebfm --elmer-mesh ../examples/MESH_with_DEM
