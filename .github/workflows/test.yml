@@ -7,6 +7,7 @@ name: Tox Test
 on:
   - push
   - pull_request
+  - workflow_dispatch
 
 jobs:
   unit-test:
