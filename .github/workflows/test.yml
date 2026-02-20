@@ -5,10 +5,8 @@
 name: Tox Test
 
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
+  - push
+  - pull_request
 
 jobs:
   unit-test:
