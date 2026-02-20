@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Added tox testing infrastructure with multi-version Python support (3.9-3.13) and separate unit/example test environments
 * Fix and extend `reader.py`, documentation on how to use it and how to obtain required example data. https://github.com/EBFMorg/EBFM/pull/69.
 * Revise folder layout to avoid clutter in `site-packages`. Installing EBFM should now only affect `site-packages/ebfm`. https://github.com/EBFMorg/EBFM/pull/73.
 * Require Python minimum version 3.9. (Planned to increase to 3.10 soon)
