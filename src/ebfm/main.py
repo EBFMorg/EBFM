@@ -285,8 +285,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"][:] = data_from_icon["huss"]
-            IN["Pres"][:] = data_from_icon["sfcpres"]
+            IN["q"] = data_from_icon["huss"]
+            IN["Pres"] = data_from_icon["sfcpres"]
 
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
@@ -315,8 +315,6 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
 
             IN["h"] = data_from_elmer["h"]
-            print("ICE_THK: ", IN["h"])
-            print(IN["h"].max(), IN["h"].mean(), IN["h"].min())
             if coupler.has_coupling_to("icon_atmo"):
                 grid["z"] = IN["h"][0].ravel()
             # TODO add gradient field later
