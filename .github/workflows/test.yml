@@ -56,7 +56,7 @@ jobs:
       with:
         fail_ci_if_error: false
 
-example-tests:
+  example-tests:
     name: Example tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
