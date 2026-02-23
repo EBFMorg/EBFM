@@ -25,6 +25,12 @@ class TestCore(unittest.TestCase):
             f"Version '{version}' should be 'unknown' or contain digits",
         )
 
+class TestImports(unittest.TestCase):
+    """Import tests to ensure modules are importable in supported Python versions."""
+
+    def test_import_yac_coupler(self):
+        """Import yacCoupler (will fail on Python < 3.10 if PEP604 syntax is used)."""
+        import ebfm.coupling.couplers.yacCoupler  # noqa: F401
 
 if __name__ == "__main__":
     unittest.main()
