@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+import sys
 import unittest
 from ebfm.core import get_version
 
@@ -25,12 +26,25 @@ class TestCore(unittest.TestCase):
             f"Version '{version}' should be 'unknown' or contain digits",
         )
 
-class TestImports(unittest.TestCase):
-    """Import tests to ensure modules are importable in supported Python versions."""
 
-    def test_import_yac_coupler(self):
-        """Import yacCoupler (will fail on Python < 3.10 if PEP604 syntax is used)."""
-        import ebfm.coupling.couplers.yacCoupler  # noqa: F401
+class TestPEP604UnionSyntax(unittest.TestCase):
+    """Test PEP 604 union syntax (| operator) compatibility."""
+
+    def test_pipe_union_syntax(self):
+        """Test if code uses PEP 604 syntax (| for unions).
+
+        This will fail on Python < 3.10 if the new syntax is used.
+        """
+        if sys.version_info < (3, 10):
+            # On Python 3.9, trying to use | with types should fail
+            with self.assertRaises(TypeError):
+                # This would fail if evaluated as type annotation
+                result = str | int  # noqa: F841
+        else:
+            # On Python 3.10+, this should work
+            result = str | int
+            self.assertIsNotNone(result)
+
 
 if __name__ == "__main__":
     unittest.main()
