@@ -39,7 +39,7 @@ class YACCoupler(Coupler):
 
         # will be initialized in self._add_grid()
         self.grid: yac.UnstructuredGrid = None
-        self.corner_points: yac.Points = None
+        self.cell_centers: yac.Points = None
 
     def setup(self, grid: Union[Dict, Grid], time: Dict[str, float]):
         """
@@ -151,22 +151,30 @@ class YACCoupler(Coupler):
         """
         Adds a grid to the Coupler interface.
 
+        The mesh topology is defined by vertex (corner) coordinates and cell-to-vertex
+        connectivity. DOFs (data values) live at cell centers, defined separately.
+
         @param[in] grid_name name of the grid in YAC
         @param[in] grid Grid object used by EBFM where coupling happens
         """
 
         assert not self.grid, "Grid has already been added to YACCoupler."
 
+        # Define mesh topology using vertex coordinates (corners) and connectivity
         self.grid = yac.UnstructuredGrid(
             grid_name,
             np.full(len(grid.cell_ids), grid.num_vertices_per_cell),
-            grid.lon,
-            grid.lat,
+            grid.lon_vertices,  # vertex lon/lat coordinates (radians)
+            grid.lat_vertices,
             grid.cell_to_vertex.flatten(),
         )
 
+        # Set global vertex indices at corner locations
         self.grid.set_global_index(grid.vertex_ids, yac.Location.CORNER)
-        self.corner_points = self.grid.def_points(yac.Location.CORNER, grid.lon, grid.lat)
+
+        # Define DOF locations at cell centers (where data is exchanged)
+        # Uses spherical averaging from mesh._compute_cell_centers()
+        self.cell_centers = self.grid.def_points(yac.Location.CELL, grid.lon_cells, grid.lat_cells)
 
     def _add_couples(self, field_definitions: FieldSet):
         """
@@ -196,7 +204,7 @@ class YACCoupler(Coupler):
                 field.coupled_component.name
             ), f"Cannot add field '{field.name}' for uncoupled component '{field.coupled_component.name}'."
 
-            yac_field = field.construct_yac_field(self.interface, self.component, collection_size, self.corner_points)
+            yac_field = field.construct_yac_field(self.interface, self.component, collection_size, self.cell_centers)
             self.fields.add(yac_field)
 
     def _construct_coupling_post_sync(self):

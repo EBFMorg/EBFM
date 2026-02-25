@@ -6,6 +6,10 @@ from .base import Field
 from dataclasses import dataclass, replace
 import yac  # should not be needed here. Maybe consider actually having a YACField inherit from Field?
 
+from ebfm.core import logging
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class Timestep:
@@ -48,7 +52,7 @@ class YACField(Field):
     yac_field: yac.Field = None  # optional if YAC field has been created
 
     def construct_yac_field(
-        self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, corner_points: yac.Points
+        self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, cell_centers: yac.Points
     ) -> "Field":
         """
         Create a new Field instance with the provided YAC field.
@@ -56,7 +60,7 @@ class YACField(Field):
         @param[in] yac_interface handle to YAC interface
         @param[in] yac_component handle to YAC component object
         @param[in] collection_size size of the collection for this field
-        @param[in] corner_points yac.Points of the grid for this field
+        @param[in] cell_centers yac.Points of the grid for this field
 
         @returns New Field instance with the provided YAC field
         """
@@ -68,10 +72,15 @@ class YACField(Field):
         if not self.metadata:
             self = replace(self, metadata="N/A")
 
+        logger.debug(
+            f"Defining YAC field '{self.name}' for component EBFM with collection size {collection_size} and "
+            f"timestep {self.timestep.value} ({self.timestep.format})."
+        )
+
         yac_field = yac.Field.create(
             self.name,
             yac_component,
-            corner_points,
+            cell_centers,
             collection_size,
             self.timestep.value,
             self.timestep.format,
