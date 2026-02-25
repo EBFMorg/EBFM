@@ -120,14 +120,12 @@ def read_dem_xios(dem_file: Path, mesh: TriangleMesh):
 
     # Map vertex values to cell centers by arithmetic averaging (scalar fields)
     n_cells = mesh.cell_to_vertex.shape[0]
+
     z_cells = np.zeros(n_cells)
     h_cells = np.zeros(n_cells)
 
     for i in range(n_cells):
-        # Get vertex indices for this cell (connectivity defined in EPSG 3413 space)
         vertex_indices = mesh.cell_to_vertex[i]
-
-        # Arithmetic average of scalar field values
         z_cells[i] = np.mean(zs_vertices[vertex_indices])
         h_cells[i] = np.mean(h_vertices[vertex_indices])
 
@@ -141,7 +139,7 @@ def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
         xs (NDArray[np.float64]): x-coordinates to sample.
         ys (NDArray[np.float64]): y-coordinates to sample.
     Returns:
-        NDArray[np.float64]: A 1D array of sampled heights at the given x and y coordinates.
+        the DEM at given x/y coordinates
     """
     assert dem_file.is_file(), f"DEM file {dem_file} does not exist."
 
@@ -278,9 +276,7 @@ if __name__ == "__main__":
     print(f"Reading the following files: {args.elmer_mesh} and {args.dem}")
 
     mesh = read_elmer_mesh(args.elmer_mesh)
-    x = mesh.x_vertices
-    y = mesh.y_vertices
-    h = read_dem(args.dem, x, y)
+    h = read_dem(args.dem, mesh)
 
     # Only copy when not operating in-place; skip nodes so we can write a fresh file
     if not args.in_place:

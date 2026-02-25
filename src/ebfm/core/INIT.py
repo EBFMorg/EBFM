@@ -188,17 +188,16 @@ def init_grid(grid, io, config: GridConfig):
         logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
             logger.debug("... for grid type CUSTOM.")
-            grid["z"] = read_dem(config.dem_file, grid["x"], grid["y"])
+            mesh.z_cells = read_dem(config.dem_file, mesh)
+            grid["z"] = mesh.z_cells
         if config.grid_type is GridInputType.ELMERXIOS:
             logger.debug("... for grid type ELMERXIOS.")
-            grid["z"], grid["h"] = read_dem_xios(config.dem_file, mesh)
-
-        if config.grid_type is GridInputType.ELMERXIOS:
+            mesh.z_cells, h_cells = read_dem_xios(config.dem_file, mesh)
+            grid["z"] = mesh.z_cells
             min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
+            grid["mask"] = (h_cells > min_thickness_glacier).astype(int)
 
-            # treats grid cells as glacier where ice thickness exceeds threshold
-            grid["mask"] = (grid["h"] > min_thickness_glacier).astype(int)
-        else:
+        if "mask" not in grid:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
 
         if config.grid_type is GridInputType.ELMERXIOS:

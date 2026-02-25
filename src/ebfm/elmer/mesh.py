@@ -62,6 +62,7 @@ class Mesh:
     # x/y-coordinates of cell centers in a given projection, ordering follows local ids [0,1,...,n_cells-1]
     x_cells: NDArray[np.float64]
     y_cells: NDArray[np.float64]
+    z_cells: NDArray[np.float64]
     # longitude/latitude coordinates of cell centers in radians, ordering follows local ids [0,1,...,n_cells-1]
     lon_cells: NDArray[np.float64]
     lat_cells: NDArray[np.float64]
@@ -99,6 +100,9 @@ class Mesh:
         # Convert from LON/LAT to "Polar Stereographic North EPSG 3413"
         inverse_transformer = pyproj.Transformer.from_crs(4326, 3413, always_xy=True)
         self.x_cells, self.y_cells = inverse_transformer.transform(self.lon_cells, self.lat_cells, radians=True)
+        # Initialize z_cells to zeros (to be filled/overwritten by DEM)
+        n_cells = self.cell_to_vertex.shape[0]
+        self.z_cells = np.zeros(n_cells)
 
 
 class TriangleMesh(Mesh):
