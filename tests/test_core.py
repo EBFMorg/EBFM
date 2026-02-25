@@ -27,23 +27,35 @@ class TestCore(unittest.TestCase):
         )
 
 
-class TestPEP604UnionSyntax(unittest.TestCase):
-    """Test PEP 604 union syntax (| operator) compatibility."""
+class TestPEP604SyntaxStandalone(unittest.TestCase):
+    """
+    PEP 604 (X | Y) union type annotations require Python >= 3.10.
 
-    def test_pipe_union_syntax(self):
-        """Test if code uses PEP 604 syntax (| for unions).
+    This test documents the intentional drop of Python 3.9 support.
+    """
 
-        This will fail on Python < 3.10 if the new syntax is used.
-        """
+    def test_pep604_type_annotation(self):
+        code = """
+from __future__ import annotations
+from typing import get_type_hints
+
+def foo(x: int | str) -> None:
+    pass
+"""
+
+        namespace = {}
+        exec(code, namespace)
+
+        foo = namespace["foo"]
+
+        from typing import get_type_hints
+
         if sys.version_info < (3, 10):
-            # On Python 3.9, trying to use | with types should fail
             with self.assertRaises(TypeError):
-                # This would fail if evaluated as type annotation
-                result = str | int  # noqa: F841
+                get_type_hints(foo)
         else:
-            # On Python 3.10+, this should work
-            result = str | int
-            self.assertIsNotNone(result)
+            hints = get_type_hints(foo)
+            self.assertEqual(hints["x"], int | str)
 
 
 if __name__ == "__main__":
