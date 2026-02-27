@@ -15,6 +15,7 @@ In order to create a release, please follow these steps:
   * Note: It might be a good idea to create a release candidate (tag ending with `rcX`, e.g. `v0.0.1rc5`) before doing the real release. Please also tick the box to mark the release as a pre-release in this case.
   * Use the version number as release title (i.e. the same as your tag).
   * Briefly summarize the content of the release.
+  * Review the [Changelog](https://github.com/EBFMorg/EBFM/blob/main/CHANGELOG.md) and replace the section name "develop" with the respective version number in a commit "Bump version".
 * If everything looks good you can publish the release.
 * Please check the [release workflow on github](https://github.com/EBFMorg/EBFM/actions/workflows/release.yaml) and the [history on PyPI](https://pypi.org/project/EBFM/#history).
 
