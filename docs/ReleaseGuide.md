@@ -25,4 +25,4 @@ The following rules exist to ensure that releases are not created by accident:
 
 * The branch `main` is protected by the [branch protection rule](https://github.com/EBFMorg/EBFM/settings/rules) "Protect main".
 * The creation and deletion of release tags (`v*`) is restricted via the [tag protection rule](https://github.com/EBFMorg/EBFM/settings/rules) "Protect version tag".
-* The release workflow may only be triggered on the protected `main` branch due to the [envorinment `pypi`](https://github.com/EBFMorg/EBFM/settings/environments). This requires the rule defined under ["branches"](https://github.com/EBFMorg/EBFM/settings/branches)
+* The release workflow may only be triggered on the protected `main` branch due to the [environment `pypi`](https://github.com/EBFMorg/EBFM/settings/environments). This requires the rule defined under ["branches"](https://github.com/EBFMorg/EBFM/settings/branches).
