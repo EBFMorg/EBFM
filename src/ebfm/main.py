@@ -119,6 +119,15 @@ def main():
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
+    input_group.add_argument(
+        "--elmer-mesh-crs-epsg",
+        type=int,
+        default=None,
+        help="EPSG code of the input Elmer mesh coordinate reference system."
+        " Used to convert mesh x/y coordinates to lon/lat."
+        " If omitted, defaults to 3413 (deprecated behavior).",
+    )
+
     time_group = parser.add_argument_group("time configuration")
 
     time_group.add_argument(
@@ -208,6 +217,13 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     logger = getLogger(__name__)
     logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
+
+    if args.elmer_mesh_crs_epsg is None:
+        args.elmer_mesh_crs_epsg = 3413
+        logger.warning(
+            "Omitting '--elmer-mesh-crs-epsg' is deprecated and will become an error in a future release. "
+            "Using fallback EPSG:3413."
+        )
 
     logger.info("Done parsing command line arguments.")
     logger.debug("Parsed the following command line arguments:")
