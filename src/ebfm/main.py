@@ -285,8 +285,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"][:] = 0  # TODO: Read q from ICON instead and convert to RH
-            IN["Pres"][:] = 101500  # TODO: Read Pres from ICON instead
+            IN["q"] = data_from_icon["huss"]
+            IN["Pres"] = data_from_icon["sfcpres"]
 
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
