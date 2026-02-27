@@ -15,6 +15,7 @@ In order to create a release, please follow these steps:
   * Note: It might be a good idea to create a release candidate (tag ending with `rcX`, e.g. `v0.0.1rc5`) before doing the real release. Please also tick the box to mark the release as a pre-release in this case.
   * Use the version number as release title (i.e. the same as your tag).
   * Briefly summarize the content of the release.
+  * Review the [Changelog](https://github.com/EBFMorg/EBFM/blob/main/CHANGELOG.md) and replace the section name "develop" with the respective version number in a commit "Bump version".
 * If everything looks good you can publish the release.
 * Please check the [release workflow on github](https://github.com/EBFMorg/EBFM/actions/workflows/release.yaml) and the [history on PyPI](https://pypi.org/project/EBFM/#history).
 
@@ -24,4 +25,4 @@ The following rules exist to ensure that releases are not created by accident:
 
 * The branch `main` is protected by the [branch protection rule](https://github.com/EBFMorg/EBFM/settings/rules) "Protect main".
 * The creation and deletion of release tags (`v*`) is restricted via the [tag protection rule](https://github.com/EBFMorg/EBFM/settings/rules) "Protect version tag".
-* The release workflow may only be triggered on the protected `main` branch due to the [envorinment `pypi`](https://github.com/EBFMorg/EBFM/settings/environments). This requires the rule defined under ["branches"](https://github.com/EBFMorg/EBFM/settings/branches)
+* The release workflow may only be triggered on the protected `main` branch due to the [environment `pypi`](https://github.com/EBFMorg/EBFM/settings/environments). This requires the rule defined under ["branches"](https://github.com/EBFMorg/EBFM/settings/branches).
