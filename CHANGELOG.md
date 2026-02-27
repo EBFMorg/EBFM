@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# develop
+
+* Introduce `--elmer-mesh-crs-epsg` to let user define the projection used in the Elmer mesh. The previous behavior is maintained by using a default if the new option is omitted. Note that this is deprecated and will be removed in the future.
+
 # v0.2.0
 
 * Fix and extend `reader.py`, documentation on how to use it and how to obtain required example data. https://github.com/EBFMorg/EBFM/pull/69.
