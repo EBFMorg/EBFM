@@ -123,7 +123,10 @@ def main():
         "--elmer-mesh-crs-epsg",
         type=int,
         required=True,
-        choices={3413, 3013},
+        choices={
+            3413,  # EPSG code for NSIDC Sea Ice Polar Stereographic North (commonly used for Greenland)
+            3031,  # EPSG code for NSIDC Sea Ice Polar Stereographic South (commonly used for Antarctica)
+        },
         help="EPSG code of the input Elmer mesh coordinate reference system."
         " Used to convert mesh x/y coordinates to lon/lat.",
     )
