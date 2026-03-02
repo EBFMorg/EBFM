@@ -245,7 +245,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--elmer-mesh-crs-epsg",
         type=int,
-        default=3413,
+        required=True,
+        choices={3413, 3013},
         help="EPSG code of the input Elmer mesh coordinate reference system."
         " Used to convert mesh x/y coordinates to lon/lat.",
     )

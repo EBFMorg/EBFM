@@ -122,10 +122,10 @@ def main():
     input_group.add_argument(
         "--elmer-mesh-crs-epsg",
         type=int,
-        default=None,
+        required=True,
+        choices={3413, 3013},
         help="EPSG code of the input Elmer mesh coordinate reference system."
-        " Used to convert mesh x/y coordinates to lon/lat."
-        " If omitted, defaults to 3413 (deprecated behavior).",
+        " Used to convert mesh x/y coordinates to lon/lat.",
     )
 
     time_group = parser.add_argument_group("time configuration")
@@ -217,13 +217,6 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     logger = getLogger(__name__)
     logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
-
-    if args.elmer_mesh_crs_epsg is None:
-        args.elmer_mesh_crs_epsg = 3413
-        logger.warning(
-            "Omitting '--elmer-mesh-crs-epsg' is deprecated and will become an error in a future release. "
-            "Using fallback EPSG:3413."
-        )
 
     logger.info("Done parsing command line arguments.")
     logger.debug("Parsed the following command line arguments:")
