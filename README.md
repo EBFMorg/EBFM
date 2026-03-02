@@ -83,9 +83,8 @@ ebfm --matlab-mesh examples/dem_and_mask.mat
 The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data.
 EBFM supports the following formats:
 
-For Elmer-based inputs, the argument `--elmer-mesh-crs-epsg` controls the coordinate reference system (CRS) of
-the input x/y coordinates. EBFM uses this CRS to convert coordinates to lon/lat (EPSG:4326) internally.
-The default is `3413` to preserve existing behavior.
+For Elmer-based inputs, the argument `--elmer-mesh-crs-epsg` is needed to define the coordinate reference system (CRS)
+of the input x/y coordinates. EBFM uses this CRS to convert coordinates to lon/lat (EPSG:4326) internally.
 
 * MATLAB Mesh: An example is given in `examples/dem_and_mask.mat`. This mesh
   file provides x-y coordinates and elevation data. Please use the argument
