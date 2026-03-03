@@ -283,9 +283,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
             data_to_icon = {
-                "albedo": OUT["albedo"],
+                "icemask": np.ones_like(grid["x"]),
             }
-
             data_from_icon = icon_atmo.exchange(data_to_icon)
 
             logger.debug("Done.")

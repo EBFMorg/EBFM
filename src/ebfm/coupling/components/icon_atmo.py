@@ -47,6 +47,13 @@ class IconAtmo(Component):
             #     exchange_type=yac.ExchangeType.SOURCE,
             # ),
             YACField(
+                name="icemask",
+                coupled_component=self,
+                timestep=timestep,
+                metadata="Ice mask",
+                exchange_type=yac.ExchangeType.SOURCE,
+            ),
+            YACField(
                 name="pr",
                 coupled_component=self,
                 timestep=timestep,
