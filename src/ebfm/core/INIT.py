@@ -179,9 +179,13 @@ def init_grid(grid, io, config: GridConfig):
                 mesh_root=config.mesh_file,
                 is_partitioned=config.is_partitioned,
                 partition_id=config.partition_id,
+                source_crs_epsg=config.elmer_mesh_crs_epsg,
             )
         else:
-            mesh: Mesh = read_elmer_mesh(mesh_root=config.mesh_file)
+            mesh: Mesh = read_elmer_mesh(
+                mesh_root=config.mesh_file,
+                source_crs_epsg=config.elmer_mesh_crs_epsg,
+            )
 
         grid["x"], grid["y"] = mesh.x_vertices, mesh.y_vertices
         if config.grid_type is GridInputType.CUSTOM:
@@ -213,7 +217,10 @@ def init_grid(grid, io, config: GridConfig):
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
     elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
-        mesh: Mesh = read_elmer_mesh(config.mesh_file)
+        mesh: Mesh = read_elmer_mesh(
+            config.mesh_file,
+            source_crs_epsg=config.elmer_mesh_crs_epsg,
+        )
 
         # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
         # see mesh/README.md for the required preprocessing steps.

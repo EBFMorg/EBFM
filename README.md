@@ -83,6 +83,9 @@ ebfm --matlab-mesh examples/dem_and_mask.mat
 The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data.
 EBFM supports the following formats:
 
+For Elmer-based inputs, the argument `--elmer-mesh-crs-epsg` is needed to define the coordinate reference system (CRS)
+of the input x/y coordinates. EBFM uses this CRS to convert coordinates to lon/lat (EPSG:4326) internally.
+
 * MATLAB Mesh: An example is given in `examples/dem_and_mask.mat`. This mesh
   file provides x-y coordinates and elevation data. Please use the argument
   `--matlab-mesh /path/to/your/mesh.mat`.
@@ -100,7 +103,7 @@ EBFM supports the following formats:
   Usage example:
 
   ```sh
-  ebfm --elmer-mesh examples/DEM
+  ebfm --elmer-mesh examples/DEM --elmer-mesh-crs-epsg 3413
   ```
 
 * Elmer Mesh with Elevation data from NetCDF: The Elmer mesh file provides x-y
@@ -111,7 +114,7 @@ EBFM supports the following formats:
   Usage example:
 
   ```sh
-  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc
+  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc --elmer-mesh-crs-epsg 3413
   ```
 
 Note that an Elmer mesh must be provided in a directory following the structure:
@@ -148,7 +151,7 @@ path/to/your/elmer/MESH
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --elmer-mesh-crs-epsg 3413 --is-partitioned-elmer-mesh --use-part 42
 ```
 
 ### Getting the example data

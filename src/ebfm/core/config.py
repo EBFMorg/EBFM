@@ -70,6 +70,7 @@ class GridConfig:
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool = False  # Whether the grid is unstructured
     partition_id: int  # Partition ID (only relevant if is_partitioned is True)
+    elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
 
     def __init__(self, args: Namespace):
         """
@@ -88,6 +89,8 @@ class GridConfig:
         if args.is_partitioned_elmer_mesh and not args.elmer_mesh:
             logger.error("--is-partitioned-elmer-mesh requires --elmer-mesh.")
             raise Exception("Invalid grid configuration.")
+
+        self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
 
         self.is_partitioned = args.is_partitioned_elmer_mesh
         if self.is_partitioned:

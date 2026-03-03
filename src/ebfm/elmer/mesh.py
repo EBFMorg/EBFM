@@ -34,6 +34,7 @@ class Mesh:
         cell_to_vertex: NDArray[np.int_],
         vertex_ids: NDArray[np.int_],
         cell_ids: NDArray[np.int_],
+        source_crs_epsg: int = 3413,
     ):
         self.x_vertices = x_vertices
         self.y_vertices = y_vertices
@@ -41,8 +42,8 @@ class Mesh:
         self.vertex_ids = vertex_ids
         self.cell_ids = cell_ids
         self.cell_to_vertex = cell_to_vertex
-        # Convert "Polar Stereographic North EPSG 3413" to LON/LAT (4326)
-        transformer = pyproj.Transformer.from_crs(3413, 4326, always_xy=True)
+        # Convert from source CRS to geographic lon/lat (EPSG:4326)
+        transformer = pyproj.Transformer.from_crs(source_crs_epsg, 4326, always_xy=True)
         self.lon, self.lat = transformer.transform(self.x_vertices, self.y_vertices, radians=True)
 
 
@@ -59,6 +60,15 @@ class TriangleMesh(Mesh):
         cell_to_vertex: NDArray[np.int_],
         vertex_ids: NDArray[np.int_],
         cell_ids: NDArray[np.int_],
+        source_crs_epsg: int = 3413,
     ):
         assert cell_to_vertex.shape[1] == self.num_vertices_per_cell  # a triangle mesh has 3 nodes for all cells
-        super(TriangleMesh, self).__init__(x_vertices, y_vertices, z_vertices, cell_to_vertex, vertex_ids, cell_ids)
+        super(TriangleMesh, self).__init__(
+            x_vertices,
+            y_vertices,
+            z_vertices,
+            cell_to_vertex,
+            vertex_ids,
+            cell_ids,
+            source_crs_epsg,
+        )
