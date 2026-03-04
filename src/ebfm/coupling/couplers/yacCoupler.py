@@ -36,6 +36,7 @@ class YACCoupler(Coupler):
 
         self.component: yac.Component = self.interface.def_comp(coupling_config.component_name)
         self.fields: FieldSet = FieldSet()
+        self.field_validation_level = coupling_config.field_validation_level
 
         # will be initialized in self._add_grid()
         self.grid: yac.UnstructuredGrid = None
@@ -107,10 +108,14 @@ class YACCoupler(Coupler):
 
         field = self._get_field(component_name, field_name)
 
-        assert (
-            field.exchange_type == yac.ExchangeType.SOURCE
-        ), f"Cannot put data for field '{field.name}' of component '{field.coupled_component.name}'. "
-        f"Field has to be a SOURCE field, but its '{field.exchange_type=}'."
+        # Check field exchange type and handle according to validation level
+        if field.exchange_type != yac.ExchangeType.SOURCE:
+            error_msg = (
+                f"Cannot put data for field '{field.name}' of component '{field.coupled_component.name}'. "
+                f"Field has to be a SOURCE field, but its exchange_type={field.exchange_type}."
+            )
+            self._handle_field_validation_error(error_msg)
+            return  # If we didn't raise, skip the put operation
 
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name}...")
         field.yac_field.put(data)
@@ -128,15 +133,36 @@ class YACCoupler(Coupler):
 
         field = self._get_field(component_name, field_name)
 
-        assert (
-            field.exchange_type == yac.ExchangeType.TARGET
-        ), f"Cannot get data for field '{field.name}' of component '{field.coupled_component.name}'. "
-        f"Field has to be a TARGET field, but its '{field.exchange_type=}'."
+        # Check field exchange type and handle according to validation level
+        if field.exchange_type != yac.ExchangeType.TARGET:
+            error_msg = (
+                f"Cannot get data for field '{field.name}' of component '{field.coupled_component.name}'. "
+                f"Field has to be a TARGET field, but its exchange_type={field.exchange_type}."
+            )
+            self._handle_field_validation_error(error_msg)
+            return None  # If we didn't raise, return None to indicate failure
 
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name}...")
         data, _ = field.yac_field.get()
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         return data[0]
+
+    def _handle_field_validation_error(self, error_msg: str):
+        """
+        Handle field validation errors according to the configured validation level.
+
+        @param[in] error_msg error message to log or raise
+
+        @raises RuntimeError if validation level is FATAL
+        """
+        from ebfm.core.config import FieldValidationLevel
+
+        if self.field_validation_level == FieldValidationLevel.FATAL:
+            raise RuntimeError(error_msg)
+        elif self.field_validation_level == FieldValidationLevel.WARNING:
+            logger.warning(error_msg)
+        else:  # SILENT
+            logger.debug(error_msg)
 
     def finalize(self):
         """

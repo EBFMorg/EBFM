@@ -16,7 +16,7 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.grid import GridInputType
-from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
@@ -56,6 +56,17 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
         "--coupler-config",
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
+    )
+
+    coupling_group.add_argument(
+        "--field-validation-level",
+        type=str,
+        choices={level.value for level in FieldValidationLevel},
+        default=FieldValidationLevel.FATAL.value,
+        help="Level of validation for field exchange type checks. "
+        "'FATAL': raise exception on mismatch (default), "
+        "'WARNING': log warning on mismatch, "
+        "'SILENT': only log at debug level on mismatch.",
     )
 
 
