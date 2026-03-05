@@ -119,6 +119,18 @@ def main():
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
+    input_group.add_argument(
+        "--elmer-mesh-crs-epsg",
+        type=int,
+        choices={
+            3413,  # EPSG code for NSIDC Sea Ice Polar Stereographic North (commonly used for Greenland)
+            3031,  # EPSG code for NSIDC Sea Ice Polar Stereographic South (commonly used for Antarctica)
+        },
+        help="EPSG code of the input Elmer mesh coordinate reference system."
+        " Used to convert mesh x/y coordinates to lon/lat."
+        " Required when using --elmer-mesh.",
+    )
+
     time_group = parser.add_argument_group("time configuration")
 
     time_group.add_argument(
@@ -184,6 +196,10 @@ def main():
 
     if args.version:
         ebfm.core.print_version_and_exit()
+
+    # Validate that --elmer-mesh-crs-epsg is provided when using --elmer-mesh
+    if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
+        parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
 
     has_active_coupling_features = extract_active_coupling_features(args)
     if has_active_coupling_features and not ebfm.coupling.coupling_supported:
@@ -285,8 +301,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"][:] = 0  # TODO: Read q from ICON instead and convert to RH
-            IN["Pres"][:] = 101500  # TODO: Read Pres from ICON instead
+            IN["q"] = data_from_icon["huss"]
+            IN["Pres"] = data_from_icon["sfcpres"]
 
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 

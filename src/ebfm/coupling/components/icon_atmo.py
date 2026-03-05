@@ -95,20 +95,20 @@ class IconAtmo(Component):
                 metadata="Temperature at surface (in K)",
                 exchange_type=yac.ExchangeType.TARGET,
             ),
-            # YACField(
-            #     name="huss",
-            #     component=self,
-            #     timestep=timestep,
-            #     metadata="Specific humidity at surface (in kg kg-1)"
-            #     exchange_type=yac.ExchangeType.TARGET,
-            # ),
-            # YACField(
-            #     name="sfcPressure",
-            #     component=self,
-            #     timestep=timestep,
-            #     metadata="Surface pressure (in Pa)"
-            #     exchange_type=yac.ExchangeType.TARGET,
-            # ),
+            YACField(
+                name="huss",
+                coupled_component=self,
+                timestep=timestep,
+                metadata="Specific humidity at surface (in kg kg-1)",
+                exchange_type=yac.ExchangeType.TARGET,
+            ),
+            YACField(
+                name="sfcpres",
+                coupled_component=self,
+                timestep=timestep,
+                metadata="Surface pressure (in Pa)",
+                exchange_type=yac.ExchangeType.TARGET,
+            ),
         }
 
     def _yac_exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
@@ -134,8 +134,8 @@ class IconAtmo(Component):
         received_data["sfcwind"] = self._coupler.get(self.name, "sfcwind")
         received_data["clt"] = self._coupler.get(self.name, "clt")
         received_data["tas"] = self._coupler.get(self.name, "tas")
-        # received_data["huss"] = self._coupler.get(self.name,"huss")
-        # received_data["sfcPressure"] = self._coupler.get(self.name,"sfcPressure")
+        received_data["huss"] = self._coupler.get(self.name, "huss")
+        received_data["sfcpres"] = self._coupler.get(self.name, "sfcpres")
 
         return received_data
 
