@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-#import unittest
+# import unittest
 
 # TODO: Add tests for coupler implementations, e.g.:
 # - YACCoupler initialization
@@ -18,5 +18,5 @@
 #     def test_init(self):
 #         ...
 
-#if __name__ == "__main__":
+# if __name__ == "__main__":
 #    unittest.main()
