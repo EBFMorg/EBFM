@@ -7,6 +7,7 @@ name: Tox Test
 on:
   - push
   - pull_request
+  - workflow_dispatch
 
 jobs:
   unit-test:
@@ -30,7 +31,6 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        # sudo apt-get install -y libhdf5-dev libnetcdf-dev
 
     - name: Cache pip packages
       uses: actions/cache@v3
@@ -40,13 +40,13 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-pip-
 
-    - name: Install tox and tox-gh-actions
+    - name: Install tox
       run: |
         python -m pip install --upgrade pip
         pip install tox tox-gh-actions
 
     - name: Run unit tests with tox
-      run: tox
+      run: tox -e unit
 
     - name: Upload coverage reports
       if: matrix.python-version == '3.11'
