@@ -233,6 +233,41 @@ export ICON_ROOT=$EBFM_DUMMY_REPO/dummies/ICON
 Depending on the binaries that you want to use `$ELMER_ROOT` and/or `$ICON_ROOT`
 may be set to point to the non-dummy versions of the codes.
 
+## Running tests
+
+You can use `tox`to run the test suite in an isolated environment. Select the tox environment matching your Python version, e.g., `py313` for Python 3.13:
+
+```sh
+tox -e py313
+```
+
+This runs all tests in the `tests/` directory.
+
+To run the examples via tox, use:
+
+```sh
+tox -e examples
+```
+
+Remove build/test artifacts after your run with:
+
+```sh
+tox -e clean
+```
+
+Note: Replace `py313` with the environment for your installed Python version (e.g., `py39`, `py310`, `py311`, `py312`). To test across multiple Python versions, you need to have those versions installed on your system. \
+Check your current Python version with:
+
+```sh
+python3 --version
+```
+
+Alternatively, if you prefer to run your tests directly in your current environment:
+
+```sh
+pytest -v tests/
+```
+
 ## Troubleshooting
 
 ### `libnetcdf.so` not found at runtime

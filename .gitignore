@@ -8,3 +8,5 @@
 build
 Output/*.nc
 Reboot/*.nc
+.coverage
+.tox
