@@ -213,7 +213,8 @@ def main():
 
     has_active_coupling_features = extract_active_coupling_features(args)
     if has_active_coupling_features and not ebfm.coupling.coupling_supported:
-        raise RuntimeError(f"""
+        raise RuntimeError(
+            f"""
 Coupling requested via command line argument(s) {has_active_coupling_features}, but the 'coupling' module could not be
 imported due to the following error:
 
@@ -221,7 +222,8 @@ imported due to the following error:
 
 Hint: If you are missing 'yac', please install YAC and the python bindings as described under
 https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
-""")
+"""
+        )
 
     # TODO: replace MPI.COMM_WORLD with communicator from ebfm; either from couplers comm splitting or default comm
     setup_logging(
