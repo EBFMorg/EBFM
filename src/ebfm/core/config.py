@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 class FieldValidationLevel(Enum):
     """Level of validation for field exchange type checks."""
+
     FATAL = "FATAL"  # Raise an exception on mismatch
     WARNING = "WARNING"  # Log a warning on mismatch
     SILENT = "SILENT"  # Only log at debug level on mismatch

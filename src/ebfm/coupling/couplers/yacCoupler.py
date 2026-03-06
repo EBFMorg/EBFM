@@ -71,7 +71,7 @@ class YACCoupler(Coupler):
 
         for field in self.fields.all():
             logger.debug(f"Performing consistency checks for field '{field.name}'...")
-            field.perform_consistency_checks(self.interface)
+            field.perform_consistency_checks(self.interface, self.field_validation_level)
 
     def _get_field(self, component_name: str, field_name: str) -> Field:
         """
@@ -141,6 +141,22 @@ class YACCoupler(Coupler):
             )
             self._handle_field_validation_error(error_msg)
             return None  # If we didn't raise, return None to indicate failure
+
+        # Also check the actual YAC role: a field absent from the coupling YAML has role NONE
+        # and yac_field.get() would silently return zeros -- return None instead so the caller
+        # can supply a meaningful fallback.
+        actual_role = self.interface.get_field_role(
+            field.yac_field.component_name,
+            field.yac_field.grid_name,
+            field.yac_field.name,
+        )
+        if actual_role is not yac.ExchangeType.TARGET:
+            error_msg = (
+                f"Field '{field.name}' is declared TARGET in EBFM but its actual YAC role "
+                f"is '{actual_role}' (field not present in coupling config)."
+            )
+            self._handle_field_validation_error(error_msg)
+            return None
 
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name}...")
         data, _ = field.yac_field.get()

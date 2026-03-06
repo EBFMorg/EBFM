@@ -57,7 +57,6 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
     )
-
     coupling_group.add_argument(
         "--field-validation-level",
         type=str,
@@ -214,8 +213,7 @@ def main():
 
     has_active_coupling_features = extract_active_coupling_features(args)
     if has_active_coupling_features and not ebfm.coupling.coupling_supported:
-        raise RuntimeError(
-            f"""
+        raise RuntimeError(f"""
 Coupling requested via command line argument(s) {has_active_coupling_features}, but the 'coupling' module could not be
 imported due to the following error:
 
@@ -223,8 +221,7 @@ imported due to the following error:
 
 Hint: If you are missing 'yac', please install YAC and the python bindings as described under
 https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
-"""
-        )
+""")
 
     # TODO: replace MPI.COMM_WORLD with communicator from ebfm; either from couplers comm splitting or default comm
     setup_logging(
@@ -312,8 +309,10 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"] = data_from_icon["huss"]
-            IN["Pres"] = data_from_icon["sfcpres"]
+            # Fallback to constants if fields are not coupled (None); must be arrays for mask indexing.
+            _T0 = IN["T"] * 0.0
+            IN["q"] = data_from_icon["huss"] if data_from_icon["huss"] is not None else _T0
+            IN["Pres"] = data_from_icon["sfcpres"] if data_from_icon["sfcpres"] is not None else _T0 + 101500.0
 
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
