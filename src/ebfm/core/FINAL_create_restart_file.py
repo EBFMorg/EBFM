@@ -8,7 +8,6 @@ import numpy as np
 
 
 def main(OUT, io):
-
     def create_boot_file():
         """
         Create a restart file (boot file) and save it as a NetCDF file.
@@ -73,6 +72,7 @@ def main(OUT, io):
         "ys": OUT["ys"],
         "timelastsnow_netCDF": OUT["timelastsnow_netCDF"],
         "alb_snow": OUT["alb_snow"],
+        "h": OUT["h"],
     }
 
     # Create the boot file
