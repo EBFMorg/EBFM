@@ -120,6 +120,12 @@ def main():
     )
 
     input_group.add_argument(
+        "--restart",
+        action="store_true",
+        help="Initialise from restart file. Default is False.",
+    )
+
+    input_group.add_argument(
         "--elmer-mesh-crs-epsg",
         type=int,
         choices={
@@ -240,8 +246,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
-    grid, io, phys = INIT.init_config()
     time = time_config.to_dict()
+    grid, io, phys = INIT.init_config(time)
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
@@ -253,7 +259,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
         assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
 
-    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time)
+    OUT, IN, OUTFILE = INIT.init_initial_conditions(args, C, grid, io, time)
 
     # TODO: some grids currently do not have grid["mesh"]
     try:
@@ -331,6 +337,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
 
             IN["h"] = data_from_elmer["h"]
+            OUT["h"] = IN["h"]
             if coupler.has_coupling_to("icon_atmo"):
                 grid["z"] = IN["h"][0].ravel()
             # TODO add gradient field later
@@ -352,7 +359,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
-    if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
+    if not grid["is_partitioned"]:
         FINAL_create_restart_file.main(OUT, io)
     else:
         logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")

@@ -24,7 +24,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def init_config():
+def init_config(time):
     """
     Set model parameters, specify grid parameters, I/O, and physics settings.
 
@@ -69,11 +69,10 @@ def init_config():
 
     io["homedir"] = os.getcwd()  # Home directory
     io["outdir"] = os.path.join(io["homedir"], "Output")  # Output directory
-    io["rebootdir"] = os.path.join(io["homedir"], "Reboot")  # Restart file directory
-    io["readbootfile"] = False  # REBOOT: read initial conditions from file (True/False)
+    io["rebootdir"] = os.path.join(io["homedir"], "restart_ebfm")  # Restart file directory
     io["writebootfile"] = True  # REBOOT: write file for rebooting (True/False)
-    io["bootfilein"] = "boot_final.nc"  # REBOOT: bootfile to be read
-    io["bootfileout"] = "boot_final.nc"  # REBOOT: bootfile to be written
+    io["bootfilein"] = f"restart_ebfm_{str(time['ts']).replace(' ', '_')}.nc"  # REBOOT: bootfile to be read
+    io["bootfileout"] = f"restart_ebfm_{str(time['te']).replace(' ', '_')}.nc"  # REBOOT: bootfile to be written
     io["freqout"] = 8  # OUTPUT: frequency of storing output (every n-th time-step)
     io["output_type"] = 2  # Set output file type: 1 = binary files, 2 = netCDF file
 
@@ -387,11 +386,12 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def init_initial_conditions(C, grid, io, time):
+def init_initial_conditions(args, C, grid, io, time):
     """
     Sets the model's initial conditions at the start of the simulation.
 
     Parameters:
+        args (Namespace): Command-line arguments.
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
         grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
         io (dict): Dictionary with I/O settings (e.g. readbootfile, rebootdir, bootfilein, homedir).
@@ -411,7 +411,8 @@ def init_initial_conditions(C, grid, io, time):
     ##########################################################
     # Initialize conditions from restart file or set manually
     ##########################################################
-    if io.get("readbootfile", False):
+    # if io.get("readbootfile", False):
+    if args.restart:
         logger.info("EBFM: Initialize from restart file...")
 
         reboot_dir = io["rebootdir"]
