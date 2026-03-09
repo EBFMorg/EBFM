@@ -69,7 +69,12 @@ def init_config(time):
 
     io["homedir"] = os.getcwd()  # Home directory
     io["outdir"] = os.path.join(io["homedir"], "Output")  # Output directory
-    io["rebootdir"] = os.path.join(io["homedir"], "restart_ebfm")  # Restart file directory
+    io["rebootdir"] = os.path.join(
+        io["homedir"],
+        "restart_ebfm_gris"
+        if grid.elmer_mesh_crs_epsg == 3413
+        else ("restart_ebfm_ant" if grid.elmer_mesh_crs_epsg == 3031 else "restart_ebfm"),
+    )  # Restart file directory
     io["writebootfile"] = True  # REBOOT: write file for rebooting (True/False)
     io["bootfilein"] = f"restart_ebfm_{str(time['ts']).replace(' ', '_')}.nc"  # REBOOT: bootfile to be read
     io["bootfileout"] = f"restart_ebfm_{str(time['te']).replace(' ', '_')}.nc"  # REBOOT: bootfile to be written
