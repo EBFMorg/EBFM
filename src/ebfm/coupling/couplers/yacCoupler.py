@@ -134,7 +134,7 @@ class YACCoupler(Coupler):
         field = self._get_field(component_name, field_name)
 
         # Check field exchange type and handle according to validation level
-        if field.exchange_type != yac.ExchangeType.TARGET:
+        if field.exchange_type != expected_role:
             error_msg = (
                 f"Cannot get data for field '{field.name}' of component '{field.coupled_component.name}'. "
                 f"Field has to be a TARGET field, but its exchange_type={field.exchange_type}."
@@ -145,12 +145,13 @@ class YACCoupler(Coupler):
         # Also check the actual YAC role: a field absent from the coupling YAML has role NONE
         # and yac_field.get() would silently return zeros -- return None instead so the caller
         # can supply a meaningful fallback.
-        actual_role = self.interface.get_field_role(
+        role = self.interface.get_field_role(
             field.yac_field.component_name,
             field.yac_field.grid_name,
             field.yac_field.name,
         )
-        if actual_role is not yac.ExchangeType.TARGET:
+        expected_role = yac.ExchangeType.TARGET
+        if role is not expected_role:
             error_msg = (
                 f"Field '{field.name}' is declared TARGET in EBFM but its actual YAC role "
                 f"is '{actual_role}' (field not present in coupling config)."
