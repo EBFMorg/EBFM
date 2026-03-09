@@ -4,6 +4,7 @@
 
 from typing import Dict
 import numpy as np
+from enum import Enum
 
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
@@ -23,6 +24,20 @@ if coupling_supported:
     from ebfm.coupling.components import ElmerIce, IconAtmo
 
 logger = logging.getLogger(__name__)
+
+
+class CouplerErrorCode(Enum):
+    """
+    Error codes returned by Coupler.get() and Coupler.put().
+
+    A value of None (i.e. no error code) indicates success.
+    """
+
+    WRONG_EXCHANGE_TYPE = "wrong_exchange_type"
+    """The field's declared exchange type does not match the operation (SOURCE vs TARGET)."""
+
+    WRONG_YAC_ROLE = "wrong_yac_role"
+    """The field's actual role in the coupler config does not match its declared role."""
 
 
 class Coupler(ABC):

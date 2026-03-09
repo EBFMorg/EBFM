@@ -7,13 +7,13 @@ import numpy as np
 
 from ebfm.core import logging
 
-from .base import Coupler, Grid, Dict, CouplingConfig
+from .base import Coupler, Grid, Dict, CouplingConfig, CouplerErrorCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
 from ebfm.coupling.fields import FieldSet
 from ebfm.coupling.fields import YACField as Field
 
-from typing import Union
+from typing import Union, Tuple, Optional
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
@@ -97,13 +97,15 @@ class YACCoupler(Coupler):
 
         return comp_fields.pop()
 
-    def put(self, component_name: str, field_name: str, data: np.array):
+    def put(self, component_name: str, field_name: str, data: np.array) -> Tuple[None, Optional[CouplerErrorCode]]:
         """
         Put data to another component
 
         @param[in] component_name name of the component to put data to
         @param[in] field_name name of the field to put data to
         @param[in] data data to be sent
+
+        @returns tuple of (None, error code). Error code is None if no error occurred.
         """
 
         field = self._get_field(component_name, field_name)
@@ -115,23 +117,29 @@ class YACCoupler(Coupler):
                 f"Field has to be a SOURCE field, but its exchange_type={field.exchange_type}."
             )
             self._handle_field_validation_error(error_msg)
-            return  # If we didn't raise, skip the put operation
+            return None, CouplerErrorCode.WRONG_EXCHANGE_TYPE  # If we didn't raise, skip the put operation
 
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name}...")
         field.yac_field.put(data)
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name} complete.")
+        return None, None
 
-    def get(self, component_name: str, field_name: str) -> np.array:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
         @param[in] component_name name of the component to get data from
         @param[in] field_name name of the field to get data for
 
-        @returns field data
+        @returns tuple of (field data, error code). Error code is None if no error occurred.
+                 Field data is always the value returned by YAC (e.g. zeros as fallback) even
+                 when an error code is set, so the caller can decide whether to use it or substitute
+                 their own fallback.
         """
 
         field = self._get_field(component_name, field_name)
+        error = None
+        expected_role = yac.ExchangeType.TARGET
 
         # Check field exchange type and handle according to validation level
         if field.exchange_type != expected_role:
@@ -140,29 +148,28 @@ class YACCoupler(Coupler):
                 f"Field has to be a TARGET field, but its exchange_type={field.exchange_type}."
             )
             self._handle_field_validation_error(error_msg)
-            return None  # If we didn't raise, return None to indicate failure
+            error = CouplerErrorCode.WRONG_EXCHANGE_TYPE
 
         # Also check the actual YAC role: a field absent from the coupling YAML has role NONE
-        # and yac_field.get() would silently return zeros -- return None instead so the caller
-        # can supply a meaningful fallback.
+        # and yac_field.get() would silently return zeros -- signal this via error code so the
+        # caller can decide whether to use the YAC fallback or supply their own.
         role = self.interface.get_field_role(
             field.yac_field.component_name,
             field.yac_field.grid_name,
             field.yac_field.name,
         )
-        expected_role = yac.ExchangeType.TARGET
         if role is not expected_role:
             error_msg = (
                 f"Field '{field.name}' is declared TARGET in EBFM but its actual YAC role "
-                f"is '{actual_role}' (field not present in coupling config)."
+                f"is '{role}' (field not present in coupling config)."
             )
             self._handle_field_validation_error(error_msg)
-            return None
+            error = CouplerErrorCode.WRONG_YAC_ROLE
 
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name}...")
         data, _ = field.yac_field.get()
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
-        return data[0]
+        return data[0], error
 
     def _handle_field_validation_error(self, error_msg: str):
         """
