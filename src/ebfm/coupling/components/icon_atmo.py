@@ -127,15 +127,15 @@ class IconAtmo(Component):
         # self._coupler.put(self.name, "albedo", data_to_exchange["albedo"])
 
         # Get data from IconAtmo
-        received_data["pr"] = self._coupler.get(self.name, "pr")
-        received_data["pr_snow"] = self._coupler.get(self.name, "pr_snow")
-        received_data["rsds"] = self._coupler.get(self.name, "rsds")
-        received_data["rlds"] = self._coupler.get(self.name, "rlds")
-        received_data["sfcwind"] = self._coupler.get(self.name, "sfcwind")
-        received_data["clt"] = self._coupler.get(self.name, "clt")
-        received_data["tas"] = self._coupler.get(self.name, "tas")
-        received_data["huss"] = self._coupler.get(self.name, "huss")
-        received_data["sfcpres"] = self._coupler.get(self.name, "sfcpres")
+        received_data["pr"], _ = self._coupler.get(self.name, "pr")
+        received_data["pr_snow"], _ = self._coupler.get(self.name, "pr_snow")
+        received_data["rsds"], _ = self._coupler.get(self.name, "rsds")
+        received_data["rlds"], _ = self._coupler.get(self.name, "rlds")
+        received_data["sfcwind"], _ = self._coupler.get(self.name, "sfcwind")
+        received_data["clt"], _ = self._coupler.get(self.name, "clt")
+        received_data["tas"], _ = self._coupler.get(self.name, "tas")
+        received_data["huss"], _ = self._coupler.get(self.name, "huss")
+        received_data["sfcpres"], _ = self._coupler.get(self.name, "sfcpres")
 
         return received_data
 
