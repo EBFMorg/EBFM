@@ -24,7 +24,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def init_config(time):
+def init_config(time, grid_config):
     """
     Set model parameters, specify grid parameters, I/O, and physics settings.
 
@@ -72,8 +72,8 @@ def init_config(time):
     io["rebootdir"] = os.path.join(
         io["homedir"],
         "restart_ebfm_gris"
-        if grid.elmer_mesh_crs_epsg == 3413
-        else ("restart_ebfm_ant" if grid.elmer_mesh_crs_epsg == 3031 else "restart_ebfm"),
+        if grid_config.elmer_mesh_crs_epsg == 3413
+        else ("restart_ebfm_ant" if grid_config.elmer_mesh_crs_epsg == 3031 else "restart_ebfm"),
     )  # Restart file directory
     io["writebootfile"] = True  # REBOOT: write file for rebooting (True/False)
     io["bootfilein"] = f"restart_ebfm_{str(time['ts']).replace(' ', '_')}.nc"  # REBOOT: bootfile to be read

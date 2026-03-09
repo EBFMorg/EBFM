@@ -247,7 +247,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     # Model setup & initialization
     time = time_config.to_dict()
-    grid, io, phys = INIT.init_config(time)
+    grid, io, phys = INIT.init_config(time, grid_config)
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
