@@ -6,6 +6,13 @@ import numpy as np
 
 from .constants import SECONDS_PER_HOUR
 
+# line_profiler support: `profile` is injected as a builtin by kernprof.
+# When running normally, fall back to a no-op so the decorator stays in place.
+try:
+    profile  # noqa: F821
+except NameError:
+    profile = lambda f: f  # noqa: E731
+
 
 def main(C, OUT, IN, dt, grid, phys):
     """
@@ -333,6 +340,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
         return True
 
+    @profile
     def heat_conduction():
         """
         Calculate heat diffusion and update temperatures
