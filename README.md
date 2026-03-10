@@ -151,7 +151,7 @@ path/to/your/elmer/MESH
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --elmer-mesh-crs-epsg 3413 --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
 ### Getting the example data
@@ -233,6 +233,41 @@ export ICON_ROOT=$EBFM_DUMMY_REPO/dummies/ICON
 Depending on the binaries that you want to use `$ELMER_ROOT` and/or `$ICON_ROOT`
 may be set to point to the non-dummy versions of the codes.
 
+## Running tests
+
+You can use `tox`to run the test suite in an isolated environment. Select the tox environment matching your Python version, e.g., `py313` for Python 3.13:
+
+```sh
+tox -e py313
+```
+
+This runs all tests in the `tests/` directory.
+
+To run the examples via tox, use:
+
+```sh
+tox -e examples
+```
+
+Remove build/test artifacts after your run with:
+
+```sh
+tox -e clean
+```
+
+Note: Replace `py313` with the environment for your installed Python version (e.g., `py310`, `py311`, `py312`). To test across multiple Python versions, you need to have those versions installed on your system. \
+Check your current Python version with:
+
+```sh
+python3 --version
+```
+
+Alternatively, if you prefer to run your tests directly in your current environment:
+
+```sh
+pytest -v tests/
+```
+
 ## Troubleshooting
 
 ### `libnetcdf.so` not found at runtime
@@ -287,14 +322,6 @@ pre-commit install
 As soon as pre-commit is set up, you will not be able to commit if any of the checks fails. With the help of the logging output it should usually be possible to fix the problem.
 
 Note: You can bypass this check with `--no-verify`. Please note that the CI will also run pre-commit and fail if there are problems in any of the checks. Therefore, it is recommended to use the pre-commit hooks locally before pushing code to this repository and only bypass them if there is a good reason.
-
-**Troubleshooting:** The pre-commit hooks require Python >= 3.10. If your Python version is older you will see an error similar to the following
-
-```sh
-ERROR: Package 'black' required a different Python: 3.9.9 not in `>=3.10`
-```
-
-Please update your Python in this case. Alternatively, you can also set up an independent virtual environment just for running the pre-commit hooks or skip the checks with `--no-verify`.
 
 ### Copyright and licensing
 
