@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict, Set, TYPE_CHECKING
+from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from ebfm.coupling.couplers.base import Coupler
+    from ebfm.coupling.couplers.base import Coupler, CouplerErrorCode
 
 from .base import Component
 
@@ -111,33 +111,37 @@ class IconAtmo(Component):
             ),
         }
 
-    def _yac_exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+    def _yac_exchange(
+        self, data_to_exchange: Dict[str, np.array]
+    ) -> Tuple[Dict[str, np.array], Dict[str, Optional["CouplerErrorCode"]]]:
         """
         Exchange of EBFM with IconAtmo using YAC coupler.
 
         @param[in] data_to_exchange dictionary of field names and their data to be sent
 
-        @returns dictionary of received field data
+        @returns tuple of (received field data, error codes). An error code of None indicates
+                 successful exchange for that field.
         """
         assert coupling_supported, "Coupling support is required for YAC exchange."
 
         received_data: Dict[str, np.array] = {}
+        errors: Dict[str, Optional["CouplerErrorCode"]] = {}
 
         # Put data to IconAtmo
         # self._coupler.put(self.name, "albedo", data_to_exchange["albedo"])
 
         # Get data from IconAtmo
-        received_data["pr"] = self._coupler.get(self.name, "pr")
-        received_data["pr_snow"] = self._coupler.get(self.name, "pr_snow")
-        received_data["rsds"] = self._coupler.get(self.name, "rsds")
-        received_data["rlds"] = self._coupler.get(self.name, "rlds")
-        received_data["sfcwind"] = self._coupler.get(self.name, "sfcwind")
-        received_data["clt"] = self._coupler.get(self.name, "clt")
-        received_data["tas"] = self._coupler.get(self.name, "tas")
-        received_data["huss"] = self._coupler.get(self.name, "huss")
-        received_data["sfcpres"] = self._coupler.get(self.name, "sfcpres")
+        received_data["pr"], errors["pr"] = self._coupler.get(self.name, "pr")
+        received_data["pr_snow"], errors["pr_snow"] = self._coupler.get(self.name, "pr_snow")
+        received_data["rsds"], errors["rsds"] = self._coupler.get(self.name, "rsds")
+        received_data["rlds"], errors["rlds"] = self._coupler.get(self.name, "rlds")
+        received_data["sfcwind"], errors["sfcwind"] = self._coupler.get(self.name, "sfcwind")
+        received_data["clt"], errors["clt"] = self._coupler.get(self.name, "clt")
+        received_data["tas"], errors["tas"] = self._coupler.get(self.name, "tas")
+        received_data["huss"], errors["huss"] = self._coupler.get(self.name, "huss")
+        received_data["sfcpres"], errors["sfcpres"] = self._coupler.get(self.name, "sfcpres")
 
-        return received_data
+        return received_data, errors
 
     def get_field_definitions(self, time: Dict[str, float]) -> Set[Field]:
         """
@@ -154,7 +158,18 @@ class IconAtmo(Component):
                 f"Note: {type(self)} only supports YACCoupler at the moment. "
             )
 
-    def exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+    def exchange(
+        self, data_to_exchange: Dict[str, np.array]
+    ) -> Tuple[Dict[str, np.array], Dict[str, Optional["CouplerErrorCode"]]]:
+        """
+        Exchange data with IconAtmo.
+
+        @param[in] data_to_exchange dictionary of field names and their data to be sent
+
+        @returns tuple of (received field data, error codes). An error code of None indicates
+                 successful exchange for that field. The caller can use the error codes to decide
+                 whether to use the received data or substitute their own fallback.
+        """
         if self._uses_coupler("YACCoupler"):
             return self._yac_exchange(data_to_exchange)
         else:
