@@ -4,8 +4,10 @@
 
 import numpy as np
 
+from typing import Optional, Tuple
+
 from . import Coupler
-from .base import Grid, Dict, CouplingConfig
+from .base import Grid, Dict, CouplingConfig, CouplerErrorCode
 
 import logging
 
@@ -37,28 +39,32 @@ class DummyCoupler(Coupler):
         logger.debug("Setup coupling...")
         logger.debug("Do nothing for DummyCoupler.")
 
-    def put(self, component_name: str, field_name: str, data: np.array):
+    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
         @param[in] component_name name of the component to put data to
         @param[in] field_name name of the field to put data to
         @param[in] data data to be sent
+
+        @returns error code, or None if no error occurred.
         """
         logger.debug(f"Put field {field_name} to {component_name}...")
         logger.debug("Do nothing for DummyCoupler.")
+        return None
 
-    def get(self, component_name: str, field_name: str) -> np.array:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
         @param[in] component_name name of the component to get data from
         @param[in] field_name name of the field to get data for
 
-        @returns field data
+        @returns tuple of (field data, error code). Error code is None if no error occurred.
         """
         logger.debug(f"Get field {field_name} from {component_name}...")
         logger.debug("Do nothing for DummyCoupler.")
+        return None, None
 
     def finalize(self):
         """Finalize the coupling interface (does nothing for DummyCoupler)"""

@@ -8,6 +8,7 @@ This file exposes a some configuration dataclasses for EBFM components.
 
 from argparse import Namespace
 from pathlib import Path
+from enum import Enum
 
 from .grid import GridInputType
 
@@ -19,6 +20,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class FieldValidationLevel(Enum):
+    """Level of validation for field exchange type checks."""
+
+    FATAL = "FATAL"  # Raise an exception on mismatch
+    WARNING = "WARNING"  # Log a warning on mismatch
+    SILENT = "SILENT"  # Only log at debug level on mismatch
+
+
 class CouplingConfig:
     """
     Coupling configuration.
@@ -28,6 +37,7 @@ class CouplingConfig:
     couple_to_icon_atmo: bool  # Whether to couple this component to ICON atmosphere
     couple_to_elmer_ice: bool  # Whether to couple this component to Elmer/Ice
     coupler_config: Path  # Path to the coupler configuration file
+    field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
 
     def __init__(self, args: Namespace, component_name: str):
         """
@@ -40,6 +50,9 @@ class CouplingConfig:
         self.component_name = component_name
         self.couple_to_icon_atmo = args.couple_to_icon_atmo
         self.couple_to_elmer_ice = args.couple_to_elmer_ice
+
+        # Set field validation level from args (command-line argument with default 'FATAL')
+        self.field_validation_level = FieldValidationLevel(args.field_validation_level)
 
         if args.coupler_config:
             assert Path(args.coupler_config).is_file(), f"Coupler configuration file {args.coupler_config} not found."
@@ -70,6 +83,7 @@ class GridConfig:
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool = False  # Whether the grid is unstructured
     partition_id: int  # Partition ID (only relevant if is_partitioned is True)
+    elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
 
     def __init__(self, args: Namespace):
         """
@@ -88,6 +102,8 @@ class GridConfig:
         if args.is_partitioned_elmer_mesh and not args.elmer_mesh:
             logger.error("--is-partitioned-elmer-mesh requires --elmer-mesh.")
             raise Exception("Invalid grid configuration.")
+
+        self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
 
         self.is_partitioned = args.is_partitioned_elmer_mesh
         if self.is_partitioned:

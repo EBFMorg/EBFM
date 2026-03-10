@@ -83,6 +83,9 @@ ebfm --matlab-mesh examples/dem_and_mask.mat
 The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data.
 EBFM supports the following formats:
 
+For Elmer-based inputs, the argument `--elmer-mesh-crs-epsg` is needed to define the coordinate reference system (CRS)
+of the input x/y coordinates. EBFM uses this CRS to convert coordinates to lon/lat (EPSG:4326) internally.
+
 * MATLAB Mesh: An example is given in `examples/dem_and_mask.mat`. This mesh
   file provides x-y coordinates and elevation data. Please use the argument
   `--matlab-mesh /path/to/your/mesh.mat`.
@@ -100,7 +103,7 @@ EBFM supports the following formats:
   Usage example:
 
   ```sh
-  ebfm --elmer-mesh examples/DEM
+  ebfm --elmer-mesh examples/DEM --elmer-mesh-crs-epsg 3413
   ```
 
 * Elmer Mesh with Elevation data from NetCDF: The Elmer mesh file provides x-y
@@ -111,7 +114,7 @@ EBFM supports the following formats:
   Usage example:
 
   ```sh
-  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc
+  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc --elmer-mesh-crs-epsg 3413
   ```
 
 Note that an Elmer mesh must be provided in a directory following the structure:
@@ -151,6 +154,37 @@ Usage example for partitioned mesh:
 ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
+### Getting the example data
+
+The example inputs and datasets referenced above (e.g. `BedMachineGreenland-v5.nc` or `MESH`) can be obtained from the [TerraDT testcase repository](https://gitlab.dkrz.de/TerraDT/testcase). Please note that access to this repository may need to be requested, and you must have access to the Levante supercomputer at DKRZ.
+
+Once available, you can either copy or symlink the required files into the `examples/` directory of this repository, or point EBFM to their locations using the CLI arguments shown above.
+
+
+### Using `reader.py` to prepare an Elmer mesh with elevation data
+
+The helper script `reader.py` can be used to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
+
+Assuming the example data has been copied into the `examples/` directory as described above, you can run the following command from the repository root:
+
+```sh
+python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --outpath examples/MESH_with_DEM
+```
+
+This will write the updated mesh to a new directory. The path `examples/MESH_with_DEM` should not already exist. The original `examples/MESH` directory is copied and left unchanged.
+
+Alternatively, you can modify the mesh directly in place, which overwrites `mesh.nodes`:
+
+```sh
+python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --in-place
+```
+
+The resulting mesh can then be used directly with EBFM similar to the example with the MATLAB file from above:
+
+```sh
+ebfm --elmer-mesh examples/MESH_with_DEM
+```
+
 ### Coupled simulation
 
 The EBFM code allows coupling to other simulation codes. The following arguments
@@ -180,11 +214,11 @@ mpirun -np 1 ebfm \
 ```
 
 Be aware that the command above requires setting a few environment variables.
-Assuming your project is structured following [this repository](https://gitlab.dkrz.de/k202215/ebfm_dummy),
+Assuming your project is structured following [this repository](https://gitlab.dkrz.de/TerraDT/ebfm_dummy),
 the following settings should help getting started:
 
 ```sh
-export EBFM_DUMMY_REPO=/path/to/k202215/ebfm_dummy
+export EBFM_DUMMY_REPO=/path/to/TerraDT/ebfm_dummy
 export EBFM_REPO=/path/to/this/repo
 
 export CPL_CONFIG=$EBFM_DUMMY_REPO/config/coupling.yaml
@@ -198,6 +232,41 @@ export ICON_ROOT=$EBFM_DUMMY_REPO/dummies/ICON
 
 Depending on the binaries that you want to use `$ELMER_ROOT` and/or `$ICON_ROOT`
 may be set to point to the non-dummy versions of the codes.
+
+## Running tests
+
+You can use `tox`to run the test suite in an isolated environment. Select the tox environment matching your Python version, e.g., `py313` for Python 3.13:
+
+```sh
+tox -e py313
+```
+
+This runs all tests in the `tests/` directory.
+
+To run the examples via tox, use:
+
+```sh
+tox -e examples
+```
+
+Remove build/test artifacts after your run with:
+
+```sh
+tox -e clean
+```
+
+Note: Replace `py313` with the environment for your installed Python version (e.g., `py310`, `py311`, `py312`). To test across multiple Python versions, you need to have those versions installed on your system. \
+Check your current Python version with:
+
+```sh
+python3 --version
+```
+
+Alternatively, if you prefer to run your tests directly in your current environment:
+
+```sh
+pytest -v tests/
+```
 
 ## Troubleshooting
 
@@ -253,14 +322,6 @@ pre-commit install
 As soon as pre-commit is set up, you will not be able to commit if any of the checks fails. With the help of the logging output it should usually be possible to fix the problem.
 
 Note: You can bypass this check with `--no-verify`. Please note that the CI will also run pre-commit and fail if there are problems in any of the checks. Therefore, it is recommended to use the pre-commit hooks locally before pushing code to this repository and only bypass them if there is a good reason.
-
-**Troubleshooting:** The pre-commit hooks require Python >= 3.10. If your Python version is older you will see an error similar to the following
-
-```sh
-ERROR: Package 'black' required a different Python: 3.9.9 not in `>=3.10`
-```
-
-Please update your Python in this case. Alternatively, you can also set up an independent virtual environment just for running the pre-commit hooks or skip the checks with `--no-verify`.
 
 ### Copyright and licensing
 
