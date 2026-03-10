@@ -36,7 +36,7 @@ class CouplerErrorCode(Enum):
     WRONG_EXCHANGE_TYPE = "wrong_exchange_type"
     """The field's declared exchange type does not match the operation (SOURCE vs TARGET)."""
 
-    WRONG_YAC_ROLE = "wrong_yac_role"
+    WRONG_ROLE = "wrong_role"
     """The field's actual role in the coupler config does not match its declared role."""
 
 

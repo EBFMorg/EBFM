@@ -97,7 +97,7 @@ class YACCoupler(Coupler):
 
         return comp_fields.pop()
 
-    def put(self, component_name: str, field_name: str, data: np.array) -> Tuple[None, Optional[CouplerErrorCode]]:
+    def put(self, component_name: str, field_name: str, data: np.array) -> CouplerErrorCode:
         """
         Put data to another component
 
@@ -117,12 +117,12 @@ class YACCoupler(Coupler):
                 f"Field has to be a SOURCE field, but its exchange_type={field.exchange_type}."
             )
             self._handle_field_validation_error(error_msg)
-            return None, CouplerErrorCode.WRONG_EXCHANGE_TYPE  # If we didn't raise, skip the put operation
+            return CouplerErrorCode.WRONG_EXCHANGE_TYPE  # If we didn't raise, skip the put operation
 
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name}...")
         field.yac_field.put(data)
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name} complete.")
-        return None, None
+        return None
 
     def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
         """
@@ -148,7 +148,7 @@ class YACCoupler(Coupler):
                 f"Field has to be a TARGET field, but its exchange_type={field.exchange_type}."
             )
             self._handle_field_validation_error(error_msg)
-            error = CouplerErrorCode.WRONG_EXCHANGE_TYPE
+            return None, CouplerErrorCode.WRONG_EXCHANGE_TYPE
 
         # Also check the actual YAC role: a field absent from the coupling YAML has role NONE
         # and yac_field.get() would silently return zeros -- signal this via error code so the
