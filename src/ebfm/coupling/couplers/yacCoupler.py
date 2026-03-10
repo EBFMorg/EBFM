@@ -97,7 +97,7 @@ class YACCoupler(Coupler):
 
         return comp_fields.pop()
 
-    def put(self, component_name: str, field_name: str, data: np.array) -> CouplerErrorCode:
+    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
@@ -105,7 +105,7 @@ class YACCoupler(Coupler):
         @param[in] field_name name of the field to put data to
         @param[in] data data to be sent
 
-        @returns tuple of (None, error code). Error code is None if no error occurred.
+        @returns error code, or None if no error occurred.
         """
 
         field = self._get_field(component_name, field_name)
@@ -164,7 +164,7 @@ class YACCoupler(Coupler):
                 f"is '{role}' (field not present in coupling config)."
             )
             self._handle_field_validation_error(error_msg)
-            error = CouplerErrorCode.WRONG_YAC_ROLE
+            error = CouplerErrorCode.WRONG_ROLE
 
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name}...")
         data, _ = field.yac_field.get()

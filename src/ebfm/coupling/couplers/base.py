@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict
+from typing import Dict, Optional, Tuple
 import numpy as np
 from enum import Enum
 
@@ -103,25 +103,27 @@ class Coupler(ABC):
         raise NotImplementedError("add_couples method must be implemented in subclasses.")
 
     @abstractmethod
-    def put(self, component_name: str, field_name: str, data: np.array):
+    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
         @param[in] component_name name of the component to put data to
         @param[in] field_name name of the field to put data to
         @param[in] data data to be sent
+
+        @returns error code, or None if no error occurred.
         """
         raise NotImplementedError("put method must be implemented in subclasses.")
 
     @abstractmethod
-    def get(self, component_name: str, field_name: str) -> np.array:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
         @param[in] component_name name of the component to get data from
         @param[in] field_name name of the field to get data for
 
-        @returns field data
+        @returns tuple of (field data, error code). Error code is None if no error occurred.
         """
         raise NotImplementedError("get method must be implemented in subclasses.")
 
