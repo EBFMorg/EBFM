@@ -14,12 +14,18 @@ from ebfm.elmer.mesh import TriangleMesh
 import ebfm.elmer.parser
 
 
-def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id: int = -1) -> TriangleMesh:
+def read_elmer_mesh(
+    mesh_root: Path,
+    is_partitioned: bool = False,
+    partition_id: int = -1,
+    source_crs_epsg: int = 3413,
+) -> TriangleMesh:
     """Read Elmer mesh files.
     Args:
         mesh_root (Path): Path to the Elmer mesh folder.
         is_partitioned (bool): Set True if given mesh is partitioned.
         partition_id (int): Provide partition_id if is_partitioned=True. Identifies partition.
+        source_crs_epsg (int): EPSG code of the Elmer mesh x/y coordinates.
     Returns:
         Mesh: A Mesh object containing x, y, z coordinates, vertex IDs, cell-to-vertex mapping, and cell IDs.
     """
@@ -87,6 +93,7 @@ def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id:
         cell_to_vertex=cell_to_vertex_local,
         vertex_ids=global_vertex_ids,
         cell_ids=global_cell_ids,
+        source_crs_epsg=source_crs_epsg,
     )
 
 
@@ -139,7 +146,7 @@ def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
         xs (NDArray[np.float64]): x-coordinates to sample.
         ys (NDArray[np.float64]): y-coordinates to sample.
     Returns:
-        the DEM at given x/y coordinates
+        NDArray[np.float64]: A 1D array of sampled heights at the given x and y coordinates.
     """
     assert dem_file.is_file(), f"DEM file {dem_file} does not exist."
 
@@ -254,6 +261,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Read Elmer mesh and DEM files.")
     parser.add_argument("elmer_mesh", type=Path, help="Path to the Elmer mesh file.")
     parser.add_argument("dem", type=Path, help="Path to the digital elevation model (DEM) NetCDF file.")
+    parser.add_argument(
+        "--elmer-mesh-crs-epsg",
+        type=int,
+        required=True,
+        choices={3413, 3013},
+        help="EPSG code of the input Elmer mesh coordinate reference system."
+        " Used to convert mesh x/y coordinates to lon/lat.",
+    )
     parser.add_argument("-o", "--outpath", type=Path, help="Output path to the new mesh with DEM.", default=None)
     parser.add_argument(
         "-i", "--in-place", help="Make changes to mesh in place (will overwrite existing mesh!)", action="store_true"
@@ -275,8 +290,10 @@ if __name__ == "__main__":
     print("I'm running as main...")
     print(f"Reading the following files: {args.elmer_mesh} and {args.dem}")
 
-    mesh = read_elmer_mesh(args.elmer_mesh)
-    h = read_dem(args.dem, mesh)
+    mesh = read_elmer_mesh(args.elmer_mesh, source_crs_epsg=args.elmer_mesh_crs_epsg)
+    x = mesh.x_vertices
+    y = mesh.y_vertices
+    h = read_dem(args.dem, x, y)
 
     # Only copy when not operating in-place; skip nodes so we can write a fresh file
     if not args.in_place:

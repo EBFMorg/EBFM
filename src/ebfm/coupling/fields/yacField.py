@@ -97,14 +97,19 @@ class YACField(Field):
 
         return replace(self, yac_field=yac_field)
 
-    def perform_consistency_checks(self, yac_interface: yac.YAC):
+    def perform_consistency_checks(self, yac_interface: yac.YAC, field_validation_level=None):
         """
         Perform consistency checks on the YACField.
 
         Ensures that self.yac_field (inside YAC) is consistent with the Field attributes stored here.
 
         @note should be called after enddef since this is the point where we can guarantee that YAC has all information.
+
+        @param[in] field_validation_level optional FieldValidationLevel controlling how role mismatches are handled.
+                                          If None (or FATAL), a role mismatch raises AssertionError.
+                                          If WARNING or SILENT, a mismatch is only logged.
         """
+        from ebfm.core.config import FieldValidationLevel
 
         assert self.yac_field is not None, f"YAC field for '{self.name}' has not been created yet."
         assert self.yac_field.component_name == "ebfm", (
@@ -120,9 +125,18 @@ class YACField(Field):
         field_role = yac_interface.get_field_role(
             self.yac_field.component_name, self.yac_field.grid_name, self.yac_field.name
         )
-        assert field_role == self.exchange_type, (
-            f"Field '{self.name}' role mismatch: expected '{self.exchange_type}', " f"got '{field_role}'."
-        )
+        if field_role != self.exchange_type:
+            msg = f"Field '{self.name}' role mismatch: expected '{self.exchange_type}', got '{field_role}'."
+            if field_validation_level is None or field_validation_level == FieldValidationLevel.FATAL:
+                raise AssertionError(msg)
+            elif field_validation_level == FieldValidationLevel.WARNING:
+                import logging as _logging
+
+                _logging.getLogger(__name__).warning(msg)
+            else:  # SILENT
+                import logging as _logging
+
+                _logging.getLogger(__name__).debug(msg)
 
     def get_info(self, yac_interface: yac.YAC) -> str:
         """
