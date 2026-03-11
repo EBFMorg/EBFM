@@ -14,7 +14,7 @@ from pathlib import Path
 from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
-from .config import GridConfig
+from .config import TimeConfig, GridConfig
 from .grid import GridInputType
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
@@ -24,11 +24,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def init_config(time, grid_config):
+def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initialize_from_restart_file: bool):
     """
     Set model parameters, specify grid parameters, I/O, and physics settings.
 
     @param[in] time_config Time configuration object.
+    @param[in] grid_config Grid configuration object.
+    @param[in] restartdir Path to the directory containing restart files (if initializing from restart file).
+    @param[in] initialize_from_restart_file Boolean flag indicating whether to initialize from a restart file.
 
     @returns:
         grid (dict): Grid-related parameters.
@@ -67,23 +70,37 @@ def init_config(time, grid_config):
     # ---------------------------------------------------------------------
     io = {}
 
-    io["homedir"] = os.getcwd()  # Home directory
-    io["outdir"] = os.path.join(io["homedir"], "Output")  # Output directory
-    io["rebootdir"] = os.path.join(
-        io["homedir"],
-        "restart_ebfm_gris"
-        if grid_config.elmer_mesh_crs_epsg == 3413
-        else ("restart_ebfm_ant" if grid_config.elmer_mesh_crs_epsg == 3031 else "restart_ebfm"),
-    )  # Restart file directory
-    io["writebootfile"] = True  # REBOOT: write file for rebooting (True/False)
-    io["bootfilein"] = f"restart_ebfm_{str(time['ts']).replace(' ', '_')}.nc"  # REBOOT: bootfile to be read
-    io["bootfileout"] = f"restart_ebfm_{str(time['te']).replace(' ', '_')}.nc"  # REBOOT: bootfile to be written
+    io["homedir"] = Path(os.getcwd())  # Home directory
+    io["outdir"] = io["homedir"] / "Output"  # Output directory
+
+    write_restart_file: bool
+
+    restart_file_time_format = "%d-%b-%YT%H:%M"
+
+    if restartdir:
+        os.makedirs(restartdir, exist_ok=True)
+
+        write_restart_file = True
+
+        if initialize_from_restart_file:
+            io["bootfilein"] = restartdir / time_config.start_time.strftime(restart_file_time_format)
+            assert io["bootfilein"].exists(), f"Restart file {io['bootfilein']} does not exist!"
+
+        io["bootfileout"] = restartdir / time_config.end_time.strftime(restart_file_time_format)
+        assert not io["bootfileout"].exists(), (
+            f"Restart file {io['bootfileout']} already exists! Please choose a different restart directory or end "
+            f"time to avoid overwriting existing restart files."
+        )
+    else:
+        write_restart_file = False
+
+    io["writebootfile"] = write_restart_file
+
     io["freqout"] = 8  # OUTPUT: frequency of storing output (every n-th time-step)
     io["output_type"] = 2  # Set output file type: 1 = binary files, 2 = netCDF file
 
     # Ensure output and reboot directories exist
     os.makedirs(io["outdir"], exist_ok=True)
-    os.makedirs(io["rebootdir"], exist_ok=True)
 
     # Return the initialized parameters
     return grid, io, phys
@@ -417,7 +434,7 @@ def init_initial_conditions(args, C, grid, io, time):
     # Initialize conditions from restart file or set manually
     ##########################################################
     # if io.get("readbootfile", False):
-    if args.restart:
+    if args.restart_init:
         logger.info("EBFM: Initialize from restart file...")
 
         reboot_dir = io["rebootdir"]

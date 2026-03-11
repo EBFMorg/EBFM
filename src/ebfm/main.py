@@ -120,9 +120,16 @@ def main():
     )
 
     input_group.add_argument(
-        "--restart",
+        "--restart-dir",
+        type=Path,
+        help="Path to folder with restart files. If --restart-init there must be a restart file in "
+        " the folder must be named after given --start-time (e.g., '1-Jan-1979T00:00.nc').",
+    )
+
+    input_group.add_argument(
+        "--restart-init",
         action="store_true",
-        help="Initialise from restart file. Default is False.",
+        help="Initialise from restart file in --restart-dir.",
     )
 
     input_group.add_argument(
@@ -247,7 +254,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     # Model setup & initialization
     time = time_config.to_dict()
-    grid, io, phys = INIT.init_config(time, grid_config)
+    grid, io, phys = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
