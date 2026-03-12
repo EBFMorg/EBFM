@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from pathlib import Path
+from datetime import datetime
 import argparse
 
 import ebfm.core
@@ -129,11 +130,16 @@ def main():
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
+    default_start_datetime = datetime(1979, 1, 1, 0, 0)
+    default_end_datetime = datetime(1979, 1, 2, 0, 0)
+
+    example_restart_file_name = INIT.create_restart_file_name(default_start_datetime)
+
     input_group.add_argument(
         "--restart-dir",
         type=Path,
         help="Path to folder with restart files. If --restart-init there must be a restart file in "
-        " the folder must be named after given --start-time (e.g., '1-Jan-1979T00:00.nc').",
+        f" the folder must be named after given --start-time (e.g., '{example_restart_file_name}').",
     )
 
     input_group.add_argument(
@@ -159,17 +165,17 @@ def main():
     time_group.add_argument(
         "--start-time",
         type=str,
-        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM' "
+        help=f"Start time of the simulation in format '{TimeConfig.input_time_format_display}' "
         "(i.e., time at the beginning of the first time step)",
-        default="1-Jan-1979 00:00",
+        default=default_start_datetime.strftime(TimeConfig.input_time_format),
     )
 
     time_group.add_argument(
         "--end-time",
         type=str,
-        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM' "
+        help=f"End time of the simulation in format '{TimeConfig.input_time_format_display}' "
         "(i.e., time at the end of the last time step)",
-        default="2-Jan-1979 00:00",
+        default=default_end_datetime.strftime(TimeConfig.input_time_format),
     )
 
     time_group.add_argument(

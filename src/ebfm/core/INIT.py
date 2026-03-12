@@ -11,6 +11,8 @@ from pyproj import Transformer
 from netCDF4 import Dataset, num2date
 
 from pathlib import Path
+from datetime import datetime
+
 from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
@@ -22,6 +24,22 @@ from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def create_restart_file_name(time: datetime) -> str:
+    """
+    Creates a restart file name based on the given time.
+
+    Parameters:
+        time (datetime): The time to include in the restart file name.
+
+    Returns:
+        str: The generated restart file name.
+    """
+    restart_file_prefix = "restart_"
+    restart_file_time_format = "%d-%b-%YT%H:%M"
+
+    return restart_file_prefix + time.strftime(restart_file_time_format) + ".nc"
 
 
 def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initialize_from_restart_file: bool):
@@ -75,18 +93,16 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
 
     write_restart_file: bool
 
-    restart_file_time_format = "%d-%b-%YT%H:%M"
-
     if restartdir:
         os.makedirs(restartdir, exist_ok=True)
 
         write_restart_file = True
 
         if initialize_from_restart_file:
-            io["bootfilein"] = restartdir / f"restart_{time_config.start_time.strftime(restart_file_time_format)}.nc"
+            io["bootfilein"] = restartdir / create_restart_file_name(time_config.start_time)
             assert io["bootfilein"].exists(), f"Restart file {io['bootfilein']} does not exist!"
 
-        io["bootfileout"] = restartdir / f"restart_{time_config.end_time.strftime(restart_file_time_format)}.nc"
+        io["bootfileout"] = restartdir / create_restart_file_name(time_config.end_time)
         assert not io["bootfileout"].exists(), (
             f"Restart file {io['bootfileout']} already exists! Please choose a different restart directory or end "
             f"time to avoid overwriting existing restart files."
