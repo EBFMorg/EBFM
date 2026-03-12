@@ -7,6 +7,10 @@ from netCDF4 import Dataset, date2num
 from pathlib import Path
 import numpy as np
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def main(OUT, io, restartdir: Path):
     def create_boot_file():
@@ -50,7 +54,7 @@ def main(OUT, io, restartdir: Path):
                     else:
                         raise ValueError(f"Unsupported data type for variable: {var_name}")
 
-            print(f"Boot file saved to {io['bootfileout']}")
+            logger.info(f"Boot file saved to {io['bootfileout']}")
 
     OUT["timelastsnow_netCDF"] = date2num(
         OUT["timelastsnow"],

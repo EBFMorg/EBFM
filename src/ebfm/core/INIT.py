@@ -431,7 +431,7 @@ def init_initial_conditions(C, grid, io, time, init_with_restart_file: bool):
     Parameters:
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
         grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
-        io (dict): Dictionary with I/O settings (e.g. readbootfile, bootfilein, homedir).
+        io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         time (dict): Dictionary with time-related parameters (e.g. ts).
         init_with_restart_file (bool): Flag indicating whether to initialize from a restart file or set manually.
 
@@ -451,7 +451,7 @@ def init_initial_conditions(C, grid, io, time, init_with_restart_file: bool):
     # Initialize conditions from restart file or set manually
     ##########################################################
     if init_with_restart_file:
-        logger.info("EBFM: Initialize from restart file...")
+        logger.info(f"Initialize from restart file: {io['bootfilein']}...")
 
         # Open the NetCDF file
         with Dataset(io["bootfilein"], "r") as ncfile:
@@ -472,7 +472,7 @@ def init_initial_conditions(C, grid, io, time, init_with_restart_file: bool):
         )
 
     else:
-        logger.info("EBFM: Initialize from manually set conditions...")
+        logger.info("Initialize from manually set conditions...")
 
         OUT["Tsurf"] = np.full((gpsum,), 273.15)  # Surface temperature (K)
         OUT["subT"] = np.full((gpsum, nl), 265.0)  # Vertical temperatures (K)
