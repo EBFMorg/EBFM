@@ -408,15 +408,16 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def init_initial_conditions(args, C, grid, io, time):
+def init_initial_conditions(C, grid, io, time, init_with_restart_file: bool):
     """
     Sets the model's initial conditions at the start of the simulation.
 
     Parameters:
-        args (Namespace): Command-line arguments.
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
         grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
         io (dict): Dictionary with I/O settings (e.g. readbootfile, rebootdir, bootfilein, homedir).
+        time (dict): Dictionary with time-related parameters (e.g. ts).
+        init_with_restart_file (bool): Flag indicating whether to initialize from a restart file or set manually.
 
     Returns:
         OUT (dict): Dictionary containing model outputs initialized with default or restart file values.
@@ -433,7 +434,7 @@ def init_initial_conditions(args, C, grid, io, time):
     ##########################################################
     # Initialize conditions from restart file or set manually
     ##########################################################
-    if args.restart_init:
+    if init_with_restart_file:
         logger.info("EBFM: Initialize from restart file...")
 
         reboot_dir = io["rebootdir"]

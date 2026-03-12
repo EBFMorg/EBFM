@@ -266,7 +266,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
         assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
 
-    OUT, IN, OUTFILE = INIT.init_initial_conditions(args, C, grid, io, time)
+    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, init_with_restart_file=args.restart_init)
 
     # TODO: some grids currently do not have grid["mesh"]
     try:
@@ -352,6 +352,9 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
+        else:
+            # Needed by FINAL_create_restart_file.main(OUT, io)
+            OUT["h"] = grid["z"]
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         # TODO: should be supported for all cases to avoid case distinction here
