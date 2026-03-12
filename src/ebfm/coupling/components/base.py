@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 from typing import Set, Dict, TYPE_CHECKING
 import numpy as np
 
-
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
     from ebfm.coupling.fields.yacField import Field

@@ -2,8 +2,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict
+from typing import Dict, Optional, Tuple
 import numpy as np
+from enum import Enum
 
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
@@ -23,6 +24,20 @@ if coupling_supported:
     from ebfm.coupling.components import ElmerIce, IconAtmo
 
 logger = logging.getLogger(__name__)
+
+
+class CouplerErrorCode(Enum):
+    """
+    Error codes returned by Coupler.get() and Coupler.put().
+
+    A value of None (i.e. no error code) indicates success.
+    """
+
+    WRONG_EXCHANGE_TYPE = "wrong_exchange_type"
+    """The field's declared exchange type does not match the operation (SOURCE vs TARGET)."""
+
+    WRONG_ROLE = "wrong_role"
+    """The field's actual role in the coupler config does not match its declared role."""
 
 
 class Coupler(ABC):
@@ -88,25 +103,27 @@ class Coupler(ABC):
         raise NotImplementedError("add_couples method must be implemented in subclasses.")
 
     @abstractmethod
-    def put(self, component_name: str, field_name: str, data: np.array):
+    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
         @param[in] component_name name of the component to put data to
         @param[in] field_name name of the field to put data to
         @param[in] data data to be sent
+
+        @returns error code, or None if no error occurred.
         """
         raise NotImplementedError("put method must be implemented in subclasses.")
 
     @abstractmethod
-    def get(self, component_name: str, field_name: str) -> np.array:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
         @param[in] component_name name of the component to get data from
         @param[in] field_name name of the field to get data for
 
-        @returns field data
+        @returns tuple of (field data, error code). Error code is None if no error occurred.
         """
         raise NotImplementedError("get method must be implemented in subclasses.")
 

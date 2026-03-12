@@ -16,7 +16,7 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.grid import GridInputType
-from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
@@ -56,6 +56,16 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
         "--coupler-config",
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
+    )
+    coupling_group.add_argument(
+        "--field-validation-level",
+        type=str,
+        choices={level.value for level in FieldValidationLevel},
+        default=FieldValidationLevel.FATAL.value,
+        help="Level of validation for field exchange type checks. "
+        "'FATAL': raise exception on mismatch (default), "
+        "'WARNING': log warning on mismatch, "
+        "'SILENT': only log at debug level on mismatch.",
     )
 
 
@@ -299,7 +309,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "albedo": OUT["albedo"],
             }
 
-            data_from_icon = icon_atmo.exchange(data_to_icon)
+            data_from_icon, errors_from_icon = icon_atmo.exchange(data_to_icon)
 
             logger.debug("Done.")
             logger.debug("Received the following data from ICON:", data_from_icon)
@@ -314,8 +324,10 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"] = data_from_icon["huss"]
-            IN["Pres"] = data_from_icon["sfcpres"]
+            # Fallback to constants if fields are not coupled (error code set); must be arrays for mask indexing.
+            _T0 = IN["T"] * 0.0
+            IN["q"] = data_from_icon["huss"] if not errors_from_icon["huss"] else _T0
+            IN["Pres"] = data_from_icon["sfcpres"] if not errors_from_icon["sfcpres"] else _T0 + 101500.0
 
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
