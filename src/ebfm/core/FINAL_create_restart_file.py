@@ -4,32 +4,31 @@
 
 import os
 from netCDF4 import Dataset, date2num
+from pathlib import Path
 import numpy as np
 
 
-def main(OUT, io):
+def main(OUT, io, restartdir: Path):
     def create_boot_file():
         """
         Create a restart file (boot file) and save it as a NetCDF file.
 
         Parameters:
         - OUT: Dictionary containing the data to be saved.
-        - io: Dictionary containing I/O parameters including reboot directory and output filename.
-
+        @param[in] restartdir Path to the directory containing restart files (if initializing from restart file).
         Returns:
         - None
         """
+
         # Create a reboot directory if it does not exist
-        if not os.path.exists(io["rebootdir"]):
-            os.makedirs(io["rebootdir"])
+        if restartdir:
+            os.makedirs(restartdir, exist_ok=True)
 
         # Check if we should write the boot file
-        if io.get("writebootfile", False):
+        if io["writebootfile"]:
             # Define the output NetCDF file path
-            boot_file_path = os.path.join(io["rebootdir"], io["bootfileout"])
-
             # Create a new NetCDF file to store the boot variables
-            with Dataset(boot_file_path, "w", format="NETCDF4") as ncfile:
+            with Dataset(io["bootfileout"], "w", format="NETCDF4") as ncfile:
                 # Save each variable in the OUT dictionary to the NetCDF file
                 for var_name, var_data in OUT.items():
                     # Handle different variable dimensions
@@ -73,6 +72,8 @@ def main(OUT, io):
         "timelastsnow_netCDF": OUT["timelastsnow_netCDF"],
         "alb_snow": OUT["alb_snow"],
         "h": OUT["h"],
+        "x": OUT["x"],
+        "y": OUT["y"],
     }
 
     # Create the boot file

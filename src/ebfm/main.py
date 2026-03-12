@@ -345,6 +345,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
             IN["h"] = data_from_elmer["h"]
             OUT["h"] = IN["h"]
+            OUT["x"] = grid["x"]
+            OUT["y"] = grid["y"]
             if coupler.has_coupling_to("icon_atmo"):
                 grid["z"] = IN["h"][0].ravel()
             # TODO add gradient field later
@@ -367,7 +369,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
     if not grid["is_partitioned"]:
-        FINAL_create_restart_file.main(OUT, io)
+        FINAL_create_restart_file.main(OUT, io, args.restart_dir)
     else:
         logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
 
