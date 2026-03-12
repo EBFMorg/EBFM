@@ -433,7 +433,6 @@ def init_initial_conditions(args, C, grid, io, time):
     ##########################################################
     # Initialize conditions from restart file or set manually
     ##########################################################
-    # if io.get("readbootfile", False):
     if args.restart_init:
         logger.info("EBFM: Initialize from restart file...")
 
