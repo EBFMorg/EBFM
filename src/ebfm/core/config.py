@@ -145,6 +145,11 @@ class TimeConfig:
     Time configuration.
     """
 
+    # Input time format for parsing command line arguments (e.g., "01-Jan-1979 00:00")
+    input_time_format = "%d-%b-%Y %H:%M"
+    # Used for showing time format in a human-readable way (e.g., in help messages)
+    input_time_format_display = "DD-Mon-YYYY HH:MM"
+
     start_time: datetime  # Start time of the simulation (i.e., time at the beginning of the first time step)
     end_time: datetime  # End time of the simulation (i.e., time at the end of the last time step)
     time_step: timedelta  # Time step of the simulation
@@ -156,11 +161,10 @@ class TimeConfig:
 
         @param[in] args command line arguments
         """
-        time_format = "%d-%b-%Y %H:%M"
 
-        self.start_time = datetime.strptime(args.start_time, time_format)
-        self.end_time = datetime.strptime(args.end_time, time_format)
-        assert self.start_time < self.end_time, "Start time must be before end time."
+        self.start_time = datetime.strptime(args.start_time, TimeConfig.input_time_format)
+        self.end_time = datetime.strptime(args.end_time, TimeConfig.input_time_format)
+        assert self.start_time < self.end_time, f"Start time {self.start_time} must be before end time {self.end_time}."
 
         assert args.time_step > 0, "Time step must be positive."
         self.time_step = timedelta(days=args.time_step)
