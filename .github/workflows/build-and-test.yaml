@@ -37,4 +37,9 @@ jobs:
         run: |
           source .venv/bin/activate
           ebfm --matlab-mesh examples/dem_and_mask.mat
+      - name: Run example with restart
+        run: |
+          source .venv/bin/activate
+          ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot
+          ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --start-time "02-Jan-1979 00:00" --end-time "03-Jan-1979 00:00"
 
