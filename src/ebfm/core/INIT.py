@@ -83,10 +83,10 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
         write_restart_file = True
 
         if initialize_from_restart_file:
-            io["bootfilein"] = restartdir / f"restart_{time_config.start_time.strftime(restart_file_time_format)}"
+            io["bootfilein"] = restartdir / f"restart_{time_config.start_time.strftime(restart_file_time_format)}.nc"
             assert io["bootfilein"].exists(), f"Restart file {io['bootfilein']} does not exist!"
 
-        io["bootfileout"] = restartdir / f"restart_{time_config.end_time.strftime(restart_file_time_format)}"
+        io["bootfileout"] = restartdir / f"restart_{time_config.end_time.strftime(restart_file_time_format)}.nc"
         assert not io["bootfileout"].exists(), (
             f"Restart file {io['bootfileout']} already exists! Please choose a different restart directory or end "
             f"time to avoid overwriting existing restart files."
