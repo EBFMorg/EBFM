@@ -50,9 +50,7 @@ def main(OUT, io, restartdir: Path):
                     else:
                         raise ValueError(f"Unsupported data type for variable: {var_name}")
 
-            print(f"Boot file saved to {boot_file_path}")
-
-            return True
+            print(f"Boot file saved to {io["bootfileout"]}")
 
     OUT["timelastsnow_netCDF"] = date2num(
         OUT["timelastsnow"],

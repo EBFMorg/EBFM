@@ -147,7 +147,7 @@ class TimeConfig:
 
         self.start_time = datetime.strptime(args.start_time, time_format)
         self.end_time = datetime.strptime(args.end_time, time_format)
-        assert self.start_time < self.end_time, "Start time must be before end time."
+        assert self.start_time < self.end_time, f"Start time {self.start_time} must be before end time {self.end_time}."
 
         assert args.time_step > 0, "Time step must be positive."
         self.time_step = timedelta(days=args.time_step)

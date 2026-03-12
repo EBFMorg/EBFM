@@ -354,6 +354,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             # IN['dhdy'] = data_from_elmer('dhdy')
         else:
             # Needed by FINAL_create_restart_file.main(OUT, io)
+            OUT["x"] = grid["x"]
+            OUT["y"] = grid["y"]
             OUT["h"] = grid["z"]
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
