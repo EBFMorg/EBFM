@@ -415,7 +415,7 @@ def init_initial_conditions(C, grid, io, time, init_with_restart_file: bool):
     Parameters:
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
         grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
-        io (dict): Dictionary with I/O settings (e.g. readbootfile, rebootdir, bootfilein, homedir).
+        io (dict): Dictionary with I/O settings (e.g. readbootfile, bootfilein, homedir).
         time (dict): Dictionary with time-related parameters (e.g. ts).
         init_with_restart_file (bool): Flag indicating whether to initialize from a restart file or set manually.
 
@@ -437,11 +437,8 @@ def init_initial_conditions(C, grid, io, time, init_with_restart_file: bool):
     if init_with_restart_file:
         logger.info("EBFM: Initialize from restart file...")
 
-        reboot_dir = io["rebootdir"]
-        boot_filepath = f"{reboot_dir}/{io['bootfilein']}"
-
         # Open the NetCDF file
-        with Dataset(boot_filepath, "r") as ncfile:
+        with Dataset(io["bootfilein"], "r") as ncfile:
             # Iterate through all variables in the file
             for var_name in ncfile.variables:
                 # Read the variable data
