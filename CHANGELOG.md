@@ -6,7 +6,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
-* If DoFs are defined with a Elmer mesh locate them at triangle centers (previously: triangle vertices) to allow for conservative mapping schemes that require information about area per DoF.
+* If DoFs are defined with a Elmer mesh locate them at triangle centers (previously: triangle vertices) to allow for conservative mapping schemes that require information about area per DoF. https://github.com/EBFMorg/EBFM/pull/83.
+* Generalize restart by providing additional options `--restart-dir` and `--restart-init`. https://github.com/EBFMorg/EBFM/pull/90
 * Introduce `--field-validation-level` to let user specify how EBFM should treat fields that are defined by EBFM but not provided/accepted by the coupled component. https://github.com/EBFMorg/EBFM/pull/87.
 * Fix put/get signatures of couplers and return types to match the Coupler base class, 
 * Dropped Python 3.9 support in favor of Python >= 3.10 (required for PEP 604 union type annotations). https://github.com/EBFMorg/EBFM/pull/82

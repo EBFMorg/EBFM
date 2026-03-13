@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from pathlib import Path
+from datetime import datetime
 import argparse
 
 import ebfm.core
@@ -129,6 +130,24 @@ def main():
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
+    default_start_datetime = datetime(1979, 1, 1, 0, 0)
+    default_end_datetime = datetime(1979, 1, 2, 0, 0)
+
+    example_restart_file_name = INIT.create_restart_file_name(default_start_datetime)
+
+    input_group.add_argument(
+        "--restart-dir",
+        type=Path,
+        help="Path to folder with restart files. If --restart-init there must be a restart file in "
+        f" the folder must be named after given --start-time (e.g., '{example_restart_file_name}').",
+    )
+
+    input_group.add_argument(
+        "--restart-init",
+        action="store_true",
+        help="Initialise from restart file in --restart-dir.",
+    )
+
     input_group.add_argument(
         "--elmer-mesh-crs-epsg",
         type=int,
@@ -146,17 +165,17 @@ def main():
     time_group.add_argument(
         "--start-time",
         type=str,
-        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM' "
+        help=f"Start time of the simulation in format '{TimeConfig.input_time_format_display}' "
         "(i.e., time at the beginning of the first time step)",
-        default="1-Jan-1979 00:00",
+        default=default_start_datetime.strftime(TimeConfig.input_time_format),
     )
 
     time_group.add_argument(
         "--end-time",
         type=str,
-        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM' "
+        help=f"End time of the simulation in format '{TimeConfig.input_time_format_display}' "
         "(i.e., time at the end of the last time step)",
-        default="2-Jan-1979 00:00",
+        default=default_end_datetime.strftime(TimeConfig.input_time_format),
     )
 
     time_group.add_argument(
@@ -250,8 +269,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
-    grid, io, phys = INIT.init_config()
     time = time_config.to_dict()
+    grid, io, phys = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
@@ -263,7 +282,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
         assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
 
-    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time)
+    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, init_with_restart_file=args.restart_init)
 
     # TODO: some grids currently do not have grid["mesh"]
     try:
@@ -343,11 +362,19 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
 
             IN["h"] = data_from_elmer["h"]
+            OUT["h"] = IN["h"]
+            OUT["x"] = grid["x"]
+            OUT["y"] = grid["y"]
             if coupler.has_coupling_to("icon_atmo"):
                 grid["z"] = IN["h"][0].ravel()
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
+        else:
+            # Needed by FINAL_create_restart_file.main(OUT, io)
+            OUT["x"] = grid["x"]
+            OUT["y"] = grid["y"]
+            OUT["h"] = grid["z"]
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         # TODO: should be supported for all cases to avoid case distinction here
@@ -364,8 +391,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
-    if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
-        FINAL_create_restart_file.main(OUT, io)
+    if not grid["is_partitioned"]:
+        FINAL_create_restart_file.main(OUT, io, args.restart_dir)
     else:
         logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
 
