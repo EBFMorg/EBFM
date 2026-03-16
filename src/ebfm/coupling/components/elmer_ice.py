@@ -97,20 +97,30 @@ class ElmerIce(Component):
         received_data: Dict[str, np.ndarray] = {}
 
         # Put data to Elmer/Ice
-        self._coupler.put(self.name, "T_ice", data_to_exchange["T_ice"])
-        self._coupler.put(self.name, "smb", data_to_exchange["smb"])
-        self._coupler.put(self.name, "runoff", data_to_exchange["runoff"])
+        if self._coupler.has_field(self.name, "T_ice", yac.ExchangeType.SOURCE):
+            self._coupler.put(self.name, "T_ice", data_to_exchange["T_ice"])
+
+        if self._coupler.has_field(self.name, "smb", yac.ExchangeType.SOURCE):
+            self._coupler.put(self.name, "smb", data_to_exchange["smb"])
+
+        if self._coupler.has_field(self.name, "runoff", yac.ExchangeType.SOURCE):
+            self._coupler.put(self.name, "runoff", data_to_exchange["runoff"])
 
         # Get data from Elmer/Ice
-        h, err = self._coupler.get(self.name, "h")
-        assert h is not None, f"Received data for field 'h' is None. {err}"
-        received_data["h"] = h
-        # received_data["dhdx"], err = self._coupler.get(self.name, "dhdx")
-        # assert dhdx is not None, f"Received data for field 'dhdx' is None. {err}"
-        # received_data["dhdx"] = dhdx
-        # received_data["dhdy"], err = self._coupler.get(self.name, "dhdy")
-        # assert dhdy is not None, f"Received data for field 'dhdy' is None. {err}"
-        # received_data["dhdy"] = dhdy
+        if self._coupler.has_field(self.name, "h", yac.ExchangeType.TARGET):
+            h, err = self._coupler.get(self.name, "h")
+            assert h is not None, f"Received data for field 'h' is None. {err}"
+            received_data["h"] = h
+
+        if self._coupler.has_field(self.name, "dhdx", yac.ExchangeType.TARGET):
+            dhdx, err = self._coupler.get(self.name, "dhdx")
+            assert dhdx is not None, f"Received data for field 'dhdx' is None. {err}"
+            received_data["dhdx"] = dhdx
+
+        if self._coupler.has_field(self.name, "dhdy", yac.ExchangeType.TARGET):
+            dhdy, err = self._coupler.get(self.name, "dhdy")
+            assert dhdy is not None, f"Received data for field 'dhdy' is None. {err}"
+            received_data["dhdy"] = dhdy
 
         return received_data
 

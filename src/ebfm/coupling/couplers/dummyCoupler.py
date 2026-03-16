@@ -66,6 +66,14 @@ class DummyCoupler(Coupler):
         logger.debug("Do nothing for DummyCoupler.")
         return None, None
 
+    def has_field(self, component_name: str, field_name: str, exchange_type) -> bool:
+        """
+        Check whether a field exists for a component.
+
+        DummyCoupler does not define any fields.
+        """
+        return False
+
     def finalize(self):
         """Finalize the coupling interface (does nothing for DummyCoupler)"""
         logger.debug("Finalizing coupling...")

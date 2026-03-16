@@ -176,6 +176,25 @@ class YACCoupler(Coupler):
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         return data[0], error
 
+    def has_field(self, component_name: str, field_name: str, exchange_type) -> bool:
+        """
+        Check whether a field with given name and exchange type exists for a coupled component.
+
+        @param[in] component_name name of the component
+        @param[in] field_name name of the field
+        @param[in] exchange_type expected exchange type
+
+        @returns True if such a field exists, otherwise False
+        """
+        if not self.has_coupling_to(component_name):
+            return False
+
+        component = self._coupled_components[component_name]
+        fields = self.fields.filter(
+            lambda f: f.coupled_component == component and f.name == field_name and f.exchange_type == exchange_type
+        )
+        return not fields.is_empty()
+
     def _handle_field_validation_error(self, error_msg: str):
         """
         Handle field validation errors according to the configured validation level.

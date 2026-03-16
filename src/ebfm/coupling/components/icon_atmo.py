@@ -127,44 +127,54 @@ class IconAtmo(Component):
         received_data: Dict[str, np.ndarray] = {}
 
         # Put data to IconAtmo
-        # self._coupler.put(self.name, "albedo", data_to_exchange["albedo"])
+        if self._coupler.has_field(self.name, "albedo", yac.ExchangeType.SOURCE):
+            self._coupler.put(self.name, "albedo", data_to_exchange["albedo"])
 
         # Get data from IconAtmo
-        pr, err = self._coupler.get(self.name, "pr")
-        assert pr is not None, f"Received data for field 'pr' is None. {err}"
-        received_data["pr"] = pr
+        if self._coupler.has_field(self.name, "pr", yac.ExchangeType.TARGET):
+            pr, err = self._coupler.get(self.name, "pr")
+            assert pr is not None, f"Received data for field 'pr' is None. {err}"
+            received_data["pr"] = pr
 
-        pr_snow, err = self._coupler.get(self.name, "pr_snow")
-        assert pr_snow is not None, f"Received data for field 'pr_snow' is None. {err}"
-        received_data["pr_snow"] = pr_snow
+        if self._coupler.has_field(self.name, "pr_snow", yac.ExchangeType.TARGET):
+            pr_snow, err = self._coupler.get(self.name, "pr_snow")
+            assert pr_snow is not None, f"Received data for field 'pr_snow' is None. {err}"
+            received_data["pr_snow"] = pr_snow
 
-        rsds, err = self._coupler.get(self.name, "rsds")
-        assert rsds is not None, f"Received data for field 'rsds' is None. {err}"
-        received_data["rsds"] = rsds
+        if self._coupler.has_field(self.name, "rsds", yac.ExchangeType.TARGET):
+            rsds, err = self._coupler.get(self.name, "rsds")
+            assert rsds is not None, f"Received data for field 'rsds' is None. {err}"
+            received_data["rsds"] = rsds
 
-        rlds, err = self._coupler.get(self.name, "rlds")
-        assert rlds is not None, f"Received data for field 'rlds' is None. {err}"
-        received_data["rlds"] = rlds
+        if self._coupler.has_field(self.name, "rlds", yac.ExchangeType.TARGET):
+            rlds, err = self._coupler.get(self.name, "rlds")
+            assert rlds is not None, f"Received data for field 'rlds' is None. {err}"
+            received_data["rlds"] = rlds
 
-        sfcwind, err = self._coupler.get(self.name, "sfcwind")
-        assert sfcwind is not None, f"Received data for field 'sfcwind' is None. {err}"
-        received_data["sfcwind"] = sfcwind
+        if self._coupler.has_field(self.name, "sfcwind", yac.ExchangeType.TARGET):
+            sfcwind, err = self._coupler.get(self.name, "sfcwind")
+            assert sfcwind is not None, f"Received data for field 'sfcwind' is None. {err}"
+            received_data["sfcwind"] = sfcwind
 
-        clt, err = self._coupler.get(self.name, "clt")
-        assert clt is not None, f"Received data for field 'clt' is None. {err}"
-        received_data["clt"] = clt
+        if self._coupler.has_field(self.name, "clt", yac.ExchangeType.TARGET):
+            clt, err = self._coupler.get(self.name, "clt")
+            assert clt is not None, f"Received data for field 'clt' is None. {err}"
+            received_data["clt"] = clt
 
-        tas, err = self._coupler.get(self.name, "tas")
-        assert tas is not None, f"Received data for field 'tas' is None. {err}"
-        received_data["tas"] = tas
+        if self._coupler.has_field(self.name, "tas", yac.ExchangeType.TARGET):
+            tas, err = self._coupler.get(self.name, "tas")
+            assert tas is not None, f"Received data for field 'tas' is None. {err}"
+            received_data["tas"] = tas
 
-        huss, err = self._coupler.get(self.name, "huss")
-        assert huss is not None, f"Received data for field 'huss' is None. {err}"
-        received_data["huss"] = huss
+        if self._coupler.has_field(self.name, "huss", yac.ExchangeType.TARGET):
+            huss, err = self._coupler.get(self.name, "huss")
+            assert huss is not None, f"Received data for field 'huss' is None. {err}"
+            received_data["huss"] = huss
 
-        sfcpres, err = self._coupler.get(self.name, "sfcpres")
-        assert sfcpres is not None, f"Received data for field 'sfcpres' is None. {err}"
-        received_data["sfcpres"] = sfcpres
+        if self._coupler.has_field(self.name, "sfcpres", yac.ExchangeType.TARGET):
+            sfcpres, err = self._coupler.get(self.name, "sfcpres")
+            assert sfcpres is not None, f"Received data for field 'sfcpres' is None. {err}"
+            received_data["sfcpres"] = sfcpres
 
         return received_data
 
