@@ -19,7 +19,7 @@ repos:
   rev: v1.18.2
   hooks:
   - id: mypy
-    args: ["--ignore-missing-imports", "--explicit-package-bases", "src/ebfm/coupling/components"]
+    args: ["--ignore-missing-imports", "--explicit-package-bases", "src/ebfm/coupling"]
     pass_filenames: false
 # SPDX-SnippetEnd
 

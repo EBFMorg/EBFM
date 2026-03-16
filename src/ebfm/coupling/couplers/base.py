@@ -16,6 +16,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from ebfm.coupling.components import Component
+from ebfm.coupling.fields import FieldSet
 
 # TODO: should not be necessary if ElmerIce etc. use a generic Field instead of (YAC)Field
 from .helpers import coupling_supported
@@ -96,7 +97,7 @@ class Coupler(ABC):
         """
         raise NotImplementedError("add_grid method must be implemented in subclasses.")
 
-    def _add_couples(self, time: Dict[str, float]):
+    def _add_couples(self, time: FieldSet):
         """
         Add coupling definitions to the Coupler interface
         """

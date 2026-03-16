@@ -39,7 +39,7 @@ class DummyCoupler(Coupler):
         logger.debug("Setup coupling...")
         logger.debug("Do nothing for DummyCoupler.")
 
-    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
@@ -53,7 +53,7 @@ class DummyCoupler(Coupler):
         logger.debug("Do nothing for DummyCoupler.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 

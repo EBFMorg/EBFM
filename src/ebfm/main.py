@@ -27,7 +27,7 @@ from mpi4py import MPI
 from typing import List
 
 # logger for this module
-logger: Logger = None  # will be set later
+logger: Logger
 
 
 def add_coupling_arguments(parser: argparse.ArgumentParser):
