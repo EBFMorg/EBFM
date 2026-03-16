@@ -315,7 +315,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "albedo": OUT["albedo"],
             }
 
-            data_from_icon, errors_from_icon = icon_atmo.exchange(data_to_icon)
+            data_from_icon = icon_atmo.exchange(data_to_icon)
 
             logger.debug("Done.")
             logger.debug("Received the following data from ICON:", data_from_icon)
@@ -332,8 +332,16 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
             # Fallback to constants if fields are not coupled (error code set); must be arrays for mask indexing.
             _T0 = IN["T"] * 0.0
-            IN["q"] = data_from_icon["huss"] if not errors_from_icon["huss"] else _T0
-            IN["Pres"] = data_from_icon["sfcpres"] if not errors_from_icon["sfcpres"] else _T0 + 101500.0
+
+            if "huss" in data_from_icon:
+                IN["q"] = data_from_icon["huss"]
+            else:  # use fallback value
+                IN["q"] = _T0
+
+            if "sfcpres" in data_from_icon:
+                IN["Pres"] = data_from_icon["sfcpres"]
+            else:  # use fallback value
+                IN["Pres"] = _T0 + 101500.0
 
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
