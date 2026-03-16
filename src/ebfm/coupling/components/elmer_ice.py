@@ -82,7 +82,7 @@ class ElmerIce(Component):
             # ),
         }
 
-    def _yac_exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+    def _yac_exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """
         Exchange of EBFM with Elmer/Ice using YAC coupler.
 
@@ -92,7 +92,7 @@ class ElmerIce(Component):
         """
         assert coupling_supported, "Coupling support is required for YAC exchange."
 
-        received_data: Dict[str, np.array] = {}
+        received_data: Dict[str, np.ndarray] = {}
 
         # Put data to Elmer/Ice
         self._coupler.put(self.name, "T_ice", data_to_exchange["T_ice"])
@@ -100,9 +100,15 @@ class ElmerIce(Component):
         self._coupler.put(self.name, "runoff", data_to_exchange["runoff"])
 
         # Get data from Elmer/Ice
-        received_data["h"], _ = self._coupler.get(self.name, "h")
-        # received_data["dhdx"], _ = self._coupler.get(self.name, "dhdx")
-        # received_data["dhdy"], _ = self._coupler.get(self.name, "dhdy")
+        h, err = self._coupler.get(self.name, "h")
+        assert h is not None, f"Received data for field 'h' is None. {err}"
+        received_data["h"] = h
+        # received_data["dhdx"], err = self._coupler.get(self.name, "dhdx")
+        # assert dhdx is not None, f"Received data for field 'dhdx' is None. {err}"
+        # received_data["dhdx"] = dhdx
+        # received_data["dhdy"], err = self._coupler.get(self.name, "dhdy")
+        # assert dhdy is not None, f"Received data for field 'dhdy' is None. {err}"
+        # received_data["dhdy"] = dhdy
 
         return received_data
 
@@ -121,7 +127,14 @@ class ElmerIce(Component):
                 f"Note: {type(self)} only supports YACCoupler at the moment. "
             )
 
-    def exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+    def exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        """
+        Exchange data with Elmer/Ice.
+
+        @param[in] data_to_exchange dictionary of field names and their data to be sent
+
+        @returns dictionary of received field data
+        """
         if self._uses_coupler("YACCoupler"):
             return self._yac_exchange(data_to_exchange)
         else:
