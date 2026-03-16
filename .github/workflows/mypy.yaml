@@ -2,13 +2,13 @@
 #
 # SPDX-License-Identifier: CC0-1.0
 
-name: Run Python Type Checks (mypy)
+name: Run Python Type Checks
 on:
   - push
   - pull_request
 
 jobs:
-  flake8:
+  mypy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
