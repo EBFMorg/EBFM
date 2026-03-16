@@ -204,6 +204,7 @@ def compute_number_of_glacier_cells(grid):
 def init_grid(grid, io, config: GridConfig):
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
+    grid["has_shading"] = config.use_shading
 
     # Read grid from Elmer, elevations from BedMachine
     if config.dem_file:
@@ -250,7 +251,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
         grid["mesh"] = mesh
-        grid["has_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
+
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
     elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
@@ -279,7 +280,6 @@ def init_grid(grid, io, config: GridConfig):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-        grid["has_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
     elif config.grid_type is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
         # ---------------------------------------------------------------------
         # Read and process grid information
@@ -292,7 +292,6 @@ def init_grid(grid, io, config: GridConfig):
         mask_2D = input_data["mask"][0][0]
 
         # Determine domain extent
-        grid["has_shading"] = True
         grid["Lx"], grid["Ly"] = grid["x_2D"].shape
 
         # Flip grid E-W or N-S when needed
