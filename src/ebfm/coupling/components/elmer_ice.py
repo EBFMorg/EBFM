@@ -100,9 +100,9 @@ class ElmerIce(Component):
         self._coupler.put(self.name, "runoff", data_to_exchange["runoff"])
 
         # Get data from Elmer/Ice
-        received_data["h"] = self._coupler.get(self.name, "h")
-        # received_data["dhdx"] = self._coupler.get(self.name, "dhdx")
-        # received_data["dhdy"] = self._coupler.get(self.name, "dhdy")
+        received_data["h"], _ = self._coupler.get(self.name, "h")
+        # received_data["dhdx"], _ = self._coupler.get(self.name, "dhdx")
+        # received_data["dhdy"], _ = self._coupler.get(self.name, "dhdy")
 
         return received_data
 
