@@ -60,12 +60,12 @@ class YACCoupler(Coupler):
 
         self._add_grid(grid_name, grid)
 
-        field_definitions = set()
+        field_definitions = FieldSet()
 
         for component in self._coupled_components.values():
             field_definitions |= component.get_field_definitions(time)
 
-        self._add_couples(FieldSet(field_definitions))
+        self._add_couples(field_definitions)
 
         self.interface.enddef()
 

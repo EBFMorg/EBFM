@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict, Set, TYPE_CHECKING
+from typing import Dict, TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 from .base import Component
 
-from ebfm.coupling.fields import Field
+from ebfm.coupling.fields import FieldSet
 from ebfm.coupling.couplers.helpers import coupling_supported
 
 if coupling_supported:
@@ -29,7 +29,7 @@ class ElmerIce(Component):
     def __init__(self, coupler: "Coupler"):
         super().__init__(coupler)
 
-    def _yac_field_definitions(self, time: Dict[str, float]) -> Set[Field]:
+    def _yac_field_definitions(self, time: Dict[str, float]) -> FieldSet:
         """
         Get field definitions for EBFM coupling to Elmer/Ice using YAC coupler.
         """
@@ -38,49 +38,51 @@ class ElmerIce(Component):
         timestep_value = days_to_iso(time["dt"])
         timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
 
-        return {
-            YACField(
-                name="T_ice",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Near surface temperature at Ice surface (in K)",
-                exchange_type=yac.ExchangeType.SOURCE,
-            ),
-            YACField(
-                name="smb",
-                coupled_component=self,
-                timestep=timestep,
-                exchange_type=yac.ExchangeType.SOURCE,
-            ),
-            YACField(
-                name="runoff",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Runoff",
-                exchange_type=yac.ExchangeType.SOURCE,
-            ),
-            YACField(
-                name="h",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Surface height (in m)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            # YACField(
-            #     name="dhdx",
-            #     coupled_component=self,
-            #     timestep=timestep,
-            #     metadata="Surface slope in x direction",
-            #     exchange_type=yac.ExchangeType.TARGET,
-            # ),
-            # YACField(
-            #     name="dhdy",
-            #     coupled_component=self,
-            #     timestep=timestep,
-            #     metadata="Surface slope in y direction",
-            #     exchange_type=yac.ExchangeType.TARGET,
-            # ),
-        }
+        return FieldSet(
+            {
+                YACField(
+                    name="T_ice",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Near surface temperature at Ice surface (in K)",
+                    exchange_type=yac.ExchangeType.SOURCE,
+                ),
+                YACField(
+                    name="smb",
+                    coupled_component=self,
+                    timestep=timestep,
+                    exchange_type=yac.ExchangeType.SOURCE,
+                ),
+                YACField(
+                    name="runoff",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Runoff",
+                    exchange_type=yac.ExchangeType.SOURCE,
+                ),
+                YACField(
+                    name="h",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Surface height (in m)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+                # YACField(
+                #     name="dhdx",
+                #     coupled_component=self,
+                #     timestep=timestep,
+                #     metadata="Surface slope in x direction",
+                #     exchange_type=yac.ExchangeType.TARGET,
+                # ),
+                # YACField(
+                #     name="dhdy",
+                #     coupled_component=self,
+                #     timestep=timestep,
+                #     metadata="Surface slope in y direction",
+                #     exchange_type=yac.ExchangeType.TARGET,
+                # ),
+            }
+        )
 
     def _yac_exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """
@@ -112,7 +114,7 @@ class ElmerIce(Component):
 
         return received_data
 
-    def get_field_definitions(self, time: Dict[str, float]) -> Set[Field]:
+    def get_field_definitions(self, time: Dict[str, float]) -> FieldSet:
         """
         Get field definitions for EBFM coupling.
 

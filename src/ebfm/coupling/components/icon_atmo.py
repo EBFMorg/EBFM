@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict, Set, TYPE_CHECKING
+from typing import Dict, TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 from .base import Component
 
-from ebfm.coupling.fields import Field
+from ebfm.coupling.fields import FieldSet
 from ebfm.coupling.couplers.helpers import coupling_supported
 
 if coupling_supported:
@@ -29,7 +29,7 @@ class IconAtmo(Component):
     def __init__(self, coupler: "Coupler"):
         super().__init__(coupler)
 
-    def _yac_field_definitions(self, time: Dict[str, float]) -> Set[Field]:
+    def _yac_field_definitions(self, time: Dict[str, float]) -> FieldSet:
         """
         Get field definitions for EBFM coupling to IconAtmo using YAC coupler.
         """
@@ -38,78 +38,80 @@ class IconAtmo(Component):
         timestep_value = days_to_iso(time["dt"])
         timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
 
-        return {
-            # YACField(
-            #     name="albedo",
-            #     coupled_component=self,
-            #     timestep=timestep,
-            #     metadata="Albedo of the ice surface",
-            #     exchange_type=yac.ExchangeType.SOURCE,
-            # ),
-            YACField(
-                name="pr",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Precipitation rate (in kg m-2 s-1)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="pr_snow",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Precipitation rate of snow (in kg m-2 s-1)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="rsds",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Downward shortwave radiation flux (in W m-2)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="rlds",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Downward longwave radiation flux (in W m-2)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="sfcwind",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Wind speed at surface (in m s-1)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="clt",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Cloud cover (in fraction)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="tas",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Temperature at surface (in K)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="huss",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Specific humidity at surface (in kg kg-1)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="sfcpres",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Surface pressure (in Pa)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-        }
+        return FieldSet(
+            {
+                # YACField(
+                #     name="albedo",
+                #     coupled_component=self,
+                #     timestep=timestep,
+                #     metadata="Albedo of the ice surface",
+                #     exchange_type=yac.ExchangeType.SOURCE,
+                # ),
+                YACField(
+                    name="pr",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Precipitation rate (in kg m-2 s-1)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+                YACField(
+                    name="pr_snow",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Precipitation rate of snow (in kg m-2 s-1)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+                YACField(
+                    name="rsds",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Downward shortwave radiation flux (in W m-2)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+                YACField(
+                    name="rlds",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Downward longwave radiation flux (in W m-2)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+                YACField(
+                    name="sfcwind",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Wind speed at surface (in m s-1)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+                YACField(
+                    name="clt",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Cloud cover (in fraction)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+                YACField(
+                    name="tas",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Temperature at surface (in K)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+                YACField(
+                    name="huss",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Specific humidity at surface (in kg kg-1)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+                YACField(
+                    name="sfcpres",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Surface pressure (in Pa)",
+                    exchange_type=yac.ExchangeType.TARGET,
+                ),
+            }
+        )
 
     def _yac_exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """
@@ -166,7 +168,7 @@ class IconAtmo(Component):
 
         return received_data
 
-    def get_field_definitions(self, time: Dict[str, float]) -> Set[Field]:
+    def get_field_definitions(self, time: Dict[str, float]) -> FieldSet:
         """
         Get field definitions for EBFM coupling.
 
