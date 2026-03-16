@@ -143,6 +143,38 @@ class IconAtmo(Component):
 
         return received_data, errors
 
+    def _fake_exchange(
+        self, data_to_exchange: Dict[str, np.array]
+    ) -> Tuple[Dict[str, np.array], Dict[str, Optional["CouplerErrorCode"]]]:
+        """
+        Exchange of EBFM with IconAtmo using FakeCoupler.
+
+        @param[in] data_to_exchange dictionary of field names and their data to be sent
+
+        @returns tuple of (received field data, error codes). An error code of None indicates
+                 successful exchange for that field.
+        """
+
+        received_data: Dict[str, np.array] = {}
+        errors: Dict[str, Optional["CouplerErrorCode"]] = {}
+
+        # Put data to IconAtmo (optional in current setup)
+        if "albedo" in data_to_exchange:
+            self._coupler.put(self.name, "albedo", data_to_exchange["albedo"])
+
+        # Get data from IconAtmo
+        received_data["pr"], errors["pr"] = self._coupler.get(self.name, "pr")
+        received_data["pr_snow"], errors["pr_snow"] = self._coupler.get(self.name, "pr_snow")
+        received_data["rsds"], errors["rsds"] = self._coupler.get(self.name, "rsds")
+        received_data["rlds"], errors["rlds"] = self._coupler.get(self.name, "rlds")
+        received_data["sfcwind"], errors["sfcwind"] = self._coupler.get(self.name, "sfcwind")
+        received_data["clt"], errors["clt"] = self._coupler.get(self.name, "clt")
+        received_data["tas"], errors["tas"] = self._coupler.get(self.name, "tas")
+        received_data["huss"], errors["huss"] = self._coupler.get(self.name, "huss")
+        received_data["sfcpres"], errors["sfcpres"] = self._coupler.get(self.name, "sfcpres")
+
+        return received_data, errors
+
     def get_field_definitions(self, time: Dict[str, float]) -> Set[Field]:
         """
         Get field definitions for EBFM coupling.
@@ -172,6 +204,8 @@ class IconAtmo(Component):
         """
         if self._uses_coupler("YACCoupler"):
             return self._yac_exchange(data_to_exchange)
+        elif self._uses_coupler("FakeCoupler"):
+            return self._fake_exchange(data_to_exchange)
         else:
             raise NotImplementedError(
                 f"The component {self.name} was configured with the unsupported coupler {type(self._coupler)}."

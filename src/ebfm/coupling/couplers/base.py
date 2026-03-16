@@ -15,13 +15,7 @@ import logging
 
 from abc import ABC, abstractmethod
 
-from ebfm.coupling.components import Component
-
-# TODO: should not be necessary if ElmerIce etc. use a generic Field instead of (YAC)Field
-from .helpers import coupling_supported
-
-if coupling_supported:
-    from ebfm.coupling.components import ElmerIce, IconAtmo
+from ebfm.coupling.components import Component, ElmerIce, IconAtmo
 
 logger = logging.getLogger(__name__)
 
@@ -53,14 +47,13 @@ class Coupler(ABC):
         """
         self._coupled_components: Dict[str, Component] = {}
 
-        if coupling_supported:
-            if coupling_config.couple_to_elmer_ice:
-                elmer_comp = ElmerIce(self)
-                self._coupled_components[elmer_comp.name] = elmer_comp
+        if coupling_config.couple_to_elmer_ice:
+            elmer_comp = ElmerIce(self)
+            self._coupled_components[elmer_comp.name] = elmer_comp
 
-            if coupling_config.couple_to_icon_atmo:
-                icon_comp = IconAtmo(self)
-                self._coupled_components[icon_comp.name] = icon_comp
+        if coupling_config.couple_to_icon_atmo:
+            icon_comp = IconAtmo(self)
+            self._coupled_components[icon_comp.name] = icon_comp
 
     def has_coupling_to(self, component_name: str) -> bool:
         """
