@@ -92,9 +92,13 @@ class YACCoupler(Coupler):
 
         comp_fields = self.fields.filter(lambda f: f.coupled_component == component and f.name == field_name).all()
 
-        assert (
-            len(comp_fields) == 1
-        ), f"Expected exactly one field for '{field_name}' from component '{component_name}', "
+        if len(comp_fields) == 0:
+            raise KeyError(f"No field named '{field_name}' found for component '{component_name}'.")
+        elif len(comp_fields) > 1:
+            raise KeyError(
+                f"Found {len(comp_fields)} fields named '{field_name}' found for component '{component_name}'. "
+                f"Expected exactly one field per component and field name."
+            )
 
         field = comp_fields.pop()
         assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
