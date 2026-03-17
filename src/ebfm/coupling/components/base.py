@@ -3,12 +3,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from abc import ABC, abstractmethod
-from typing import Set, Dict, TYPE_CHECKING
+from typing import Dict, TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
-    from ebfm.coupling.fields.yacField import Field
+    from ebfm.coupling.fields.base import FieldSet
 
 
 class Component(ABC):
@@ -50,7 +50,7 @@ class Component(ABC):
         pass
 
     @abstractmethod
-    def get_field_definitions(self, time: Dict[str, float]) -> Set["Field"]:
+    def get_field_definitions(self, time: Dict[str, float]) -> "FieldSet":
         """
         Get field definitions for this component.
         Subclasses must implement this method.

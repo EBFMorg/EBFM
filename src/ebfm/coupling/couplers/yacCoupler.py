@@ -60,12 +60,12 @@ class YACCoupler(Coupler):
 
         self._add_grid(grid_name, grid)
 
-        field_definitions = set()
+        field_definitions = FieldSet()
 
         for component in self._coupled_components.values():
             field_definitions |= component.get_field_definitions(time)
 
-        self._add_couples(FieldSet(field_definitions))
+        self._add_couples(field_definitions)
 
         self.interface.enddef()
 
@@ -92,9 +92,13 @@ class YACCoupler(Coupler):
 
         comp_fields = self.fields.filter(lambda f: f.coupled_component == component and f.name == field_name).all()
 
-        assert (
-            len(comp_fields) == 1
-        ), f"Expected exactly one field for '{field_name}' from component '{component_name}', "
+        if len(comp_fields) == 0:
+            raise KeyError(f"No field named '{field_name}' found for component '{component_name}'.")
+        elif len(comp_fields) > 1:
+            raise KeyError(
+                f"Found {len(comp_fields)} fields named '{field_name}' found for component '{component_name}'. "
+                f"Expected exactly one field per component and field name."
+            )
 
         field = comp_fields.pop()
         assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
@@ -175,6 +179,25 @@ class YACCoupler(Coupler):
         data, _ = field.yac_field.get()
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         return data[0], error
+
+    def has_field(self, component_name: str, field_name: str, exchange_type) -> bool:
+        """
+        Check whether a field with given name and exchange type exists for a coupled component.
+
+        @param[in] component_name name of the component
+        @param[in] field_name name of the field
+        @param[in] exchange_type expected exchange type
+
+        @returns True if such a field exists, otherwise False
+        """
+        if not self.has_coupling_to(component_name):
+            return False
+
+        component = self._coupled_components[component_name]
+        fields = self.fields.filter(
+            lambda f: f.coupled_component == component and f.name == field_name and f.exchange_type == exchange_type
+        )
+        return not fields.is_empty()
 
     def _handle_field_validation_error(self, error_msg: str):
         """

@@ -129,6 +129,19 @@ class Coupler(ABC):
         raise NotImplementedError("get method must be implemented in subclasses.")
 
     @abstractmethod
+    def has_field(self, component_name: str, field_name: str, exchange_type) -> bool:
+        """
+        Check whether a field with the given name and exchange type exists for a component.
+
+        @param[in] component_name name of the component
+        @param[in] field_name name of the field
+        @param[in] exchange_type expected exchange type of the field
+
+        @returns True if such a field exists, otherwise False
+        """
+        raise NotImplementedError("has_field method must be implemented in subclasses.")
+
+    @abstractmethod
     def finalize(self):
         """
         Finalize the coupling interface
