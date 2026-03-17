@@ -103,10 +103,10 @@ class ElmerIce(Component):
         h, err = self._coupler.get(self.name, "h")
         assert h is not None, f"Received data for field 'h' is None. {err}"
         received_data["h"] = h
-        # received_data["dhdx"], err = self._coupler.get(self.name, "dhdx")
+        # dhdx, err = self._coupler.get(self.name, "dhdx")
         # assert dhdx is not None, f"Received data for field 'dhdx' is None. {err}"
         # received_data["dhdx"] = dhdx
-        # received_data["dhdy"], err = self._coupler.get(self.name, "dhdy")
+        # dhdy, err = self._coupler.get(self.name, "dhdy")
         # assert dhdy is not None, f"Received data for field 'dhdy' is None. {err}"
         # received_data["dhdy"] = dhdy
 
