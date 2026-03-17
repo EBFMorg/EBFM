@@ -379,6 +379,7 @@ def init_grid(grid, io, config: GridConfig):
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
         # -----------------------------------------------------------------------------------------------------
+        grid["shading_method"] = "lut_shading"  # shading based on look-up table (lut)
         grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
 
         # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
