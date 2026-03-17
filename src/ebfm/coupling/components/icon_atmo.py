@@ -178,6 +178,35 @@ class IconAtmo(Component):
 
         return received_data
 
+    def _fake_exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        """
+        Exchange of EBFM with IconAtmo using FakeCoupler.
+
+        @param[in] data_to_exchange dictionary of field names and their data to be sent
+
+        @returns tuple of (received field data, error codes). An error code of None indicates
+                 successful exchange for that field.
+        """
+
+        received_data: Dict[str, np.ndarray] = {}
+
+        # Put data to IconAtmo (optional in current setup)
+        if "albedo" in data_to_exchange:
+            self._coupler.put(self.name, "albedo", data_to_exchange["albedo"])
+
+        # Get data from IconAtmo
+        received_data["pr"], _ = self._coupler.get(self.name, "pr")
+        received_data["pr_snow"], _ = self._coupler.get(self.name, "pr_snow")
+        received_data["rsds"], _ = self._coupler.get(self.name, "rsds")
+        received_data["rlds"], _ = self._coupler.get(self.name, "rlds")
+        received_data["sfcwind"], _ = self._coupler.get(self.name, "sfcwind")
+        received_data["clt"], _ = self._coupler.get(self.name, "clt")
+        received_data["tas"], _ = self._coupler.get(self.name, "tas")
+        received_data["huss"], _ = self._coupler.get(self.name, "huss")
+        received_data["sfcpres"], _ = self._coupler.get(self.name, "sfcpres")
+
+        return received_data
+
     def get_field_definitions(self, time: Dict[str, float]) -> FieldSet:
         """
         Get field definitions for EBFM coupling.
@@ -203,6 +232,8 @@ class IconAtmo(Component):
         """
         if self._uses_coupler("YACCoupler"):
             return self._yac_exchange(data_to_exchange)
+        elif self._uses_coupler("FakeCoupler"):
+            return self._fake_exchange(data_to_exchange)
         else:
             raise NotImplementedError(
                 f"The component {self.name} was configured with the unsupported coupler {type(self._coupler)}."

@@ -124,6 +124,27 @@ class ElmerIce(Component):
 
         return received_data
 
+    def _fake_exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+        """
+        Exchange of EBFM with Elmer/Ice using FakeCoupler.
+
+        @param[in] data_to_exchange dictionary of field names and their data to be sent
+
+        @returns dictionary of received field data
+        """
+
+        received_data: Dict[str, np.array] = {}
+
+        # Put data to Elmer/Ice
+        self._coupler.put(self.name, "T_ice", data_to_exchange["T_ice"])
+        self._coupler.put(self.name, "smb", data_to_exchange["smb"])
+        self._coupler.put(self.name, "runoff", data_to_exchange["runoff"])
+
+        # Get data from Elmer/Ice
+        received_data["h"], _ = self._coupler.get(self.name, "h")
+
+        return received_data
+
     def get_field_definitions(self, time: Dict[str, float]) -> FieldSet:
         """
         Get field definitions for EBFM coupling.
@@ -149,6 +170,8 @@ class ElmerIce(Component):
         """
         if self._uses_coupler("YACCoupler"):
             return self._yac_exchange(data_to_exchange)
+        elif self._uses_coupler("FakeCoupler"):
+            return self._fake_exchange(data_to_exchange)
         else:
             raise NotImplementedError(
                 f"The component {self.name} was configured with the unsupported coupler {type(self._coupler)}."
