@@ -42,4 +42,7 @@ jobs:
           source .venv/bin/activate
           ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot
           ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --restart-init --start-time "02-Jan-1979 00:00" --end-time "03-Jan-1979 00:00"
-
+      - name: Run example with (pseudo) coupling
+        run: |
+          source .venv/bin/activate
+          ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon --couple-to-elmer --fake-coupling --no-shading
