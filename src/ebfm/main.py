@@ -359,6 +359,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             else:  # use fallback value
                 IN["Pres"] = _T0 + 101500.0
 
+        logger.info("EBFM main calculations")
+
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
         # Run surface energy balance model
