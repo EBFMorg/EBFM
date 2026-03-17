@@ -5,6 +5,7 @@
 from .base import Field
 from dataclasses import dataclass, replace
 import yac  # should not be needed here. Maybe consider actually having a YACField inherit from Field?
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -43,9 +44,9 @@ class YACField(Field):
     """
 
     timestep: Timestep  # timestep of the field
-    metadata: str = None  # optional to allow model providing metadata
-    exchange_type: yac.ExchangeType = None  # optional for consistency checks by model configuration
-    yac_field: yac.Field = None  # optional if YAC field has been created
+    metadata: Optional[str] = None  # optional to allow model providing metadata
+    exchange_type: Optional[yac.ExchangeType] = None  # optional for consistency checks by model configuration
+    yac_field: Optional[yac.Field] = None  # optional if YAC field has been created
 
     def construct_yac_field(
         self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, corner_points: yac.Points

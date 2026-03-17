@@ -39,7 +39,7 @@ class DummyCoupler(Coupler):
         logger.debug("Setup coupling...")
         logger.debug("Do nothing for DummyCoupler.")
 
-    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
@@ -53,7 +53,7 @@ class DummyCoupler(Coupler):
         logger.debug("Do nothing for DummyCoupler.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
@@ -65,6 +65,14 @@ class DummyCoupler(Coupler):
         logger.debug(f"Get field {field_name} from {component_name}...")
         logger.debug("Do nothing for DummyCoupler.")
         return None, None
+
+    def has_field(self, component_name: str, field_name: str, exchange_type) -> bool:
+        """
+        Check whether a field exists for a component.
+
+        DummyCoupler does not define any fields.
+        """
+        return False
 
     def finalize(self):
         """Finalize the coupling interface (does nothing for DummyCoupler)"""

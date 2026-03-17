@@ -4,7 +4,7 @@
 
 from ebfm.coupling.components.base import Component
 from dataclasses import dataclass
-from typing import Set, Callable
+from typing import Set, Callable, Optional
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ class FieldSet:
         source_fields = fields.filter(lambda f: f.exchange_type == yac.ExchangeType.SOURCE)
     """
 
-    def __init__(self, fields: Set[Field] = None):
+    def __init__(self, fields: Optional[Set[Field]] = None):
         """
         Initialize FieldSet.
         """
@@ -39,6 +39,15 @@ class FieldSet:
 
     def __iter__(self):
         return iter(self._fields)
+
+    def __or__(self, other: "FieldSet") -> "FieldSet":
+        assert isinstance(other, FieldSet), f"Can only merge FieldSet with FieldSet, got {type(other)}"
+        return FieldSet(self._fields | other._fields)
+
+    def __ior__(self, other: "FieldSet") -> "FieldSet":
+        assert isinstance(other, FieldSet), f"Can only merge FieldSet with FieldSet, got {type(other)}"
+        self._fields |= other._fields
+        return self
 
     def is_empty(self) -> bool:
         return len(self._fields) == 0

@@ -11,7 +11,7 @@ from .base import Coupler, Grid, Dict, CouplingConfig, CouplerErrorCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
 from ebfm.coupling.fields import FieldSet
-from ebfm.coupling.fields import YACField as Field
+from ebfm.coupling.fields import YACField
 
 from typing import Tuple, Optional
 
@@ -60,27 +60,28 @@ class YACCoupler(Coupler):
 
         self._add_grid(grid_name, grid)
 
-        field_definitions = set()
+        field_definitions = FieldSet()
 
         for component in self._coupled_components.values():
             field_definitions |= component.get_field_definitions(time)
 
-        self._add_couples(FieldSet(field_definitions))
+        self._add_couples(field_definitions)
 
         self.interface.enddef()
 
         for field in self.fields.all():
+            assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
             logger.debug(f"Performing consistency checks for field '{field.name}'...")
             field.perform_consistency_checks(self.interface, self.field_validation_level)
 
-    def _get_field(self, component_name: str, field_name: str) -> Field:
+    def _get_field(self, component_name: str, field_name: str) -> YACField:
         """
-        Get Field object for given component and field name
+        Get YACField object for given component and field name
 
         @param[in] component_name name of the component
         @param[in] field_name name of the field
 
-        @returns Field object
+        @returns YACField object
         """
 
         assert self.has_coupling_to(
@@ -91,13 +92,19 @@ class YACCoupler(Coupler):
 
         comp_fields = self.fields.filter(lambda f: f.coupled_component == component and f.name == field_name).all()
 
-        assert (
-            len(comp_fields) == 1
-        ), f"Expected exactly one field for '{field_name}' from component '{component_name}', "
+        if len(comp_fields) == 0:
+            raise KeyError(f"No field named '{field_name}' found for component '{component_name}'.")
+        elif len(comp_fields) > 1:
+            raise KeyError(
+                f"Found {len(comp_fields)} fields named '{field_name}' found for component '{component_name}'. "
+                f"Expected exactly one field per component and field name."
+            )
 
-        return comp_fields.pop()
+        field = comp_fields.pop()
+        assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
+        return field
 
-    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
@@ -120,11 +127,12 @@ class YACCoupler(Coupler):
             return CouplerErrorCode.WRONG_EXCHANGE_TYPE  # If we didn't raise, skip the put operation
 
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name}...")
+        assert field.yac_field is not None, f"YAC field for '{field.name}' has not been created yet."
         field.yac_field.put(data)
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name} complete.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
@@ -153,6 +161,7 @@ class YACCoupler(Coupler):
         # Also check the actual YAC role: a field absent from the coupling YAML has role NONE
         # and yac_field.get() would silently return zeros -- signal this via error code so the
         # caller can decide whether to use the YAC fallback or supply their own.
+        assert field.yac_field is not None, f"YAC field for '{field.name}' has not been created yet."
         role = self.interface.get_field_role(
             field.yac_field.component_name,
             field.yac_field.grid_name,
@@ -170,6 +179,25 @@ class YACCoupler(Coupler):
         data, _ = field.yac_field.get()
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         return data[0], error
+
+    def has_field(self, component_name: str, field_name: str, exchange_type) -> bool:
+        """
+        Check whether a field with given name and exchange type exists for a coupled component.
+
+        @param[in] component_name name of the component
+        @param[in] field_name name of the field
+        @param[in] exchange_type expected exchange type
+
+        @returns True if such a field exists, otherwise False
+        """
+        if not self.has_coupling_to(component_name):
+            return False
+
+        component = self._coupled_components[component_name]
+        fields = self.fields.filter(
+            lambda f: f.coupled_component == component and f.name == field_name and f.exchange_type == exchange_type
+        )
+        return not fields.is_empty()
 
     def _handle_field_validation_error(self, error_msg: str):
         """

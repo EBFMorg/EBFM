@@ -16,6 +16,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from ebfm.coupling.components import Component, ElmerIce, IconAtmo
+from ebfm.coupling.fields import FieldSet
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +90,14 @@ class Coupler(ABC):
         """
         raise NotImplementedError("add_grid method must be implemented in subclasses.")
 
-    def _add_couples(self, time: Dict[str, float]):
+    def _add_couples(self, time: FieldSet):
         """
         Add coupling definitions to the Coupler interface
         """
         raise NotImplementedError("add_couples method must be implemented in subclasses.")
 
     @abstractmethod
-    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
@@ -109,7 +110,7 @@ class Coupler(ABC):
         raise NotImplementedError("put method must be implemented in subclasses.")
 
     @abstractmethod
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
@@ -119,6 +120,19 @@ class Coupler(ABC):
         @returns tuple of (field data, error code). Error code is None if no error occurred.
         """
         raise NotImplementedError("get method must be implemented in subclasses.")
+
+    @abstractmethod
+    def has_field(self, component_name: str, field_name: str, exchange_type) -> bool:
+        """
+        Check whether a field with the given name and exchange type exists for a component.
+
+        @param[in] component_name name of the component
+        @param[in] field_name name of the field
+        @param[in] exchange_type expected exchange type of the field
+
+        @returns True if such a field exists, otherwise False
+        """
+        raise NotImplementedError("has_field method must be implemented in subclasses.")
 
     @abstractmethod
     def finalize(self):
