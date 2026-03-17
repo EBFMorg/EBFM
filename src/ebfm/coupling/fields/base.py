@@ -17,6 +17,10 @@ class ExchangeType(Enum):
     TARGET = "target"
 
 
+GenericExchangeType = ExchangeType
+"""Alias clarifying that `ExchangeType` is the backend-independent exchange role type."""
+
+
 @dataclass(frozen=True)
 class Timestep:
     """

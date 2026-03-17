@@ -10,7 +10,7 @@ from ebfm.core import logging
 from .base import Coupler, Grid, Dict, CouplingConfig, CouplerErrorCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
-from ebfm.coupling.fields import FieldSet, Field
+from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
 from ebfm.coupling.fields import YACField
 
 from typing import Tuple, Optional
@@ -20,7 +20,7 @@ from typing import Tuple, Optional
 logger = logging.getLogger(__name__)
 
 
-class YACCoupler(Coupler):
+class YACCoupler(Coupler[yac.ExchangeType]):
     def __init__(self, coupling_config: CouplingConfig):
         """
         Create interface to the coupler and register component
@@ -73,7 +73,7 @@ class YACCoupler(Coupler):
             logger.debug(f"Performing consistency checks for field '{field.name}'...")
             field.perform_consistency_checks(self.interface, self.field_validation_level)
 
-    def _map_exchange_type(self, exchange_type):
+    def _map_exchange_type(self, exchange_type: GenericExchangeType) -> yac.ExchangeType:
         """
         Map generic ExchangeType to YAC ExchangeType.
         """
