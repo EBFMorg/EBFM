@@ -5,8 +5,6 @@
 import numpy as np
 import datetime
 
-from numpy.ma.core import zeros_like
-
 from .grid import ShadingMethod
 
 
@@ -130,7 +128,7 @@ def main(grid, time2, OUT):
             # Shading routine
             z_flat = grid["z_2D"].ravel()
             z_current = z_flat[grid["ind"]]
-            shade = np.zeros(grid["gpsum"], dtype=int)
+            shade = np.zeros(grid["gpsum"], dtype=bool)
             max_count = 200
 
             # Precompute grid indices and deltas ahead of time
@@ -151,16 +149,16 @@ def main(grid, time2, OUT):
                 gridangle = np.arctan(elev_diff / distance_scaled[count - 1])
 
                 # Update shade array where elevation angle is exceeded
-                shade[elevationangle <= gridangle] = 1
+                shade[elevationangle <= gridangle] = True
 
                 # Break the loop if all cells are shaded
-                if np.all(shade == 1):
+                if np.all(shade):
                     break
 
-            # Build the final shade 2D array
-            shade_2D = np.ones((xl, yl), dtype=int)
-            shade_2D.flat[grid["ind"]] = shade
-            OUT["shade"] = shade_2D.flatten()[grid["ind"]]
+            # Build the final shaded mask on glacier cells
+            is_shaded_2D = np.zeros((xl, yl), dtype=bool)
+            is_shaded_2D.flat[grid["ind"]] = shade
+            OUT["is_shaded"] = is_shaded_2D.flatten()[grid["ind"]]
 
         elif (
             grid["shading_method"] == ShadingMethod.LUT
@@ -176,19 +174,19 @@ def main(grid, time2, OUT):
 
             # Shading happens when the solar elevation angle <= maximum grid angle
             temp = grid["maxgridangle"]
-            OUT["shade"] = elevationangle <= temp.flat[ind_az]
+            OUT["is_shaded"] = elevationangle <= temp.flat[ind_az]
 
             # For now: assume flat surface and no shading by surrounding terrain (no longer needed!)
-            # OUT["shade"] = np.zeros_like(grid["x"])
-            # OUT["shade"][elevationangle < 0] = 1
+            # OUT["is_shaded"] = np.zeros_like(grid["x"])
+            # OUT["is_shaded"][elevationangle < 0] = 1
 
-        OUT["shade_2D"] = zeros_like(grid["x_2D"])
-        OUT["shade_2D"].flat[grid["ind"]] = OUT["shade"]
+        OUT["is_shaded_2D"] = np.zeros(grid["x_2D"].shape, dtype=bool)
+        OUT["is_shaded_2D"].flat[grid["ind"]] = OUT["is_shaded"]
 
     else:  # fall-back values for no shading
         # TODO: Shading based on lookup tables from Elmer/Ice
         # For now: assume flat surface and no shading by surrounding terrain
-        OUT["shade"] = np.zeros_like(grid["x"])
-        OUT["shade"][elevationangle < 0] = 1
+        OUT["is_shaded"] = np.zeros(grid["x"].shape, dtype=bool)
+        OUT["is_shaded"][elevationangle < 0] = True
 
     return OUT
