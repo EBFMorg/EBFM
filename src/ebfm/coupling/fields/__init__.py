@@ -4,7 +4,7 @@
 
 from ebfm.coupling.couplers.helpers import coupling_supported
 
-from .base import Field, FieldSet  # noqa: F401
+from .base import Field, FieldSet, ExchangeType, Timestep, days_to_iso  # noqa: F401
 
 if coupling_supported:
     from .yacField import YACField  # noqa: F401
