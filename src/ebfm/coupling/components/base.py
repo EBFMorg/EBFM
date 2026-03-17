@@ -39,7 +39,7 @@ class Component(ABC):
         return self._coupler.__class__.__name__ == coupler_class_type
 
     @abstractmethod
-    def exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+    def exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """
         Exchange of EBFM with this component
 
