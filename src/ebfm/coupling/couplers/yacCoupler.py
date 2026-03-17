@@ -35,7 +35,6 @@ class YACCoupler(Coupler):
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
 
         self.component: yac.Component = self.interface.def_comp(coupling_config.component_name)
-        self.fields: FieldSet = FieldSet()
         self.field_validation_level = coupling_config.field_validation_level
 
         # will be initialized in self._add_grid()
@@ -179,25 +178,6 @@ class YACCoupler(Coupler):
         data, _ = field.yac_field.get()
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         return data[0], error
-
-    def has_field(self, component_name: str, field_name: str, exchange_type) -> bool:
-        """
-        Check whether a field with given name and exchange type exists for a coupled component.
-
-        @param[in] component_name name of the component
-        @param[in] field_name name of the field
-        @param[in] exchange_type expected exchange type
-
-        @returns True if such a field exists, otherwise False
-        """
-        if not self.has_coupling_to(component_name):
-            return False
-
-        component = self._coupled_components[component_name]
-        fields = self.fields.filter(
-            lambda f: f.coupled_component == component and f.name == field_name and f.exchange_type == exchange_type
-        )
-        return not fields.is_empty()
 
     def _handle_field_validation_error(self, error_msg: str):
         """
