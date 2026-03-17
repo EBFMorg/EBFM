@@ -17,7 +17,7 @@ from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
 from .config import TimeConfig, GridConfig
-from .grid import GridInputType
+from .grid import GridInputType, ShadingMethod
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
@@ -379,7 +379,7 @@ def init_grid(grid, io, config: GridConfig):
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
         # -----------------------------------------------------------------------------------------------------
-        grid["shading_method"] = "lut_shading"  # shading based on look-up table (lut)
+        grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
         grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
 
         # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps

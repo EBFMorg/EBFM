@@ -7,6 +7,8 @@ import datetime
 
 from numpy.ma.core import zeros_like
 
+from .grid import ShadingMethod
+
 
 def main(grid, time2, OUT):
     """
@@ -87,7 +89,7 @@ def main(grid, time2, OUT):
             ),
         )
 
-        if grid["shading_method"] == "classical_shading":
+        if grid["shading_method"] == ShadingMethod.CLASSICAL:
             yl = grid["Ly"]
             xl = grid["Lx"]
 
@@ -161,7 +163,7 @@ def main(grid, time2, OUT):
             OUT["shade"] = shade_2D.flatten()[grid["ind"]]
 
         elif (
-            grid["shading_method"] == "lut_shading"
+            grid["shading_method"] == ShadingMethod.LUT
         ):  # shading based on comparison of solar elevation angle with grid angle from look-up table (LUT)
             # TODO: Shading based on lookup tables from Elmer/Ice (DONE?)
 

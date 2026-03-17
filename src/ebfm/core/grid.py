@@ -17,3 +17,16 @@ class GridInputType(Enum):
 
     # Elmer/Ice mesh file with elevation in z-coordinate
     ELMER = "elmer"
+
+
+class ShadingMethod(Enum):
+    """Available shading algorithms for topographic shading.
+
+    - `CLASSICAL`: computes shading online each time step by ray-marching from
+        each glacier cell in the current solar azimuth direction.
+    - `LUT`: uses a precomputed look-up table of maximum horizon angles per cell
+        and azimuth sector, which is faster at runtime.
+    """
+
+    CLASSICAL = "classical_shading"
+    LUT = "lut_shading"
