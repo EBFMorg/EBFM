@@ -8,6 +8,7 @@ dynamic = [ "version" ]
 authors = [ {name="EBFM Authors"} ]
 license = "BSD-3-Clause"
 readme = "README.md"
+requires-python = ">=3.10"
 dependencies = [
     "mpi4py >= 4.1",
     "mypy >= 1.0",
@@ -22,6 +23,10 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pre-commit >= 4.0",
+    "pytest >= 7.0",
+    "pytest-cov",
+    "tox >= 4.0",
+    "tox-gh-actions",
 ]
 
 cpl = [
@@ -29,13 +34,14 @@ cpl = [
 ]
 
 [project.scripts]
-ebfm = "main:main"
+ebfm = "ebfm.main:main"
 
 [build-system]
 requires = ["setuptools", "setuptools_scm"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
+git_describe_command = "git describe --tags --dirty --match v*"
 version_scheme = "post-release"
 local_scheme = "node-and-date"
 

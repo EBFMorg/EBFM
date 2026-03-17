@@ -3,10 +3,11 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from pathlib import Path
+from datetime import datetime
 import argparse
 
-import ebfm
-from ebfm import (
+import ebfm.core
+from ebfm.core import (
     INIT,
     LOOP_general_functions,
     LOOP_climate_forcing,
@@ -14,25 +15,19 @@ from ebfm import (
     LOOP_SNOW,
     LOOP_mass_balance,
 )
-from ebfm import LOOP_write_to_file, FINAL_create_restart_file
-from ebfm.grid import GridInputType
-from ebfm.config import CouplingConfig, GridConfig, TimeConfig
-from ebfm.logger import Logger, setup_logging, log_levels_map, getLogger
+from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
+from ebfm.core.grid import GridInputType
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel
+from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
+
+import ebfm.coupling
 
 from mpi4py import MPI
 
 from typing import List
 
-try:
-    from couplers.yacCoupler import YACCoupler  # noqa: E402
-
-    coupling_supported = True
-except ImportError as e:
-    coupling_supported = False
-    coupling_import_error = e
-
 # logger for this module
-logger: Logger = None  # will be set later
+logger: Logger
 
 
 def add_coupling_arguments(parser: argparse.ArgumentParser):
@@ -62,6 +57,16 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
         "--coupler-config",
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
+    )
+    coupling_group.add_argument(
+        "--field-validation-level",
+        type=str,
+        choices={level.value for level in FieldValidationLevel},
+        default=FieldValidationLevel.FATAL.value,
+        help="Level of validation for field exchange type checks. "
+        "'FATAL': raise exception on mismatch (default), "
+        "'WARNING': log warning on mismatch, "
+        "'SILENT': only log at debug level on mismatch.",
     )
 
 
@@ -119,10 +124,47 @@ def main():
     )
 
     input_group.add_argument(
+        "--shading",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="Enable/disable shading. Defaults to True for MATLAB meshes, False for all other mesh types.",
+    )
+
+    input_group.add_argument(
         "--netcdf-mesh-unstructured",
         type=Path,
         help="Path to the unstructured NetCDF mesh file. Optional if using --elmer-mesh."
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+    )
+
+    default_start_datetime = datetime(1979, 1, 1, 0, 0)
+    default_end_datetime = datetime(1979, 1, 2, 0, 0)
+
+    example_restart_file_name = INIT.create_restart_file_name(default_start_datetime)
+
+    input_group.add_argument(
+        "--restart-dir",
+        type=Path,
+        help="Path to folder with restart files. If --restart-init there must be a restart file in "
+        f" the folder must be named after given --start-time (e.g., '{example_restart_file_name}').",
+    )
+
+    input_group.add_argument(
+        "--restart-init",
+        action="store_true",
+        help="Initialise from restart file in --restart-dir.",
+    )
+
+    input_group.add_argument(
+        "--elmer-mesh-crs-epsg",
+        type=int,
+        choices={
+            3413,  # EPSG code for NSIDC Sea Ice Polar Stereographic North (commonly used for Greenland)
+            3031,  # EPSG code for NSIDC Sea Ice Polar Stereographic South (commonly used for Antarctica)
+        },
+        help="EPSG code of the input Elmer mesh coordinate reference system."
+        " Used to convert mesh x/y coordinates to lon/lat."
+        " Required when using --elmer-mesh.",
     )
 
     time_group = parser.add_argument_group("time configuration")
@@ -130,17 +172,17 @@ def main():
     time_group.add_argument(
         "--start-time",
         type=str,
-        help="Start time of the simulation in format 'DD-Mon-YYYY HH:MM' "
+        help=f"Start time of the simulation in format '{TimeConfig.input_time_format_display}' "
         "(i.e., time at the beginning of the first time step)",
-        default="1-Jan-1979 00:00",
+        default=default_start_datetime.strftime(TimeConfig.input_time_format),
     )
 
     time_group.add_argument(
         "--end-time",
         type=str,
-        help="End time of the simulation in format 'DD-Mon-YYYY HH:MM' "
+        help=f"End time of the simulation in format '{TimeConfig.input_time_format_display}' "
         "(i.e., time at the end of the last time step)",
-        default="2-Jan-1979 00:00",
+        default=default_end_datetime.strftime(TimeConfig.input_time_format),
     )
 
     time_group.add_argument(
@@ -189,23 +231,25 @@ def main():
     args = parser.parse_args()
 
     if args.version:
-        ebfm.print_version_and_exit()
+        ebfm.core.print_version_and_exit()
+
+    # Validate that --elmer-mesh-crs-epsg is provided when using --elmer-mesh
+    if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
+        parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
 
     has_active_coupling_features = extract_active_coupling_features(args)
-    if has_active_coupling_features and not coupling_supported:
+    if has_active_coupling_features and not ebfm.coupling.coupling_supported:
         raise RuntimeError(
             f"""
 Coupling requested via command line argument(s) {has_active_coupling_features}, but the 'coupling' module could not be
 imported due to the following error:
 
-{coupling_import_error}
+{ebfm.coupling.coupling_supported_import_error}
 
 Hint: If you are missing 'yac', please install YAC and the python bindings as described under
 https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 """
         )
-    else:
-        from couplers.dummyCoupler import DummyCoupler
 
     # TODO: replace MPI.COMM_WORLD with communicator from ebfm; either from couplers comm splitting or default comm
     setup_logging(
@@ -215,7 +259,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     )
 
     logger = getLogger(__name__)
-    logger.info(f"Starting EBFM version {ebfm.get_version()}...")
+    logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
 
     logger.info("Done parsing command line arguments.")
     logger.debug("Parsed the following command line arguments:")
@@ -227,37 +271,40 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
     coupling_config = CouplingConfig(args, component_name="ebfm")  # TODO: get from EBFM's coupling configuration?
     grid_config = GridConfig(args)
+
+    # Ensure shading routine is only used in uncoupled runs
+    # see https://github.com/EBFMorg/EBFM/issues/11 for details.
+    if grid_config.use_shading and coupling_config.defines_coupling():
+        parser.error(
+            "Shading routine not implemented for coupled runs. "
+            "Please deactivate shading via --no-shading or deactivate coupling."
+        )
+
     time_config = TimeConfig(args)
 
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
-    grid, io, phys = INIT.init_config()
     time = time_config.to_dict()
+    grid, io, phys = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
 
-    # Ensure shading routine is only used in uncoupled runs on unpartitioned MATLAB grids;
-    # see https://github.com/EBFMorg/EBFM/issues/11 for details.
-    if grid["classical_shading"]:
-        assert grid_config.is_partitioned is False, "Shading routine only implemented for unpartitioned grids."
-        assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
-        assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
+    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, init_with_restart_file=args.restart_init)
 
-    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time)
+    # TODO: some grids currently do not have grid["mesh"]
+    try:
+        grid["mesh"]
+    except KeyError:
+        grid["mesh"] = None  # add dummy to make coupler.setup pass.
 
     if coupling_config.defines_coupling():
-        coupler = YACCoupler(coupling_config=coupling_config)
-        coupler.setup(grid["mesh"], time)
+        coupler = ebfm.coupling.YACCoupler(coupling_config=coupling_config)
     else:
-        coupler = DummyCoupler(coupling_config=coupling_config)
-        # TODO: some grids that are not used in coupling currently do not have grid["mesh"]
-        try:
-            grid["mesh"]
-        except KeyError:
-            grid["mesh"] = None  # add dummy to make coupler.setup pass.
-        coupler.setup(grid, time)  # TODO: factor out as soon as all grids have grid["mesh"]
+        coupler = ebfm.coupling.DummyCoupler(coupling_config=coupling_config)
+
+    coupler.setup(grid["mesh"], time)
 
     # Time-loop
     logger.info("Entering time loop...")
@@ -268,15 +315,16 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
         # Read and prepare climate input
-        if coupler and coupler.couple_to_icon_atmo:
+        if coupler.has_coupling_to("icon_atmo"):
             # Exchange data with ICON
+            icon_atmo = coupler.get_component("icon_atmo")
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
             data_to_icon = {
                 "albedo": OUT["albedo"],
             }
 
-            data_from_icon = coupler.exchange_icon_atmo(data_to_icon)
+            data_from_icon = icon_atmo.exchange(data_to_icon)
 
             logger.debug("Done.")
             logger.debug("Received the following data from ICON:", data_from_icon)
@@ -291,8 +339,18 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"][:] = 0  # TODO: Read q from ICON instead and convert to RH
-            IN["Pres"][:] = 101500  # TODO: Read Pres from ICON instead
+            # Fallback to constants if fields are not coupled (error code set); must be arrays for mask indexing.
+            _T0 = IN["T"] * 0.0
+
+            if "huss" in data_from_icon:
+                IN["q"] = data_from_icon["huss"]
+            else:  # use fallback value
+                IN["q"] = _T0
+
+            if "sfcpres" in data_from_icon:
+                IN["Pres"] = data_from_icon["sfcpres"]
+            else:  # use fallback value
+                IN["Pres"] = _T0 + 101500.0
 
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
@@ -305,7 +363,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         # Calculate surface mass balance
         OUT = LOOP_mass_balance.main(OUT, IN, C)
 
-        if coupler.couple_to_elmer_ice:
+        if coupler.has_coupling_to("elmer_ice"):
+            elmer_ice = coupler.get_component("elmer_ice")
             # Exchange data with Elmer
             logger.info("Data exchange with Elmer/Ice")
             logger.debug("Started...")
@@ -315,36 +374,48 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "T_ice": OUT["T_ice"],
                 "runoff": OUT["runoff"],
             }
-            data_from_elmer = coupler.exchange_elmer_ice(data_to_elmer)
+            data_from_elmer = elmer_ice.exchange(data_to_elmer)
             logger.debug("Done.")
             logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
 
             IN["h"] = data_from_elmer["h"]
-            grid["z"] = IN["h"][0].ravel()
+            OUT["h"] = IN["h"]
+            OUT["x"] = grid["x"]
+            OUT["y"] = grid["y"]
+            if coupler.has_coupling_to("icon_atmo"):
+                grid["z"] = IN["h"][0].ravel()
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
+        else:
+            # Needed by FINAL_create_restart_file.main(OUT, io)
+            OUT["x"] = grid["x"]
+            OUT["y"] = grid["y"]
+            OUT["h"] = grid["z"]
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
-        if not grid["is_partitioned"] and not coupler.has_coupling:
+        # TODO: should be supported for all cases to avoid case distinction here
+        if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
             if grid_config.grid_type is GridInputType.MATLAB:
                 io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time)
             else:
                 logger.warning("Skipping writing output to file for Elmer input grids.")
-        elif grid["is_partitioned"] or coupler.has_coupling:
+        elif grid["is_partitioned"] or not isinstance(coupler, ebfm.coupling.DummyCoupler):
             logger.warning("Skipping writing output to file for coupled or partitioned runs.")
         else:
             logger.error("Unhandled case in output writing.")
             raise Exception("Unhandled case in output writing.")
 
     # Write restart file
-    if not grid["is_partitioned"] and not coupler.has_coupling:
-        FINAL_create_restart_file.main(OUT, io)
+    # TODO: should be supported for all cases to avoid case distinction here
+    if not grid["is_partitioned"]:
+        FINAL_create_restart_file.main(OUT, io, args.restart_dir)
+    else:
+        logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
 
     logger.info("Time loop completed.")
 
-    if coupler.has_coupling:
-        coupler.finalize()
+    coupler.finalize()
 
     logger.info("Closing down EBFM.")
 

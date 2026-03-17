@@ -3,22 +3,29 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from pathlib import Path
+import shutil
 
 import argparse
 
 import numpy as np
 from numpy.typing import NDArray
 
-from elmer.mesh import TriangleMesh
-import elmer.parser
+from ebfm.elmer.mesh import TriangleMesh
+import ebfm.elmer.parser
 
 
-def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id: int = -1) -> TriangleMesh:
+def read_elmer_mesh(
+    mesh_root: Path,
+    is_partitioned: bool = False,
+    partition_id: int = -1,
+    source_crs_epsg: int = 3413,
+) -> TriangleMesh:
     """Read Elmer mesh files.
     Args:
         mesh_root (Path): Path to the Elmer mesh folder.
         is_partitioned (bool): Set True if given mesh is partitioned.
         partition_id (int): Provide partition_id if is_partitioned=True. Identifies partition.
+        source_crs_epsg (int): EPSG code of the Elmer mesh x/y coordinates.
     Returns:
         Mesh: A Mesh object containing x, y, z coordinates, vertex IDs, cell-to-vertex mapping, and cell IDs.
     """
@@ -47,8 +54,8 @@ def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id:
     ), f"Mesh file {elements_file} does not exist. Please ensure that this file exists in {mesh_root}."
 
     # Parse header, nodes, and elements files
-    n_vertices, n_cells = elmer.parser.parse_header(header_file)
-    global_vertex_ids, x_vertices, y_vertices, z_vertices = elmer.parser.parse_nodes(nodes_file)
+    n_vertices, n_cells = ebfm.elmer.parser.parse_header(header_file)
+    global_vertex_ids, x_vertices, y_vertices, z_vertices = ebfm.elmer.parser.parse_nodes(nodes_file)
     local_vertex_ids = range(len(global_vertex_ids))  # use [0,1,...,n_vertices-1] to identify vertices locally
 
     assert (
@@ -64,7 +71,7 @@ def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id:
         len(z_vertices) == n_vertices
     ), f"Number of vertices in nodes file ({len(z_vertices)}) does not match the header ({n_vertices})."
 
-    global_cell_ids, global_cell_to_vertex = elmer.parser.parse_elements(elements_file)
+    global_cell_ids, global_cell_to_vertex = ebfm.elmer.parser.parse_elements(elements_file)
 
     vertex_l2g = {
         loc: glob for loc, glob in zip(local_vertex_ids, global_vertex_ids)
@@ -86,6 +93,7 @@ def read_elmer_mesh(mesh_root: Path, is_partitioned: bool = False, partition_id:
         cell_to_vertex=cell_to_vertex_local,
         vertex_ids=global_vertex_ids,
         cell_ids=global_cell_ids,
+        source_crs_epsg=source_crs_epsg,
     )
 
 
@@ -106,8 +114,9 @@ def read_dem_xios(dem_file: Path, grid: dict):
         np.squeeze(nc["x"][:]).shape == grid["x"].shape
     ), "Surface mesh and Elmer mesh do not have the same number of vertices"
     grid["z"] = np.squeeze(nc["zs"][:]).data
-    grid["lat"] = np.squeeze(nc["mesh2D_node_x"][:]).data
-    grid["lon"] = np.squeeze(nc["mesh2D_node_y"][:]).data
+    grid["h"] = np.squeeze(nc["h"][:]).data
+    grid["lat"] = nc["mesh2D_node_x"][:]
+    grid["lon"] = nc["mesh2D_node_y"][:]
     return grid
 
 
@@ -233,14 +242,43 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Read Elmer mesh and DEM files.")
     parser.add_argument("elmer_mesh", type=Path, help="Path to the Elmer mesh file.")
     parser.add_argument("dem", type=Path, help="Path to the digital elevation model (DEM) NetCDF file.")
+    parser.add_argument(
+        "--elmer-mesh-crs-epsg",
+        type=int,
+        required=True,
+        choices={3413, 3013},
+        help="EPSG code of the input Elmer mesh coordinate reference system."
+        " Used to convert mesh x/y coordinates to lon/lat.",
+    )
+    parser.add_argument("-o", "--outpath", type=Path, help="Output path to the new mesh with DEM.", default=None)
+    parser.add_argument(
+        "-i", "--in-place", help="Make changes to mesh in place (will overwrite existing mesh!)", action="store_true"
+    )
     args = parser.parse_args()
+
+    outpath: Path
+    if args.in_place:
+        assert args.outpath is None, "You cannot specify --outpath when using --in-place."
+        outpath = args.elmer_mesh
+    else:
+        assert args.outpath is not None, "You must specify --outpath when not using --in-place."
+        assert not args.outpath.exists(), (
+            f"Output path {args.outpath} already exists. Please pick a different folder name or use the --in-place "
+            f"option to overwrite the existing mesh at {args.elmer_mesh}."
+        )
+        outpath = args.outpath
 
     print("I'm running as main...")
     print(f"Reading the following files: {args.elmer_mesh} and {args.dem}")
 
-    mesh = read_elmer_mesh(args.elmer_mesh)
+    mesh = read_elmer_mesh(args.elmer_mesh, source_crs_epsg=args.elmer_mesh_crs_epsg)
     x = mesh.x_vertices
     y = mesh.y_vertices
     h = read_dem(args.dem, x, y)
 
-    write_dem_as_elmer(mesh, h, args.elmer_mesh / "MESH" / "mesh.nodes", allow_overwrite=True)
+    # Only copy when not operating in-place; skip nodes so we can write a fresh file
+    if not args.in_place:
+        assert args.elmer_mesh.is_dir(), f"{args.elmer_mesh} is no directory or does not exist."
+        shutil.copytree(args.elmer_mesh, outpath, ignore=shutil.ignore_patterns("mesh.nodes"))
+
+    write_dem_as_elmer(mesh, h, outpath / "mesh.nodes", allow_overwrite=args.in_place)

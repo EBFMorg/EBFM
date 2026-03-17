@@ -8,6 +8,8 @@
 build
 Output/*.nc
 Reboot/*.nc
+.coverage
+.tox
 *.png
 .idea/EBFM_with_YAC.iml
 .idea/inspectionProfiles/profiles_settings.xml

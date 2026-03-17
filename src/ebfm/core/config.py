@@ -8,15 +8,25 @@ This file exposes a some configuration dataclasses for EBFM components.
 
 from argparse import Namespace
 from pathlib import Path
+from enum import Enum
+from typing import Optional
 
-from ebfm.grid import GridInputType
+from .grid import GridInputType
 
 from datetime import datetime, timedelta
-from ebfm.constants import SECONDS_PER_DAY
+from .constants import SECONDS_PER_DAY
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class FieldValidationLevel(Enum):
+    """Level of validation for field exchange type checks."""
+
+    FATAL = "FATAL"  # Raise an exception on mismatch
+    WARNING = "WARNING"  # Log a warning on mismatch
+    SILENT = "SILENT"  # Only log at debug level on mismatch
 
 
 class CouplingConfig:
@@ -27,7 +37,8 @@ class CouplingConfig:
     component_name: str  # Name of this component
     couple_to_icon_atmo: bool  # Whether to couple this component to ICON atmosphere
     couple_to_elmer_ice: bool  # Whether to couple this component to Elmer/Ice
-    coupler_config: Path  # Path to the coupler configuration file
+    coupler_config: Optional[Path]  # Path to the coupler configuration file
+    field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
 
     def __init__(self, args: Namespace, component_name: str):
         """
@@ -40,6 +51,9 @@ class CouplingConfig:
         self.component_name = component_name
         self.couple_to_icon_atmo = args.couple_to_icon_atmo
         self.couple_to_elmer_ice = args.couple_to_elmer_ice
+
+        # Set field validation level from args (command-line argument with default 'FATAL')
+        self.field_validation_level = FieldValidationLevel(args.field_validation_level)
 
         if args.coupler_config:
             assert Path(args.coupler_config).is_file(), f"Coupler configuration file {args.coupler_config} not found."
@@ -66,10 +80,12 @@ class GridConfig:
 
     grid_type: GridInputType  # Name of the grid used in coupling
     mesh_file: Path  # Path to the grid file
-    dem_file: Path = None  # Path to the DEM file (only relevant for CUSTOM grid type)
+    dem_file: Optional[Path] = None  # Path to the DEM file (only relevant for CUSTOM grid type)
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool = False  # Whether the grid is unstructured
     partition_id: int  # Partition ID (only relevant if is_partitioned is True)
+    elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
+    use_shading: bool  # Whether to use shading for the grid
 
     def __init__(self, args: Namespace):
         """
@@ -88,6 +104,8 @@ class GridConfig:
         if args.is_partitioned_elmer_mesh and not args.elmer_mesh:
             logger.error("--is-partitioned-elmer-mesh requires --elmer-mesh.")
             raise Exception("Invalid grid configuration.")
+
+        self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
 
         self.is_partitioned = args.is_partitioned_elmer_mesh
         if self.is_partitioned:
@@ -123,11 +141,39 @@ class GridConfig:
             )
             raise Exception("Invalid grid configuration.")
 
+        # Shading is only supported for MATLAB meshes; see https://github.com/EBFMorg/EBFM/issues/11
+        grid_type_supports_shading_supported = self.grid_type is GridInputType.MATLAB
+
+        # Partitioned grids don't support shading
+        grid_partitioning_supports_shading = not self.is_partitioned
+
+        # shading is supported if both the grid type and the partitioning support it
+        _shading_supported = grid_type_supports_shading_supported and grid_partitioning_supports_shading
+
+        if args.shading is None:
+            self.use_shading = _shading_supported  # default: on for MATLAB, off for all others
+        else:
+            if args.shading and not _shading_supported:
+                if not grid_type_supports_shading_supported:
+                    raise ValueError(
+                        f"Shading is not supported for grid type {self.grid_type}. "
+                        "See https://github.com/EBFMorg/EBFM/issues/11"
+                    )
+                if not grid_partitioning_supports_shading:
+                    raise ValueError("Shading is not supported for partitioned grids.")
+
+            self.use_shading = args.shading
+
 
 class TimeConfig:
     """
     Time configuration.
     """
+
+    # Input time format for parsing command line arguments (e.g., "01-Jan-1979 00:00")
+    input_time_format = "%d-%b-%Y %H:%M"
+    # Used for showing time format in a human-readable way (e.g., in help messages)
+    input_time_format_display = "DD-Mon-YYYY HH:MM"
 
     start_time: datetime  # Start time of the simulation (i.e., time at the beginning of the first time step)
     end_time: datetime  # End time of the simulation (i.e., time at the end of the last time step)
@@ -140,11 +186,10 @@ class TimeConfig:
 
         @param[in] args command line arguments
         """
-        time_format = "%d-%b-%Y %H:%M"
 
-        self.start_time = datetime.strptime(args.start_time, time_format)
-        self.end_time = datetime.strptime(args.end_time, time_format)
-        assert self.start_time < self.end_time, "Start time must be before end time."
+        self.start_time = datetime.strptime(args.start_time, TimeConfig.input_time_format)
+        self.end_time = datetime.strptime(args.end_time, TimeConfig.input_time_format)
+        assert self.start_time < self.end_time, f"Start time {self.start_time} must be before end time {self.end_time}."
 
         assert args.time_step > 0, "Time step must be positive."
         self.time_step = timedelta(days=args.time_step)

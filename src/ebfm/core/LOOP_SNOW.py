@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from ebfm.constants import SECONDS_PER_HOUR
+from .constants import SECONDS_PER_HOUR
 
 
 def main(C, OUT, IN, dt, grid, phys):

@@ -11,24 +11,45 @@ from pyproj import Transformer
 from netCDF4 import Dataset, num2date
 
 from pathlib import Path
-from reader import read_elmer_mesh, read_dem, read_dem_xios
+from datetime import datetime
 
-from elmer.mesh import Mesh
-from ebfm.config import GridConfig
-from ebfm.grid import GridInputType
+from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
-from ebfm.constants import DAYS_PER_YEAR, SECONDS_PER_DAY
+from ebfm.elmer.mesh import Mesh
+from .config import TimeConfig, GridConfig
+from .grid import GridInputType
+
+from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 
-def init_config():
+def create_restart_file_name(time: datetime) -> str:
+    """
+    Creates a restart file name based on the given time.
+
+    Parameters:
+        time (datetime): The time to include in the restart file name.
+
+    Returns:
+        str: The generated restart file name.
+    """
+    restart_file_prefix = "restart_"
+    restart_file_time_format = "%d-%b-%YT%H:%M"
+
+    return restart_file_prefix + time.strftime(restart_file_time_format) + ".nc"
+
+
+def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initialize_from_restart_file: bool):
     """
     Set model parameters, specify grid parameters, I/O, and physics settings.
 
     @param[in] time_config Time configuration object.
+    @param[in] grid_config Grid configuration object.
+    @param[in] restartdir Path to the directory containing restart files (if initializing from restart file).
+    @param[in] initialize_from_restart_file Boolean flag indicating whether to initialize from a restart file.
 
     @returns:
         grid (dict): Grid-related parameters.
@@ -67,19 +88,35 @@ def init_config():
     # ---------------------------------------------------------------------
     io = {}
 
-    io["homedir"] = os.getcwd()  # Home directory
-    io["outdir"] = os.path.join(io["homedir"], "Output")  # Output directory
-    io["rebootdir"] = os.path.join(io["homedir"], "Reboot")  # Restart file directory
-    io["readbootfile"] = False  # REBOOT: read initial conditions from file (True/False)
-    io["writebootfile"] = True  # REBOOT: write file for rebooting (True/False)
-    io["bootfilein"] = "boot_final.nc"  # REBOOT: bootfile to be read
-    io["bootfileout"] = "boot_final.nc"  # REBOOT: bootfile to be written
+    io["homedir"] = Path(os.getcwd())  # Home directory
+    io["outdir"] = io["homedir"] / "Output"  # Output directory
+
+    write_restart_file: bool
+
+    if restartdir:
+        os.makedirs(restartdir, exist_ok=True)
+
+        write_restart_file = True
+
+        if initialize_from_restart_file:
+            io["bootfilein"] = restartdir / create_restart_file_name(time_config.start_time)
+            assert io["bootfilein"].exists(), f"Restart file {io['bootfilein']} does not exist!"
+
+        io["bootfileout"] = restartdir / create_restart_file_name(time_config.end_time)
+        assert not io["bootfileout"].exists(), (
+            f"Restart file {io['bootfileout']} already exists! Please choose a different restart directory or end "
+            f"time to avoid overwriting existing restart files."
+        )
+    else:
+        write_restart_file = False
+
+    io["writebootfile"] = write_restart_file
+
     io["freqout"] = 8  # OUTPUT: frequency of storing output (every n-th time-step)
     io["output_type"] = 2  # Set output file type: 1 = binary files, 2 = netCDF file
 
     # Ensure output and reboot directories exist
     os.makedirs(io["outdir"], exist_ok=True)
-    os.makedirs(io["rebootdir"], exist_ok=True)
 
     # Return the initialized parameters
     return grid, io, phys
@@ -167,6 +204,7 @@ def compute_number_of_glacier_cells(grid):
 def init_grid(grid, io, config: GridConfig):
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
+    grid["has_shading"] = config.use_shading
 
     # Read grid from Elmer, elevations from BedMachine
     if config.dem_file:
@@ -179,9 +217,13 @@ def init_grid(grid, io, config: GridConfig):
                 mesh_root=config.mesh_file,
                 is_partitioned=config.is_partitioned,
                 partition_id=config.partition_id,
+                source_crs_epsg=config.elmer_mesh_crs_epsg,
             )
         else:
-            mesh: Mesh = read_elmer_mesh(mesh_root=config.mesh_file)
+            mesh: Mesh = read_elmer_mesh(
+                mesh_root=config.mesh_file,
+                source_crs_epsg=config.elmer_mesh_crs_epsg,
+            )
 
         grid["x"], grid["y"] = mesh.x_vertices, mesh.y_vertices
         if config.grid_type is GridInputType.CUSTOM:
@@ -199,17 +241,24 @@ def init_grid(grid, io, config: GridConfig):
         else:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
 
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
+        if config.grid_type is GridInputType.ELMERXIOS:
+            grid["gpsum"] = grid["z"].shape[0]
+        else:
+            grid["gpsum"] = compute_number_of_glacier_cells(grid)
+
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
         grid["mesh"] = mesh
-        grid["classical_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
+
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
     elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
-        mesh: Mesh = read_elmer_mesh(config.mesh_file)
+        mesh: Mesh = read_elmer_mesh(
+            config.mesh_file,
+            source_crs_epsg=config.elmer_mesh_crs_epsg,
+        )
 
         # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
         # see mesh/README.md for the required preprocessing steps.
@@ -231,7 +280,6 @@ def init_grid(grid, io, config: GridConfig):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-        grid["classical_shading"] = False  # TODO: see https://github.com/EBFMorg/EBFM/issues/11
     elif config.grid_type is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
         # ---------------------------------------------------------------------
         # Read and process grid information
@@ -244,7 +292,6 @@ def init_grid(grid, io, config: GridConfig):
         mask_2D = input_data["mask"][0][0]
 
         # Determine domain extent
-        grid["classical_shading"] = False
         grid["Lx"], grid["Ly"] = grid["x_2D"].shape
 
         # Flip grid E-W or N-S when needed
@@ -449,14 +496,16 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def init_initial_conditions(C, grid, io, time):
+def init_initial_conditions(C, grid, io, time, init_with_restart_file: bool):
     """
     Sets the model's initial conditions at the start of the simulation.
 
     Parameters:
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
         grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
-        io (dict): Dictionary with I/O settings (e.g. readbootfile, rebootdir, bootfilein, homedir).
+        io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
+        time (dict): Dictionary with time-related parameters (e.g. ts).
+        init_with_restart_file (bool): Flag indicating whether to initialize from a restart file or set manually.
 
     Returns:
         OUT (dict): Dictionary containing model outputs initialized with default or restart file values.
@@ -473,14 +522,11 @@ def init_initial_conditions(C, grid, io, time):
     ##########################################################
     # Initialize conditions from restart file or set manually
     ##########################################################
-    if io.get("readbootfile", False):
-        logger.info("EBFM: Initialize from restart file...")
-
-        reboot_dir = io["rebootdir"]
-        boot_filepath = f"{reboot_dir}/{io['bootfilein']}"
+    if init_with_restart_file:
+        logger.info(f"Initialize from restart file: {io['bootfilein']}...")
 
         # Open the NetCDF file
-        with Dataset(boot_filepath, "r") as ncfile:
+        with Dataset(io["bootfilein"], "r") as ncfile:
             # Iterate through all variables in the file
             for var_name in ncfile.variables:
                 # Read the variable data
@@ -498,7 +544,7 @@ def init_initial_conditions(C, grid, io, time):
         )
 
     else:
-        logger.info("EBFM: Initialize from manually set conditions...")
+        logger.info("Initialize from manually set conditions...")
 
         OUT["Tsurf"] = np.full((gpsum,), 273.15)  # Surface temperature (K)
         OUT["subT"] = np.full((gpsum, nl), 265.0)  # Vertical temperatures (K)

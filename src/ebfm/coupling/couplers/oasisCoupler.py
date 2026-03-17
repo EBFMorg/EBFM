@@ -4,7 +4,7 @@
 
 import logging
 
-from couplers import Coupler
+from . import Coupler
 
 logger = logging.getLogger(__name__)
 
@@ -18,4 +18,5 @@ class OASISCoupler(Coupler):
     # Serves as example for Strategy Pattern implementation of Coupler subclasses
 
     def __init__(self, coupling_config):
+        super().__init__(coupling_config)
         raise NotImplementedError("OASISCoupler is not yet implemented.")
