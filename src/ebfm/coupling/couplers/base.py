@@ -56,6 +56,8 @@ class Coupler(ABC):
             icon_comp = IconAtmo(self)
             self._coupled_components[icon_comp.name] = icon_comp
 
+        self.fields: FieldSet = FieldSet()
+
     def has_coupling_to(self, component_name: str) -> bool:
         """
         Check if coupling to a specific component is enabled
@@ -121,18 +123,24 @@ class Coupler(ABC):
         """
         raise NotImplementedError("get method must be implemented in subclasses.")
 
-    @abstractmethod
     def has_field(self, component_name: str, field_name: str, exchange_type) -> bool:
         """
-        Check whether a field with the given name and exchange type exists for a component.
+        Check whether a field with given name and exchange type exists for a coupled component.
 
         @param[in] component_name name of the component
         @param[in] field_name name of the field
-        @param[in] exchange_type expected exchange type of the field
+        @param[in] exchange_type expected exchange type
 
         @returns True if such a field exists, otherwise False
         """
-        raise NotImplementedError("has_field method must be implemented in subclasses.")
+        if not self.has_coupling_to(component_name):
+            return False
+
+        component = self._coupled_components[component_name]
+        fields = self.fields.filter(
+            lambda f: f.coupled_component == component and f.name == field_name and f.exchange_type == exchange_type
+        )
+        return not fields.is_empty()
 
     @abstractmethod
     def finalize(self):
