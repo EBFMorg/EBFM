@@ -10,8 +10,8 @@ from ebfm.core import logging
 from .base import Coupler, Grid, Dict, CouplingConfig, CouplerErrorCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
-from ebfm.coupling.fields import FieldSet
-from ebfm.coupling.fields import YACField as Field
+from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
+from ebfm.coupling.fields import YACField
 
 from typing import Tuple, Optional
 
@@ -20,7 +20,7 @@ from typing import Tuple, Optional
 logger = logging.getLogger(__name__)
 
 
-class YACCoupler(Coupler):
+class YACCoupler(Coupler[yac.ExchangeType]):
     def __init__(self, coupling_config: CouplingConfig):
         """
         Create interface to the coupler and register component
@@ -35,7 +35,6 @@ class YACCoupler(Coupler):
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
 
         self.component: yac.Component = self.interface.def_comp(coupling_config.component_name)
-        self.fields: FieldSet = FieldSet()
         self.field_validation_level = coupling_config.field_validation_level
 
         # will be initialized in self._add_grid()
@@ -60,27 +59,34 @@ class YACCoupler(Coupler):
 
         self._add_grid(grid_name, grid)
 
-        field_definitions = set()
+        field_definitions = FieldSet()
 
         for component in self._coupled_components.values():
             field_definitions |= component.get_field_definitions(time)
 
-        self._add_couples(FieldSet(field_definitions))
+        self._add_couples(field_definitions)
 
         self.interface.enddef()
 
         for field in self.fields.all():
+            assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
             logger.debug(f"Performing consistency checks for field '{field.name}'...")
             field.perform_consistency_checks(self.interface, self.field_validation_level)
 
-    def _get_field(self, component_name: str, field_name: str) -> Field:
+    def _map_exchange_type(self, exchange_type: GenericExchangeType) -> yac.ExchangeType:
         """
-        Get Field object for given component and field name
+        Map generic ExchangeType to YAC ExchangeType.
+        """
+        return YACField.map_exchange_type(exchange_type)
+
+    def _get_field(self, component_name: str, field_name: str) -> YACField:
+        """
+        Get YACField object for given component and field name
 
         @param[in] component_name name of the component
         @param[in] field_name name of the field
 
-        @returns Field object
+        @returns YACField object
         """
 
         assert self.has_coupling_to(
@@ -91,13 +97,19 @@ class YACCoupler(Coupler):
 
         comp_fields = self.fields.filter(lambda f: f.coupled_component == component and f.name == field_name).all()
 
-        assert (
-            len(comp_fields) == 1
-        ), f"Expected exactly one field for '{field_name}' from component '{component_name}', "
+        if len(comp_fields) == 0:
+            raise KeyError(f"No field named '{field_name}' found for component '{component_name}'.")
+        elif len(comp_fields) > 1:
+            raise KeyError(
+                f"Found {len(comp_fields)} fields named '{field_name}' found for component '{component_name}'. "
+                f"Expected exactly one field per component and field name."
+            )
 
-        return comp_fields.pop()
+        field = comp_fields.pop()
+        assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
+        return field
 
-    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
@@ -114,17 +126,18 @@ class YACCoupler(Coupler):
         if field.exchange_type != yac.ExchangeType.SOURCE:
             error_msg = (
                 f"Cannot put data for field '{field.name}' of component '{field.coupled_component.name}'. "
-                f"Field has to be a SOURCE field, but its exchange_type={field.exchange_type}."
+                f"Field has to be a SOURCE field, but {field.exchange_type=}."
             )
             self._handle_field_validation_error(error_msg)
             return CouplerErrorCode.WRONG_EXCHANGE_TYPE  # If we didn't raise, skip the put operation
 
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name}...")
-        field.yac_field.put(data)
+        assert field.field_handle is not None, f"YAC field for '{field.name}' has not been created yet."
+        field.field_handle.put(data)
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name} complete.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
@@ -145,7 +158,7 @@ class YACCoupler(Coupler):
         if field.exchange_type != expected_role:
             error_msg = (
                 f"Cannot get data for field '{field.name}' of component '{field.coupled_component.name}'. "
-                f"Field has to be a TARGET field, but its exchange_type={field.exchange_type}."
+                f"Field has to be a TARGET field, but its {field.exchange_type=}."
             )
             self._handle_field_validation_error(error_msg)
             return None, CouplerErrorCode.WRONG_EXCHANGE_TYPE
@@ -153,10 +166,11 @@ class YACCoupler(Coupler):
         # Also check the actual YAC role: a field absent from the coupling YAML has role NONE
         # and yac_field.get() would silently return zeros -- signal this via error code so the
         # caller can decide whether to use the YAC fallback or supply their own.
+        assert field.field_handle is not None, f"YAC field for '{field.name}' has not been created yet."
         role = self.interface.get_field_role(
-            field.yac_field.component_name,
-            field.yac_field.grid_name,
-            field.yac_field.name,
+            field.field_handle.component_name,
+            field.field_handle.grid_name,
+            field.field_handle.name,
         )
         if role is not expected_role:
             error_msg = (
@@ -167,7 +181,7 @@ class YACCoupler(Coupler):
             error = CouplerErrorCode.WRONG_ROLE
 
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name}...")
-        data, _ = field.yac_field.get()
+        data, _ = field.field_handle.get()
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         return data[0], error
 
@@ -250,18 +264,22 @@ class YACCoupler(Coupler):
         collection_size = 1  # TODO: Dummy value for now; make configurable if needed
 
         for field in field_definitions:
+            assert isinstance(field, Field), f"Expected Field, got {type(field)}"
             assert self.has_coupling_to(
                 field.coupled_component.name
             ), f"Cannot add field '{field.name}' for uncoupled component '{field.coupled_component.name}'."
 
-            yac_field = field.construct_yac_field(self.interface, self.component, collection_size, self.cell_centers)
+            yac_field = YACField.from_field(field).construct_yac_field(
+                self.interface, self.component, collection_size, self.cell_centers
+            )
             self.fields.add(yac_field)
 
     def _construct_coupling_post_sync(self):
         # after synchronisation or the end of the definition phase YAC can be queried about various information
 
         for field in self.fields:
-            yac_field = field.yac_field
+            yac_field = field.field_handle
+            assert yac_field is not None, f"YAC field handle for '{field.name}' has not been created yet."
             is_defined = self.interface.get_field_is_defined(
                 yac_field.component_name, yac_field.grid_name, yac_field.name
             )

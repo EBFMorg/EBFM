@@ -2,21 +2,15 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
+from typing import Dict, TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from ebfm.coupling.couplers.base import Coupler, CouplerErrorCode
+    from ebfm.coupling.couplers.base import Coupler
 
 from .base import Component
 
-from ebfm.coupling.fields import Field
-from ebfm.coupling.couplers.helpers import coupling_supported
-
-if coupling_supported:
-    # TODO: Try to remove YAC specific imports from here
-    import yac
-    from ebfm.coupling.fields.yacField import YACField, Timestep, days_to_iso
+from ebfm.coupling.fields import FieldSet, Field, ExchangeType, days_to_iso
 
 
 class IconAtmo(Component):
@@ -29,151 +23,135 @@ class IconAtmo(Component):
     def __init__(self, coupler: "Coupler"):
         super().__init__(coupler)
 
-    def _yac_field_definitions(self, time: Dict[str, float]) -> Set[Field]:
+    def get_field_definitions(self, time: Dict[str, float]) -> FieldSet:
         """
-        Get field definitions for EBFM coupling to IconAtmo using YAC coupler.
+        Get generic field definitions for EBFM coupling to IconAtmo.
         """
-        assert coupling_supported, "Coupling support is required for YAC fields."
+        timestep = days_to_iso(time["dt"])
 
-        timestep_value = days_to_iso(time["dt"])
-        timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
+        return FieldSet(
+            {
+                # Field(
+                #     name="albedo",
+                #     coupled_component=self,
+                #     timestep=timestep,
+                #     metadata="Albedo of the ice surface",
+                #     exchange_type=ExchangeType.SOURCE,
+                # ),
+                Field(
+                    name="pr",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Precipitation rate (in kg m-2 s-1)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+                Field(
+                    name="pr_snow",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Precipitation rate of snow (in kg m-2 s-1)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+                Field(
+                    name="rsds",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Downward shortwave radiation flux (in W m-2)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+                Field(
+                    name="rlds",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Downward longwave radiation flux (in W m-2)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+                Field(
+                    name="sfcwind",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Wind speed at surface (in m s-1)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+                Field(
+                    name="clt",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Cloud cover (in fraction)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+                Field(
+                    name="tas",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Temperature at surface (in K)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+                Field(
+                    name="huss",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Specific humidity at surface (in kg kg-1)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+                Field(
+                    name="sfcpres",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Surface pressure (in Pa)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+            }
+        )
 
-        return {
-            # YACField(
-            #     name="albedo",
-            #     coupled_component=self,
-            #     timestep=timestep,
-            #     metadata="Albedo of the ice surface",
-            #     exchange_type=yac.ExchangeType.SOURCE,
-            # ),
-            YACField(
-                name="pr",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Precipitation rate (in kg m-2 s-1)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="pr_snow",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Precipitation rate of snow (in kg m-2 s-1)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="rsds",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Downward shortwave radiation flux (in W m-2)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="rlds",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Downward longwave radiation flux (in W m-2)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="sfcwind",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Wind speed at surface (in m s-1)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="clt",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Cloud cover (in fraction)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="tas",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Temperature at surface (in K)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="huss",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Specific humidity at surface (in kg kg-1)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-            YACField(
-                name="sfcpres",
-                coupled_component=self,
-                timestep=timestep,
-                metadata="Surface pressure (in Pa)",
-                exchange_type=yac.ExchangeType.TARGET,
-            ),
-        }
-
-    def _yac_exchange(
-        self, data_to_exchange: Dict[str, np.array]
-    ) -> Tuple[Dict[str, np.array], Dict[str, Optional["CouplerErrorCode"]]]:
-        """
-        Exchange of EBFM with IconAtmo using YAC coupler.
-
-        @param[in] data_to_exchange dictionary of field names and their data to be sent
-
-        @returns tuple of (received field data, error codes). An error code of None indicates
-                 successful exchange for that field.
-        """
-        assert coupling_supported, "Coupling support is required for YAC exchange."
-
-        received_data: Dict[str, np.array] = {}
-        errors: Dict[str, Optional["CouplerErrorCode"]] = {}
-
-        # Put data to IconAtmo
-        # self._coupler.put(self.name, "albedo", data_to_exchange["albedo"])
-
-        # Get data from IconAtmo
-        received_data["pr"], errors["pr"] = self._coupler.get(self.name, "pr")
-        received_data["pr_snow"], errors["pr_snow"] = self._coupler.get(self.name, "pr_snow")
-        received_data["rsds"], errors["rsds"] = self._coupler.get(self.name, "rsds")
-        received_data["rlds"], errors["rlds"] = self._coupler.get(self.name, "rlds")
-        received_data["sfcwind"], errors["sfcwind"] = self._coupler.get(self.name, "sfcwind")
-        received_data["clt"], errors["clt"] = self._coupler.get(self.name, "clt")
-        received_data["tas"], errors["tas"] = self._coupler.get(self.name, "tas")
-        received_data["huss"], errors["huss"] = self._coupler.get(self.name, "huss")
-        received_data["sfcpres"], errors["sfcpres"] = self._coupler.get(self.name, "sfcpres")
-
-        return received_data, errors
-
-    def get_field_definitions(self, time: Dict[str, float]) -> Set[Field]:
-        """
-        Get field definitions for EBFM coupling.
-
-        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
-        """
-
-        if self._uses_coupler("YACCoupler"):
-            return self._yac_field_definitions(time)
-        else:
-            raise NotImplementedError(
-                f"The component {self.name} was configured with the unsupported coupler {type(self._coupler)}."
-                f"Note: {type(self)} only supports YACCoupler at the moment. "
-            )
-
-    def exchange(
-        self, data_to_exchange: Dict[str, np.array]
-    ) -> Tuple[Dict[str, np.array], Dict[str, Optional["CouplerErrorCode"]]]:
+    def exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """
         Exchange data with IconAtmo.
 
         @param[in] data_to_exchange dictionary of field names and their data to be sent
 
-        @returns tuple of (received field data, error codes). An error code of None indicates
-                 successful exchange for that field. The caller can use the error codes to decide
-                 whether to use the received data or substitute their own fallback.
+        @returns dictionary of received field data
         """
-        if self._uses_coupler("YACCoupler"):
-            return self._yac_exchange(data_to_exchange)
-        else:
-            raise NotImplementedError(
-                f"The component {self.name} was configured with the unsupported coupler {type(self._coupler)}."
-                f"Note: {type(self)} only supports YACCoupler at the moment. "
-            )
+        received_data: Dict[str, np.ndarray] = {}
+
+        # Put data to IconAtmo
+        self._put_if_coupled("albedo", data_to_exchange)
+
+        # Get data from IconAtmo
+        pr = self._get_if_coupled("pr")
+        if pr is not None:
+            received_data["pr"] = pr
+
+        pr_snow = self._get_if_coupled("pr_snow")
+        if pr_snow is not None:
+            received_data["pr_snow"] = pr_snow
+
+        rsds = self._get_if_coupled("rsds")
+        if rsds is not None:
+            received_data["rsds"] = rsds
+
+        rlds = self._get_if_coupled("rlds")
+        if rlds is not None:
+            received_data["rlds"] = rlds
+
+        sfcwind = self._get_if_coupled("sfcwind")
+        if sfcwind is not None:
+            received_data["sfcwind"] = sfcwind
+
+        clt = self._get_if_coupled("clt")
+        if clt is not None:
+            received_data["clt"] = clt
+
+        tas = self._get_if_coupled("tas")
+        if tas is not None:
+            received_data["tas"] = tas
+
+        huss = self._get_if_coupled("huss")
+        if huss is not None:
+            received_data["huss"] = huss
+
+        sfcpres = self._get_if_coupled("sfcpres")
+        if sfcpres is not None:
+            received_data["sfcpres"] = sfcpres
+
+        return received_data

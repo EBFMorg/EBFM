@@ -27,7 +27,7 @@ from mpi4py import MPI
 from typing import List
 
 # logger for this module
-logger: Logger = None  # will be set later
+logger: Logger
 
 
 def add_coupling_arguments(parser: argparse.ArgumentParser):
@@ -121,6 +121,13 @@ def main():
         type=Path,
         help="Path to the NetCDF mesh file. Optional if using --elmer-mesh."
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+    )
+
+    input_group.add_argument(
+        "--shading",
+        default=None,
+        action=argparse.BooleanOptionalAction,
+        help="Enable/disable shading. Defaults to True for MATLAB meshes, False for all other mesh types.",
     )
 
     input_group.add_argument(
@@ -264,6 +271,15 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
     coupling_config = CouplingConfig(args, component_name="ebfm")  # TODO: get from EBFM's coupling configuration?
     grid_config = GridConfig(args)
+
+    # Ensure shading routine is only used in uncoupled runs
+    # see https://github.com/EBFMorg/EBFM/issues/11 for details.
+    if grid_config.use_shading and coupling_config.defines_coupling():
+        parser.error(
+            "Shading routine not implemented for coupled runs. "
+            "Please deactivate shading via --no-shading or deactivate coupling."
+        )
+
     time_config = TimeConfig(args)
 
     logger.debug("Successfully completed consistency checks.")
@@ -274,13 +290,6 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
-
-    # Ensure shading routine is only used in uncoupled runs on unpartitioned MATLAB grids;
-    # see https://github.com/EBFMorg/EBFM/issues/11 for details.
-    if grid["has_shading"]:
-        assert grid_config.is_partitioned is False, "Shading routine only implemented for unpartitioned grids."
-        assert grid_config.grid_type is GridInputType.MATLAB, "Shading routine only implemented for MATLAB input grids."
-        assert coupling_config.defines_coupling() is False, "Shading routine not implemented for coupled runs."
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, init_with_restart_file=args.restart_init)
 
@@ -315,7 +324,7 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 "albedo": OUT["albedo"],
             }
 
-            data_from_icon, errors_from_icon = icon_atmo.exchange(data_to_icon)
+            data_from_icon = icon_atmo.exchange(data_to_icon)
 
             logger.debug("Done.")
             logger.debug("Received the following data from ICON:", data_from_icon)
@@ -332,8 +341,16 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
             # Fallback to constants if fields are not coupled (error code set); must be arrays for mask indexing.
             _T0 = IN["T"] * 0.0
-            IN["q"] = data_from_icon["huss"] if not errors_from_icon["huss"] else _T0
-            IN["Pres"] = data_from_icon["sfcpres"] if not errors_from_icon["sfcpres"] else _T0 + 101500.0
+
+            if "huss" in data_from_icon:
+                IN["q"] = data_from_icon["huss"]
+            else:  # use fallback value
+                IN["q"] = _T0
+
+            if "sfcpres" in data_from_icon:
+                IN["Pres"] = data_from_icon["sfcpres"]
+            else:  # use fallback value
+                IN["Pres"] = _T0 + 101500.0
 
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, TypeVar, Generic
 import numpy as np
 from enum import Enum
 
@@ -15,15 +15,18 @@ import logging
 
 from abc import ABC, abstractmethod
 
-from ebfm.coupling.components import Component
-
-# TODO: should not be necessary if ElmerIce etc. use a generic Field instead of (YAC)Field
-from .helpers import coupling_supported
-
-if coupling_supported:
-    from ebfm.coupling.components import ElmerIce, IconAtmo
+from ebfm.coupling.components import Component, ElmerIce, IconAtmo
+from ebfm.coupling.fields import FieldSet, GenericExchangeType
 
 logger = logging.getLogger(__name__)
+
+CouplerExchangeType = TypeVar("CouplerExchangeType")
+"""Backend-specific exchange type used by a concrete coupler implementation.
+
+Examples:
+- Generic/dummy couplers may use the generic `GenericExchangeType` directly.
+- YAC coupler uses `yac.ExchangeType`.
+"""
 
 
 class CouplerErrorCode(Enum):
@@ -40,9 +43,16 @@ class CouplerErrorCode(Enum):
     """The field's actual role in the coupler config does not match its declared role."""
 
 
-class Coupler(ABC):
+class Coupler(ABC, Generic[CouplerExchangeType]):
     """
     Abstract base class for couplers. Implements the strategy pattern to support different coupling libraries.
+
+    Why this class is generic:
+    - Components and field definitions use backend-independent exchange roles (`GenericExchangeType`).
+    - Concrete couplers can require backend-specific role types (e.g. `yac.ExchangeType`).
+    - `_map_exchange_type` bridges generic roles to backend-specific roles.
+
+    This keeps component code backend-agnostic while allowing strict backend checks in coupler implementations.
     """
 
     def __init__(self, coupling_config: CouplingConfig):
@@ -53,14 +63,15 @@ class Coupler(ABC):
         """
         self._coupled_components: Dict[str, Component] = {}
 
-        if coupling_supported:
-            if coupling_config.couple_to_elmer_ice:
-                elmer_comp = ElmerIce(self)
-                self._coupled_components[elmer_comp.name] = elmer_comp
+        if coupling_config.couple_to_elmer_ice:
+            elmer_comp = ElmerIce(self)
+            self._coupled_components[elmer_comp.name] = elmer_comp
 
-            if coupling_config.couple_to_icon_atmo:
-                icon_comp = IconAtmo(self)
-                self._coupled_components[icon_comp.name] = icon_comp
+        if coupling_config.couple_to_icon_atmo:
+            icon_comp = IconAtmo(self)
+            self._coupled_components[icon_comp.name] = icon_comp
+
+        self.fields: FieldSet = FieldSet()
 
     def has_coupling_to(self, component_name: str) -> bool:
         """
@@ -96,14 +107,21 @@ class Coupler(ABC):
         """
         raise NotImplementedError("add_grid method must be implemented in subclasses.")
 
-    def _add_couples(self, time: Dict[str, float]):
+    def _add_couples(self, field_definitions: FieldSet):
         """
         Add coupling definitions to the Coupler interface
         """
         raise NotImplementedError("add_couples method must be implemented in subclasses.")
 
     @abstractmethod
-    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
+    def _map_exchange_type(self, exchange_type: GenericExchangeType) -> CouplerExchangeType:
+        """
+        Map generic exchange type to backend-specific exchange type representation.
+        """
+        raise NotImplementedError("_map_exchange_type must be implemented in subclasses.")
+
+    @abstractmethod
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
@@ -116,7 +134,7 @@ class Coupler(ABC):
         raise NotImplementedError("put method must be implemented in subclasses.")
 
     @abstractmethod
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
@@ -126,6 +144,28 @@ class Coupler(ABC):
         @returns tuple of (field data, error code). Error code is None if no error occurred.
         """
         raise NotImplementedError("get method must be implemented in subclasses.")
+
+    def has_field(self, component_name: str, field_name: str, exchange_type: GenericExchangeType) -> bool:
+        """
+        Check whether a field with given name and exchange type exists for a coupled component.
+
+        @param[in] component_name name of the component
+        @param[in] field_name name of the field
+        @param[in] exchange_type expected exchange type
+
+        @returns True if such a field exists, otherwise False
+        """
+        if not self.has_coupling_to(component_name):
+            return False
+
+        expected_exchange_type = self._map_exchange_type(exchange_type)
+        component = self._coupled_components[component_name]
+        fields = self.fields.filter(
+            lambda f: f.coupled_component == component
+            and f.name == field_name
+            and f.exchange_type == expected_exchange_type
+        )
+        return not fields.is_empty()
 
     @abstractmethod
     def finalize(self):

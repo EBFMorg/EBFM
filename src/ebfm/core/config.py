@@ -9,6 +9,7 @@ This file exposes a some configuration dataclasses for EBFM components.
 from argparse import Namespace
 from pathlib import Path
 from enum import Enum
+from typing import Optional
 
 from .grid import GridInputType
 
@@ -36,7 +37,7 @@ class CouplingConfig:
     component_name: str  # Name of this component
     couple_to_icon_atmo: bool  # Whether to couple this component to ICON atmosphere
     couple_to_elmer_ice: bool  # Whether to couple this component to Elmer/Ice
-    coupler_config: Path  # Path to the coupler configuration file
+    coupler_config: Optional[Path]  # Path to the coupler configuration file
     field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
 
     def __init__(self, args: Namespace, component_name: str):
@@ -79,11 +80,12 @@ class GridConfig:
 
     grid_type: GridInputType  # Name of the grid used in coupling
     mesh_file: Path  # Path to the grid file
-    dem_file: Path = None  # Path to the DEM file (only relevant for CUSTOM grid type)
+    dem_file: Optional[Path] = None  # Path to the DEM file (only relevant for CUSTOM grid type)
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool = False  # Whether the grid is unstructured
     partition_id: int  # Partition ID (only relevant if is_partitioned is True)
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
+    use_shading: bool  # Whether to use shading for the grid
 
     def __init__(self, args: Namespace):
         """
@@ -138,6 +140,29 @@ class GridConfig:
                 "Please refer to the documentation for correct configuration."
             )
             raise Exception("Invalid grid configuration.")
+
+        # Shading is only supported for MATLAB meshes; see https://github.com/EBFMorg/EBFM/issues/11
+        grid_type_supports_shading_supported = self.grid_type is GridInputType.MATLAB
+
+        # Partitioned grids don't support shading
+        grid_partitioning_supports_shading = not self.is_partitioned
+
+        # shading is supported if both the grid type and the partitioning support it
+        _shading_supported = grid_type_supports_shading_supported and grid_partitioning_supports_shading
+
+        if args.shading is None:
+            self.use_shading = _shading_supported  # default: on for MATLAB, off for all others
+        else:
+            if args.shading and not _shading_supported:
+                if not grid_type_supports_shading_supported:
+                    raise ValueError(
+                        f"Shading is not supported for grid type {self.grid_type}. "
+                        "See https://github.com/EBFMorg/EBFM/issues/11"
+                    )
+                if not grid_partitioning_supports_shading:
+                    raise ValueError("Shading is not supported for partitioned grids.")
+
+            self.use_shading = args.shading
 
 
 class TimeConfig:

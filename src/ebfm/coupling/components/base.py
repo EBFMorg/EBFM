@@ -3,12 +3,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from abc import ABC, abstractmethod
-from typing import Set, Dict, TYPE_CHECKING
+from typing import Dict, TYPE_CHECKING, Optional
 import numpy as np
 
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
-    from ebfm.coupling.fields.yacField import Field
+    from ebfm.coupling.fields.base import FieldSet
 
 
 class Component(ABC):
@@ -38,8 +38,39 @@ class Component(ABC):
         """
         return self._coupler.__class__.__name__ == coupler_class_type
 
+    def _put_if_coupled(self, field_name: str, data_to_exchange: Dict[str, np.ndarray]):
+        """
+        Put a source field if it is coupled.
+
+        @param[in] field_name field name
+        @param[in] data_to_exchange dictionary containing data to send
+        """
+        from ebfm.coupling.fields.base import ExchangeType
+
+        if self._coupler.has_field(self.name, field_name, ExchangeType.SOURCE):
+            assert (
+                field_name in data_to_exchange
+            ), f"Field '{field_name}' is missing in data_to_exchange for component '{self.name}'."
+            self._coupler.put(self.name, field_name, data_to_exchange[field_name])
+
+    def _get_if_coupled(self, field_name: str) -> Optional[np.ndarray]:
+        """
+        Get a target field from the coupler if it is coupled.
+
+        @param[in] field_name field name
+
+        @returns received field data if coupled, otherwise None
+        """
+        from ebfm.coupling.fields.base import ExchangeType
+
+        if self._coupler.has_field(self.name, field_name, ExchangeType.TARGET):
+            data, err = self._coupler.get(self.name, field_name)
+            assert data is not None, f"Received data for field '{field_name}' is None. {err}"
+            return data
+        return None
+
     @abstractmethod
-    def exchange(self, data_to_exchange: Dict[str, np.array]) -> Dict[str, np.array]:
+    def exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
         """
         Exchange of EBFM with this component
 
@@ -50,7 +81,7 @@ class Component(ABC):
         pass
 
     @abstractmethod
-    def get_field_definitions(self, time: Dict[str, float]) -> Set["Field"]:
+    def get_field_definitions(self, time: Dict[str, float]) -> "FieldSet":
         """
         Get field definitions for this component.
         Subclasses must implement this method.

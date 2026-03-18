@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 
 from . import Coupler
 from .base import Grid, Dict, CouplingConfig, CouplerErrorCode
+from ebfm.coupling.fields import GenericExchangeType
 
 import logging
 
@@ -39,7 +40,13 @@ class DummyCoupler(Coupler):
         logger.debug("Setup coupling...")
         logger.debug("Do nothing for DummyCoupler.")
 
-    def put(self, component_name: str, field_name: str, data: np.array) -> Optional[CouplerErrorCode]:
+    def _map_exchange_type(self, exchange_type: GenericExchangeType) -> GenericExchangeType:
+        """
+        Dummy coupler keeps generic exchange types unchanged.
+        """
+        return exchange_type
+
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
         """
         Put data to another component
 
@@ -53,7 +60,7 @@ class DummyCoupler(Coupler):
         logger.debug("Do nothing for DummyCoupler.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.array], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
         """
         Get data from another component
 
