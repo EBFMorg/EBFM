@@ -97,27 +97,46 @@ def read_elmer_mesh(
     )
 
 
-def read_dem_xios(dem_file: Path, grid: dict):
+def read_dem_xios(dem_file: Path, mesh: TriangleMesh):
     """Read digital elevation model (DEM) file.
+
+    Reads vertex-level surface elevation (zs) and ice thickness (h) from NetCDF
+    and maps to cell centers via arithmetic averaging of scalar field values.
+    (For coordinate averaging, see mesh._compute_cell_centers() which uses spherical geometry.)
+
     Args:
         dem_file (Path): Path to the DEM NetCDF file.
-        grid (dict): grid-related parameters
+        mesh (TriangleMesh): Mesh object with vertex and cell information
     Returns:
-        grid (dict): dictionary containing grid-related parameters
+        tuple: (z, h) arrays with cell-center values in meters
     """
     assert dem_file.is_file(), f"DEM file {dem_file} does not exist."
 
     import netCDF4
 
     nc = netCDF4.Dataset(dem_file)
-    assert (
-        np.squeeze(nc["x"][:]).shape == grid["x"].shape
-    ), "Surface mesh and Elmer mesh do not have the same number of vertices"
-    grid["z"] = np.squeeze(nc["zs"][:]).data
-    grid["h"] = np.squeeze(nc["h"][:]).data
-    grid["lat"] = nc["mesh2D_node_x"][:]
-    grid["lon"] = nc["mesh2D_node_y"][:]
-    return grid
+
+    # Read vertex data from nc file
+    zs_vertices = np.squeeze(nc["zs"][:]).data
+    h_vertices = np.squeeze(nc["h"][:]).data
+
+    assert len(zs_vertices) == len(mesh.x_vertices), (
+        f"Surface mesh ({len(zs_vertices)} vertices) and Elmer mesh "
+        f"({len(mesh.x_vertices)} vertices) do not have the same number of vertices"
+    )
+
+    # Map vertex values to cell centers by arithmetic averaging (scalar fields)
+    n_cells = mesh.cell_to_vertex.shape[0]
+
+    z_cells = np.zeros(n_cells)
+    h_cells = np.zeros(n_cells)
+
+    for i in range(n_cells):
+        vertex_indices = mesh.cell_to_vertex[i]
+        z_cells[i] = np.mean(zs_vertices[vertex_indices])
+        h_cells[i] = np.mean(h_vertices[vertex_indices])
+
+    return z_cells, h_cells
 
 
 def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):

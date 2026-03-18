@@ -225,20 +225,21 @@ def init_grid(grid, io, config: GridConfig):
                 source_crs_epsg=config.elmer_mesh_crs_epsg,
             )
 
-        grid["x"], grid["y"] = mesh.x_vertices, mesh.y_vertices
+        grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
+        grid["lat"], grid["lon"] = mesh.lat_cells, mesh.lon_cells
+        logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
-            grid["z"] = read_dem(config.dem_file, grid["x"], grid["y"])
-            grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
-            grid["lon"] = np.zeros_like(grid["x"]) + 320  # test values!
+            logger.debug("... for grid type CUSTOM.")
+            mesh.z_cells = read_dem(config.dem_file, mesh)
+            grid["z"] = mesh.z_cells
         if config.grid_type is GridInputType.ELMERXIOS:
-            grid = read_dem_xios(config.dem_file, grid)
-
-        if config.grid_type is GridInputType.ELMERXIOS:
+            logger.debug("... for grid type ELMERXIOS.")
+            mesh.z_cells, h_cells = read_dem_xios(config.dem_file, mesh)
+            grid["z"] = mesh.z_cells
             min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
+            grid["mask"] = (h_cells > min_thickness_glacier).astype(int)
 
-            # treats grid cells as glacier where ice thickness exceeds threshold
-            grid["mask"] = (grid["h"] > min_thickness_glacier).astype(int)
-        else:
+        if "mask" not in grid:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
 
         if config.grid_type is GridInputType.ELMERXIOS:
@@ -262,11 +263,7 @@ def init_grid(grid, io, config: GridConfig):
 
         # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
         # see mesh/README.md for the required preprocessing steps.
-        grid["x"], grid["y"], grid["z"] = (
-            mesh.x_vertices,
-            mesh.y_vertices,
-            mesh.z_vertices,
-        )
+        grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells  # use cell centers as location for DoFs
         grid["z"] = np.random.uniform(0, 100, size=len(grid["x"]))  # test values!
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!

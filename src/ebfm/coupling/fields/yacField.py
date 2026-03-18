@@ -11,6 +11,10 @@ import yac
 if TYPE_CHECKING:
     from ebfm.coupling.components.base import Component
 
+from ebfm.core import logging
+
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class YACTimestep:
@@ -65,8 +69,8 @@ class YACField:
     coupled_component: "Component"
     timestep: YACTimestep  # YAC-specific timestep representation
     exchange_type: yac.ExchangeType  # YAC-specific exchange role
-    metadata: str | None = None
-    field_handle: yac.Field | None = None  # optional if YAC field has been created
+    metadata: str | None  # optional metadata
+    field_handle: yac.Field | None  # optional if YAC field has been created
 
     @staticmethod
     def map_exchange_type(exchange_type: ExchangeType) -> yac.ExchangeType:
@@ -101,10 +105,11 @@ class YACField:
             timestep=timestep,
             exchange_type=yac_exchange_type,
             metadata=field.metadata,
+            field_handle=None,  # to be set via construct_yac_field(...)
         )
 
     def construct_yac_field(
-        self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, corner_points: yac.Points
+        self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, cell_centers: yac.Points
     ) -> "YACField":
         """
         Create a new Field instance with the provided YAC field.
@@ -112,7 +117,7 @@ class YACField:
         @param[in] yac_interface handle to YAC interface
         @param[in] yac_component handle to YAC component object
         @param[in] collection_size size of the collection for this field
-        @param[in] corner_points yac.Points of the grid for this field
+        @param[in] cell_centers yac.Points of the grid for this field
 
         @returns New Field instance with the provided YAC field
         """
@@ -125,10 +130,15 @@ class YACField:
         #       exists.
         metadata = self.metadata or "N/A"
 
+        logger.debug(
+            f"Defining YAC field '{self.name}' for component EBFM with collection size {collection_size} and "
+            f"timestep {self.timestep.value} ({self.timestep.format})."
+        )
+
         yac_field = yac.Field.create(
             self.name,
             yac_component,
-            corner_points,
+            cell_centers,
             collection_size,
             self.timestep.value,
             self.timestep.format,
