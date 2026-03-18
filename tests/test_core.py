@@ -2,7 +2,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-import sys
 import unittest
 from ebfm.core import get_version
 
@@ -50,12 +49,8 @@ def foo(x: int | str) -> None:
 
         from typing import get_type_hints
 
-        if sys.version_info < (3, 10):
-            with self.assertRaises(TypeError):
-                get_type_hints(foo)
-        else:
-            hints = get_type_hints(foo)
-            self.assertEqual(hints["x"], int | str)
+        hints = get_type_hints(foo)
+        self.assertEqual(hints["x"], int | str)
 
 
 if __name__ == "__main__":

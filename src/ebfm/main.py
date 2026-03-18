@@ -24,8 +24,6 @@ import ebfm.coupling
 
 from mpi4py import MPI
 
-from typing import List
-
 # logger for this module
 logger: Logger
 
@@ -76,7 +74,7 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
     )
 
 
-def extract_active_coupling_features(args: argparse.Namespace) -> List[str]:
+def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
     """
     Determine if coupling is required based on the provided command line arguments.
 
