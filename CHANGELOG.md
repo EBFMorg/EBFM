@@ -4,7 +4,7 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
-# develop
+# v0.3.0
 
 * Add `FakeCoupler` for easier testing of coupled workflow. Activated with option `--fake-coupling`. https://github.com/EBFMorg/EBFM/pull/96
 * If DoFs are defined with a Elmer mesh locate them at triangle centers (previously: triangle vertices) to allow for conservative mapping schemes that require information about area per DoF. https://github.com/EBFMorg/EBFM/pull/83.
