@@ -5,6 +5,7 @@
 from pathlib import Path
 from datetime import datetime
 import argparse
+from enum import Enum
 
 import ebfm.core
 from ebfm.core import (
@@ -26,6 +27,18 @@ from mpi4py import MPI
 
 # logger for this module
 logger: Logger
+
+
+class CliDefaults(Enum):
+    START_TIME = datetime(1979, 1, 1, 0, 0)
+    END_TIME = datetime(1979, 1, 2, 0, 0)
+    FIELD_VALIDATION_LEVEL = FieldValidationLevel.FATAL
+    TIME_STEP_SIZE_IN_DAYS = 0.125  # = 0.125 days = 3 hours
+    LOG_LEVEL_CONSOLE = "INFO"
+
+    @classmethod
+    def default_time_step_size_in_hours(cls) -> float:
+        return cls.TIME_STEP_SIZE_IN_DAYS.value * 24
 
 
 def add_coupling_arguments(parser: argparse.ArgumentParser):
@@ -56,16 +69,18 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
     )
+
     coupling_group.add_argument(
         "--field-validation-level",
         type=str,
         choices={level.value for level in FieldValidationLevel},
-        default=FieldValidationLevel.FATAL.value,
+        default=CliDefaults.FIELD_VALIDATION_LEVEL.value,
         help="Level of validation for field exchange type checks. "
         "'FATAL': raise exception on mismatch (default), "
         "'WARNING': log warning on mismatch, "
         "'SILENT': only log at debug level on mismatch.",
     )
+
     coupling_group.add_argument(
         "--fake-coupling",
         action="store_true",
@@ -141,10 +156,7 @@ def main():
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
-    default_start_datetime = datetime(1979, 1, 1, 0, 0)
-    default_end_datetime = datetime(1979, 1, 2, 0, 0)
-
-    example_restart_file_name = INIT.create_restart_file_name(default_start_datetime)
+    example_restart_file_name = INIT.create_restart_file_name(CliDefaults.START_TIME.value)
 
     input_group.add_argument(
         "--restart-dir",
@@ -178,7 +190,7 @@ def main():
         type=str,
         help=f"Start time of the simulation in format '{TimeConfig.input_time_format_display}' "
         "(i.e., time at the beginning of the first time step)",
-        default=default_start_datetime.strftime(TimeConfig.input_time_format),
+        default=CliDefaults.START_TIME.value.strftime(TimeConfig.input_time_format),
     )
 
     time_group.add_argument(
@@ -186,15 +198,16 @@ def main():
         type=str,
         help=f"End time of the simulation in format '{TimeConfig.input_time_format_display}' "
         "(i.e., time at the end of the last time step)",
-        default=default_end_datetime.strftime(TimeConfig.input_time_format),
+        default=CliDefaults.END_TIME.value.strftime(TimeConfig.input_time_format),
     )
 
     time_group.add_argument(
         "--time-step",
         type=float,
-        help="Time step of the simulation in days, e.g., 0.125 for 3 hours. "
-        "Note: The difference between end-time and start-time must be divisible by the time step.",
-        default=0.125,
+        help=f"Time step of the simulation in days, e.g., {CliDefaults.TIME_STEP_SIZE_IN_DAYS.value} for "
+        f"{CliDefaults.default_time_step_size_in_hours()} hours. Note: The difference between --end-time and "
+        "--start-time must be divisible by --time-step.",
+        default=CliDefaults.TIME_STEP_SIZE_IN_DAYS.value,
     )
 
     parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
@@ -219,7 +232,7 @@ def main():
         "--log-level-console",
         type=str,
         choices=list(log_levels_map.keys()),
-        default="INFO",
+        default=CliDefaults.LOG_LEVEL_CONSOLE.value,
         help="Log level for console output for all MPI ranks (unless overridden by custom settings in utils.py).",
     )
 
@@ -241,11 +254,13 @@ def main():
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
 
-    has_active_coupling_features = extract_active_coupling_features(args)
-    if has_active_coupling_features and not (ebfm.coupling.coupling_supported or args.fake_coupling):
+    active_coupling_features = extract_active_coupling_features(args)
+    coupling_config = CouplingConfig(args, component_name="ebfm")
+    is_coupled_run = len(active_coupling_features) > 0
+    if is_coupled_run and not (ebfm.coupling.coupling_supported or coupling_config.use_fake_coupling):
         raise RuntimeError(
             f"""
-Coupling requested via command line argument(s) {has_active_coupling_features}, but the 'coupling' module could not be
+Coupling requested via command line argument(s) {active_coupling_features}, but the 'coupling' module could not be
 imported due to the following error:
 
 {ebfm.coupling.coupling_supported_import_error}
@@ -303,19 +318,11 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     except KeyError:
         grid["mesh"] = None  # add dummy to make coupler.setup pass.
 
-    if coupling_config.defines_coupling():
-        if args.fake_coupling:
-            logger.info(
-                "Using FakeCoupler for testing the coupling infrastructure without YAC or actual coupled models."
-            )
-            coupler = ebfm.coupling.FakeCoupler(coupling_config=coupling_config)
-        else:
-            coupler = ebfm.coupling.YACCoupler(coupling_config=coupling_config)
-    else:
-        coupler = ebfm.coupling.DummyCoupler(coupling_config=coupling_config)
+    coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
+    coupler = coupler_cls(coupling_config=coupling_config)
 
     # TODO: Try to improve this by storing a mesh object in grid["mesh"] also for MATLAB
-    if args.fake_coupling:
+    if coupling_config.use_fake_coupling:
         coupler.setup(grid, time)
     else:
         coupler.setup(grid["mesh"], time)
