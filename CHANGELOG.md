@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* If DoFs are defined with a Elmer mesh locate them at triangle centers (previously: triangle vertices) to allow for conservative mapping schemes that require information about area per DoF. https://github.com/EBFMorg/EBFM/pull/83.
 * Update code base to Python 3.10 style for typing and enforce via CI and pre-commit hook. https://github.com/EBFMorg/EBFM/pull/98
 * Introduce option `--shading`/`--no-shading` to explicitly overwrite default configuration for meshes. https://github.com/EBFMorg/EBFM/pull/94
 * Introduce type checking with mypy for `ebfm.coupling` module. https://github.com/EBFMorg/EBFM/pull/92
