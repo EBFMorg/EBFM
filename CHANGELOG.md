@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Update code base to Python 3.10 style for typing and enforce via CI and pre-commit hook. https://github.com/EBFMorg/EBFM/pull/98
 * Introduce option `--shading`/`--no-shading` to explicitly overwrite default configuration for meshes. https://github.com/EBFMorg/EBFM/pull/94
 * Introduce type checking with mypy for `ebfm.coupling` module. https://github.com/EBFMorg/EBFM/pull/92
 * Generalize restart by providing additional options `--restart-dir` and `--restart-init`. https://github.com/EBFMorg/EBFM/pull/90
