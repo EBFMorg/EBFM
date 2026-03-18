@@ -32,7 +32,6 @@ logger: Logger
 class CliDefaults(Enum):
     START_TIME = datetime(1979, 1, 1, 0, 0)
     END_TIME = datetime(1979, 1, 2, 0, 0)
-    LOCAL_GROUP_LABEL = "ebfm"
     FIELD_VALIDATION_LEVEL = FieldValidationLevel.FATAL
     TIME_STEP_SIZE_IN_DAYS = 0.125  # = 0.125 days = 3 hours
     LOG_LEVEL_CONSOLE = "INFO"
@@ -70,6 +69,7 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
     )
+
     coupling_group.add_argument(
         "--field-validation-level",
         type=str,
@@ -80,6 +80,7 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
         "'WARNING': log warning on mismatch, "
         "'SILENT': only log at debug level on mismatch.",
     )
+
     coupling_group.add_argument(
         "--fake-coupling",
         action="store_true",
