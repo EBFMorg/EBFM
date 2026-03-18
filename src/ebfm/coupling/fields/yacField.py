@@ -105,6 +105,7 @@ class YACField:
             timestep=timestep,
             exchange_type=yac_exchange_type,
             metadata=field.metadata,
+            field_handle=None,  # to be set via construct_yac_field(...)
         )
 
     def construct_yac_field(
