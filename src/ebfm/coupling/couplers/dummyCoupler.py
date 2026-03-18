@@ -4,10 +4,9 @@
 
 import numpy as np
 
-from typing import Optional, Tuple
-
 from . import Coupler
-from .base import Grid, Dict, CouplingConfig, CouplerErrorCode
+from .base import Grid, CouplingConfig, CouplerErrorCode
+from ebfm.coupling.fields import GenericExchangeType
 
 import logging
 
@@ -27,7 +26,7 @@ class DummyCoupler(Coupler):
         self._coupled_components = dict()
         logger.debug(f"DummyCoupler created for component '{coupling_config.component_name}'.")
 
-    def setup(self, grid: Grid, time: Dict[str, float]):
+    def setup(self, grid: Grid, time: dict[str, float]):
         """Setup the coupling interface (does nothing for DummyCoupler)
 
         Performs initialization operations after init and before entering the
@@ -39,7 +38,13 @@ class DummyCoupler(Coupler):
         logger.debug("Setup coupling...")
         logger.debug("Do nothing for DummyCoupler.")
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
+    def _map_exchange_type(self, exchange_type: GenericExchangeType) -> GenericExchangeType:
+        """
+        Dummy coupler keeps generic exchange types unchanged.
+        """
+        return exchange_type
+
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
         """
         Put data to another component
 
@@ -53,7 +58,7 @@ class DummyCoupler(Coupler):
         logger.debug("Do nothing for DummyCoupler.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
         """
         Get data from another component
 

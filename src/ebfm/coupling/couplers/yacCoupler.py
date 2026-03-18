@@ -7,20 +7,19 @@ import numpy as np
 
 from ebfm.core import logging
 
-from .base import Coupler, Grid, Dict, CouplingConfig, CouplerErrorCode
+from .base import Coupler, Grid, CouplingConfig, CouplerErrorCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
-from ebfm.coupling.fields import FieldSet
+from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
 from ebfm.coupling.fields import YACField
 
-from typing import Tuple, Optional
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
 logger = logging.getLogger(__name__)
 
 
-class YACCoupler(Coupler):
+class YACCoupler(Coupler[yac.ExchangeType]):
     def __init__(self, coupling_config: CouplingConfig):
         """
         Create interface to the coupler and register component
@@ -39,9 +38,9 @@ class YACCoupler(Coupler):
 
         # will be initialized in self._add_grid()
         self.grid: yac.UnstructuredGrid = None
-        self.corner_points: yac.Points = None
+        self.cell_centers: yac.Points = None
 
-    def setup(self, grid: Dict | Grid, time: Dict[str, float]):
+    def setup(self, grid: dict | Grid, time: dict[str, float]):
         """
         Setup the coupling interface
 
@@ -73,6 +72,12 @@ class YACCoupler(Coupler):
             logger.debug(f"Performing consistency checks for field '{field.name}'...")
             field.perform_consistency_checks(self.interface, self.field_validation_level)
 
+    def _map_exchange_type(self, exchange_type: GenericExchangeType) -> yac.ExchangeType:
+        """
+        Map generic ExchangeType to YAC ExchangeType.
+        """
+        return YACField.map_exchange_type(exchange_type)
+
     def _get_field(self, component_name: str, field_name: str) -> YACField:
         """
         Get YACField object for given component and field name
@@ -103,7 +108,7 @@ class YACCoupler(Coupler):
         assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
         return field
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
         """
         Put data to another component
 
@@ -120,18 +125,18 @@ class YACCoupler(Coupler):
         if field.exchange_type != yac.ExchangeType.SOURCE:
             error_msg = (
                 f"Cannot put data for field '{field.name}' of component '{field.coupled_component.name}'. "
-                f"Field has to be a SOURCE field, but its exchange_type={field.exchange_type}."
+                f"Field has to be a SOURCE field, but {field.exchange_type=}."
             )
             self._handle_field_validation_error(error_msg)
             return CouplerErrorCode.WRONG_EXCHANGE_TYPE  # If we didn't raise, skip the put operation
 
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name}...")
-        assert field.yac_field is not None, f"YAC field for '{field.name}' has not been created yet."
-        field.yac_field.put(data)
+        assert field.field_handle is not None, f"YAC field for '{field.name}' has not been created yet."
+        field.field_handle.put(data)
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name} complete.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
         """
         Get data from another component
 
@@ -152,7 +157,7 @@ class YACCoupler(Coupler):
         if field.exchange_type != expected_role:
             error_msg = (
                 f"Cannot get data for field '{field.name}' of component '{field.coupled_component.name}'. "
-                f"Field has to be a TARGET field, but its exchange_type={field.exchange_type}."
+                f"Field has to be a TARGET field, but its {field.exchange_type=}."
             )
             self._handle_field_validation_error(error_msg)
             return None, CouplerErrorCode.WRONG_EXCHANGE_TYPE
@@ -160,11 +165,11 @@ class YACCoupler(Coupler):
         # Also check the actual YAC role: a field absent from the coupling YAML has role NONE
         # and yac_field.get() would silently return zeros -- signal this via error code so the
         # caller can decide whether to use the YAC fallback or supply their own.
-        assert field.yac_field is not None, f"YAC field for '{field.name}' has not been created yet."
+        assert field.field_handle is not None, f"YAC field for '{field.name}' has not been created yet."
         role = self.interface.get_field_role(
-            field.yac_field.component_name,
-            field.yac_field.grid_name,
-            field.yac_field.name,
+            field.field_handle.component_name,
+            field.field_handle.grid_name,
+            field.field_handle.name,
         )
         if role is not expected_role:
             error_msg = (
@@ -175,7 +180,7 @@ class YACCoupler(Coupler):
             error = CouplerErrorCode.WRONG_ROLE
 
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name}...")
-        data, _ = field.yac_field.get()
+        data, _ = field.field_handle.get()
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         return data[0], error
 
@@ -209,22 +214,30 @@ class YACCoupler(Coupler):
         """
         Adds a grid to the Coupler interface.
 
+        The mesh topology is defined by vertex (corner) coordinates and cell-to-vertex
+        connectivity. DOFs (data values) live at cell centers, defined separately.
+
         @param[in] grid_name name of the grid in YAC
         @param[in] grid Grid object used by EBFM where coupling happens
         """
 
         assert not self.grid, "Grid has already been added to YACCoupler."
 
+        # Define mesh topology using vertex coordinates (corners) and connectivity
         self.grid = yac.UnstructuredGrid(
             grid_name,
             np.full(len(grid.cell_ids), grid.num_vertices_per_cell),
-            grid.lon,
-            grid.lat,
+            grid.lon_vertices,  # vertex lon/lat coordinates (radians)
+            grid.lat_vertices,
             grid.cell_to_vertex.flatten(),
         )
 
+        # Set global vertex indices at corner locations
         self.grid.set_global_index(grid.vertex_ids, yac.Location.CORNER)
-        self.corner_points = self.grid.def_points(yac.Location.CORNER, grid.lon, grid.lat)
+
+        # Define DOF locations at cell centers (where data is exchanged)
+        # Uses spherical averaging from mesh._compute_cell_centers()
+        self.cell_centers = self.grid.def_points(yac.Location.CELL, grid.lon_cells, grid.lat_cells)
 
     def _add_couples(self, field_definitions: FieldSet):
         """
@@ -250,18 +263,22 @@ class YACCoupler(Coupler):
         collection_size = 1  # TODO: Dummy value for now; make configurable if needed
 
         for field in field_definitions:
+            assert isinstance(field, Field), f"Expected Field, got {type(field)}"
             assert self.has_coupling_to(
                 field.coupled_component.name
             ), f"Cannot add field '{field.name}' for uncoupled component '{field.coupled_component.name}'."
 
-            yac_field = field.construct_yac_field(self.interface, self.component, collection_size, self.corner_points)
+            yac_field = YACField.from_field(field).construct_yac_field(
+                self.interface, self.component, collection_size, self.cell_centers
+            )
             self.fields.add(yac_field)
 
     def _construct_coupling_post_sync(self):
         # after synchronisation or the end of the definition phase YAC can be queried about various information
 
         for field in self.fields:
-            yac_field = field.yac_field
+            yac_field = field.field_handle
+            assert yac_field is not None, f"YAC field handle for '{field.name}' has not been created yet."
             is_defined = self.interface.get_field_is_defined(
                 yac_field.component_name, yac_field.grid_name, yac_field.name
             )

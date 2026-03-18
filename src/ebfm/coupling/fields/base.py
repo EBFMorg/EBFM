@@ -4,7 +4,33 @@
 
 from ebfm.coupling.components.base import Component
 from dataclasses import dataclass
-from typing import Set, Callable, Optional
+from collections.abc import Callable
+from enum import Enum
+
+
+class ExchangeType(Enum):
+    """
+    Generic field exchange role independent of a specific coupling backend.
+    """
+
+    SOURCE = "source"
+    TARGET = "target"
+
+
+GenericExchangeType = ExchangeType
+"""Alias clarifying that `ExchangeType` is the backend-independent exchange role type."""
+
+
+@dataclass(frozen=True)
+class Timestep:
+    """
+    Generic timestep wrapper.
+
+    For now this stores a single string value (typically ISO-8601 duration),
+    but can be extended later to wrap datetime/timedelta types.
+    """
+
+    value: str
 
 
 @dataclass(frozen=True)
@@ -16,6 +42,22 @@ class Field:
     name: str  # name of the field
     # TODO: remove coupler_component and directly store fields in coupling.components.Component?
     coupled_component: Component  # component this field couples to
+    timestep: Timestep  # generic timestep representation
+    exchange_type: ExchangeType  # generic field exchange role
+    metadata: str | None = None  # optional metadata
+
+
+def days_to_iso(days: float) -> Timestep:
+    """
+    Convert a time step in days to ISO 8601 format.
+
+    @param[in] days time step in days
+    @returns Generic Timestep with ISO 8601 duration string
+    """
+    import pandas as pd
+
+    dt = pd.Timedelta(days=days)
+    return Timestep(value=dt.isoformat())
 
 
 class FieldSet:
@@ -26,12 +68,12 @@ class FieldSet:
 
     Example:
         fields = FieldSet()
-        fields.add(Field(..., exchange_type=yac.ExchangeType.SOURCE))
-        fields.add(Field(..., exchange_type=yac.ExchangeType.TARGET))
-        source_fields = fields.filter(lambda f: f.exchange_type == yac.ExchangeType.SOURCE)
+        fields.add(Field(..., exchange_type=ExchangeType.PUT))
+        fields.add(Field(..., exchange_type=ExchangeType.GET))
+        put_fields = fields.filter(lambda f: f.exchange_type == ExchangeType.PUT)
     """
 
-    def __init__(self, fields: Optional[Set[Field]] = None):
+    def __init__(self, fields: set[Field] | None = None):
         """
         Initialize FieldSet.
         """
@@ -52,7 +94,7 @@ class FieldSet:
     def is_empty(self) -> bool:
         return len(self._fields) == 0
 
-    def all(self) -> Set[Field]:
+    def all(self) -> set[Field]:
         return set(self._fields)
 
     def filter(self, condition: Callable[[Field], bool]) -> "FieldSet":

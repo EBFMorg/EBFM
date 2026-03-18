@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
@@ -10,13 +10,7 @@ if TYPE_CHECKING:
 
 from .base import Component
 
-from ebfm.coupling.fields import FieldSet
-from ebfm.coupling.couplers.helpers import coupling_supported
-
-if coupling_supported:
-    # TODO: Try to remove YAC specific imports from here
-    import yac
-    from ebfm.coupling.fields.yacField import YACField, Timestep, days_to_iso
+from ebfm.coupling.fields import FieldSet, Field, ExchangeType, days_to_iso
 
 
 class ElmerIce(Component):
@@ -29,117 +23,59 @@ class ElmerIce(Component):
     def __init__(self, coupler: "Coupler"):
         super().__init__(coupler)
 
-    def _yac_field_definitions(self, time: Dict[str, float]) -> FieldSet:
+    def get_field_definitions(self, time: dict[str, float]) -> FieldSet:
         """
-        Get field definitions for EBFM coupling to Elmer/Ice using YAC coupler.
+        Get generic field definitions for EBFM coupling to Elmer/Ice.
         """
-        assert coupling_supported, "Coupling support is required for YAC fields."
-
-        timestep_value = days_to_iso(time["dt"])
-        timestep = Timestep(value=timestep_value, format=yac.TimeUnit.ISO_FORMAT)
+        timestep = days_to_iso(time["dt"])
 
         return FieldSet(
             {
-                YACField(
+                Field(
                     name="T_ice",
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Near surface temperature at Ice surface (in K)",
-                    exchange_type=yac.ExchangeType.SOURCE,
+                    exchange_type=ExchangeType.SOURCE,
                 ),
-                YACField(
+                Field(
                     name="smb",
                     coupled_component=self,
                     timestep=timestep,
-                    exchange_type=yac.ExchangeType.SOURCE,
+                    exchange_type=ExchangeType.SOURCE,
                 ),
-                YACField(
+                Field(
                     name="runoff",
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Runoff",
-                    exchange_type=yac.ExchangeType.SOURCE,
+                    exchange_type=ExchangeType.SOURCE,
                 ),
-                YACField(
+                Field(
                     name="h",
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Surface height (in m)",
-                    exchange_type=yac.ExchangeType.TARGET,
+                    exchange_type=ExchangeType.TARGET,
                 ),
-                # YACField(
+                # Field(
                 #     name="dhdx",
                 #     coupled_component=self,
                 #     timestep=timestep,
                 #     metadata="Surface slope in x direction",
-                #     exchange_type=yac.ExchangeType.TARGET,
+                #     exchange_type=ExchangeType.TARGET,
                 # ),
-                # YACField(
+                # Field(
                 #     name="dhdy",
                 #     coupled_component=self,
                 #     timestep=timestep,
                 #     metadata="Surface slope in y direction",
-                #     exchange_type=yac.ExchangeType.TARGET,
+                #     exchange_type=ExchangeType.TARGET,
                 # ),
             }
         )
 
-    def _yac_exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
-        """
-        Exchange of EBFM with Elmer/Ice using YAC coupler.
-
-        @param[in] data_to_exchange dictionary of field names and their data to be sent
-
-        @returns dictionary of received field data
-        """
-        assert coupling_supported, "Coupling support is required for YAC exchange."
-
-        received_data: Dict[str, np.ndarray] = {}
-
-        # Put data to Elmer/Ice
-        if self._coupler.has_field(self.name, "T_ice", yac.ExchangeType.SOURCE):
-            self._coupler.put(self.name, "T_ice", data_to_exchange["T_ice"])
-
-        if self._coupler.has_field(self.name, "smb", yac.ExchangeType.SOURCE):
-            self._coupler.put(self.name, "smb", data_to_exchange["smb"])
-
-        if self._coupler.has_field(self.name, "runoff", yac.ExchangeType.SOURCE):
-            self._coupler.put(self.name, "runoff", data_to_exchange["runoff"])
-
-        # Get data from Elmer/Ice
-        if self._coupler.has_field(self.name, "h", yac.ExchangeType.TARGET):
-            h, err = self._coupler.get(self.name, "h")
-            assert h is not None, f"Received data for field 'h' is None. {err}"
-            received_data["h"] = h
-
-        if self._coupler.has_field(self.name, "dhdx", yac.ExchangeType.TARGET):
-            dhdx, err = self._coupler.get(self.name, "dhdx")
-            assert dhdx is not None, f"Received data for field 'dhdx' is None. {err}"
-            received_data["dhdx"] = dhdx
-
-        if self._coupler.has_field(self.name, "dhdy", yac.ExchangeType.TARGET):
-            dhdy, err = self._coupler.get(self.name, "dhdy")
-            assert dhdy is not None, f"Received data for field 'dhdy' is None. {err}"
-            received_data["dhdy"] = dhdy
-
-        return received_data
-
-    def get_field_definitions(self, time: Dict[str, float]) -> FieldSet:
-        """
-        Get field definitions for EBFM coupling.
-
-        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
-        """
-
-        if self._uses_coupler("YACCoupler"):
-            return self._yac_field_definitions(time)
-        else:
-            raise NotImplementedError(
-                f"The component {self.name} was configured with the unsupported coupler {type(self._coupler)}."
-                f"Note: {type(self)} only supports YACCoupler at the moment. "
-            )
-
-    def exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def exchange(self, data_to_exchange: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Exchange data with Elmer/Ice.
 
@@ -147,10 +83,24 @@ class ElmerIce(Component):
 
         @returns dictionary of received field data
         """
-        if self._uses_coupler("YACCoupler"):
-            return self._yac_exchange(data_to_exchange)
-        else:
-            raise NotImplementedError(
-                f"The component {self.name} was configured with the unsupported coupler {type(self._coupler)}."
-                f"Note: {type(self)} only supports YACCoupler at the moment. "
-            )
+        received_data: dict[str, np.ndarray] = {}
+
+        # Put data to Elmer/Ice
+        self._put_if_coupled("T_ice", data_to_exchange)
+        self._put_if_coupled("smb", data_to_exchange)
+        self._put_if_coupled("runoff", data_to_exchange)
+
+        # Get data from Elmer/Ice
+        h = self._get_if_coupled("h")
+        if h is not None:
+            received_data["h"] = h
+
+        dhdx = self._get_if_coupled("dhdx")
+        if dhdx is not None:
+            received_data["dhdx"] = dhdx
+
+        dhdy = self._get_if_coupled("dhdy")
+        if dhdy is not None:
+            received_data["dhdy"] = dhdy
+
+        return received_data

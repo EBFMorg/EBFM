@@ -15,6 +15,14 @@ repos:
   rev: 7.3.0
   hooks:
   - id: flake8
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  rev: v0.12.10
+  hooks:
+  - id: ruff
+    args:
+    - --fix
+    - --target-version=py310
+    - --select=UP
 - repo: https://github.com/pre-commit/mirrors-mypy
   rev: v1.18.2
   hooks:
