@@ -3,14 +3,16 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from dataclasses import dataclass
-from typing import Dict as TypingDict, List, Optional, Tuple
+from collections.abc import Iterable
 
 import numpy as np
 
 from ebfm.core import logging
 from ebfm.core.config import CouplingConfig
 
-from .base import Coupler, CouplerErrorCode, Grid, Dict
+from .base import Coupler, CouplerErrorCode, Grid
+from ebfm.coupling.fields import FieldSet, GenericExchangeType
+
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +41,7 @@ class FakeFieldConfig:
 # SOURCE fields sent by EBFM (T_ice, smb, runoff …) are silently discarded by
 # put() and therefore need no entry here.
 # ---------------------------------------------------------------------------
-_DEFAULT_FAKE_FIELDS: List[FakeFieldConfig] = [
+_DEFAULT_FAKE_FIELDS: tuple[FakeFieldConfig, ...] = (
     # Elmer/Ice → EBFM
     FakeFieldConfig("elmer_ice", "h", 1000.0),  # surface height            [m]
     # ICON atmosphere → EBFM
@@ -52,7 +54,7 @@ _DEFAULT_FAKE_FIELDS: List[FakeFieldConfig] = [
     FakeFieldConfig("icon_atmo", "tas", 260.0),  # near-surface temperature  [K]
     FakeFieldConfig("icon_atmo", "huss", 1e-3),  # specific humidity         [kg kg-1]
     FakeFieldConfig("icon_atmo", "sfcpres", 101325.0),  # surface pressure          [Pa]
-]
+)
 
 
 class FakeCoupler(Coupler):
@@ -85,14 +87,14 @@ class FakeCoupler(Coupler):
         coupler.put("elmer_ice", "smb", smb_data)   # silently discarded
     """
 
-    def __init__(self, coupling_config: CouplingConfig, fake_fields: Optional[List[FakeFieldConfig]] = None):
+    def __init__(self, coupling_config: CouplingConfig, fake_fields: Iterable[FakeFieldConfig] = _DEFAULT_FAKE_FIELDS):
         """
         Create a FakeCoupler and pre-load fake field values.
 
         Does not require YAC or any coupled model to be available.
 
         @param[in] coupling_config coupling configuration of this component
-        @param[in] fake_fields     list of :class:`FakeFieldConfig` entries that define
+        @param[in] fake_fields     iterable of :class:`FakeFieldConfig` entries that define
                                    which fields are available and what scalar value they
                                    return.  Defaults to :data:`_DEFAULT_FAKE_FIELDS`.
         """
@@ -102,20 +104,25 @@ class FakeCoupler(Coupler):
 
         # Scalar fill values keyed by (component_name, field_name).
         # Arrays are constructed lazily in get() once _n_points is known.
-        self._fake_values: TypingDict[Tuple[str, str], float] = {}
+        self._fake_values: dict[tuple[str, str], float] = {}
         self._n_points: int = 0
 
-        fields_to_load = fake_fields if fake_fields is not None else _DEFAULT_FAKE_FIELDS
-        for cfg in fields_to_load:
-            self._fake_values[(cfg.component_name, cfg.field_name)] = cfg.value
+        for f in fake_fields:
+            self._fake_values[(f.component_name, f.field_name)] = f.value
 
         logger.debug(
             f"FakeCoupler created for component '{coupling_config.component_name}' "
             f"with {len(self._fake_values)} fake field(s)."
         )
 
+    def _map_exchange_type(self, exchange_type: GenericExchangeType) -> GenericExchangeType:
+        """
+        Dummy coupler keeps generic exchange types unchanged.
+        """
+        return exchange_type
+
     # TODO: Try to improve this
-    def _infer_n_points(self, grid: Optional[Dict | Grid]) -> int:
+    def _infer_n_points(self, grid: dict | Grid | None) -> int:
         """
         Infer the number of horizontal points represented by ``grid``.
 
@@ -151,7 +158,7 @@ class FakeCoupler(Coupler):
 
         return 0
 
-    def setup(self, grid: Dict | Grid, time: TypingDict[str, float]):
+    def setup(self, grid: dict | Grid, time: dict[str, float]):
         """
         Store grid size so fake arrays can be sized correctly in :meth:`get`.
 
@@ -161,9 +168,21 @@ class FakeCoupler(Coupler):
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
         self._n_points = self._infer_n_points(grid)
+
+        field_definitions = FieldSet()
+
+        for component in self._coupled_components.values():
+            field_definitions |= component.get_field_definitions(time)
+
+        self._add_couples(field_definitions)
+
         logger.debug(f"FakeCoupler setup complete ({self._n_points} grid points, no sync performed).")
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
+    def _add_couples(self, field_definitions: FieldSet):
+        for field in field_definitions:
+            self.fields.add(field)
+
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
         """
         Log and discard outgoing data – no actual transfer is performed.
 
@@ -176,7 +195,7 @@ class FakeCoupler(Coupler):
         logger.debug(f"FakeCoupler put: field '{field_name}' -> '{component_name}' (discarded).")
         return None
 
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
         """
         Return a fake array for the requested field.
 
