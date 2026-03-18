@@ -16,6 +16,7 @@ In order to create a release, please follow these steps:
   * Use the version number as release title (i.e. the same as your tag).
   * Briefly summarize the content of the release.
   * Review the [Changelog](https://github.com/EBFMorg/EBFM/blob/main/CHANGELOG.md) and replace the section name "develop" with the respective version number in a commit "Bump version".
+  * Push to the `main` branch. Github will reject this push due to the active branch protection for the branch `main`. Please **temporarily** deactivate it [here](https://github.com/EBFMorg/EBFM/settings/rules) and try to push again.
 * If everything looks good you can publish the release.
 * Please check the [release workflow on github](https://github.com/EBFMorg/EBFM/actions/workflows/release.yaml) and the [history on PyPI](https://pypi.org/project/EBFM/#history).
 
