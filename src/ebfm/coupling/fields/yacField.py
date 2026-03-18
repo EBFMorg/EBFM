@@ -4,7 +4,7 @@
 
 from .base import Field, ExchangeType, Timestep
 from dataclasses import dataclass, replace
-from typing import Optional, TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING
 
 import yac
 
@@ -49,7 +49,7 @@ field {name}:
    - metadata:  {metadata}
 """
 
-EXCHANGE_TYPE_MAP: Dict[ExchangeType, yac.ExchangeType] = {
+EXCHANGE_TYPE_MAP: dict[ExchangeType, yac.ExchangeType] = {
     ExchangeType.SOURCE: yac.ExchangeType.SOURCE,
     ExchangeType.TARGET: yac.ExchangeType.TARGET,
 }
@@ -65,8 +65,8 @@ class YACField:
     coupled_component: "Component"
     timestep: YACTimestep  # YAC-specific timestep representation
     exchange_type: yac.ExchangeType  # YAC-specific exchange role
-    metadata: Optional[str] = None
-    field_handle: Optional[yac.Field] = None  # optional if YAC field has been created
+    metadata: str | None = None
+    field_handle: yac.Field | None = None  # optional if YAC field has been created
 
     @staticmethod
     def map_exchange_type(exchange_type: ExchangeType) -> yac.ExchangeType:

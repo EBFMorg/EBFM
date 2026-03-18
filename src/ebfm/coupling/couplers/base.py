@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict, Optional, Tuple, TypeVar, Generic
+from typing import TypeVar, Generic
 import numpy as np
 from enum import Enum
 
@@ -61,7 +61,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         @param[in] coupling_config configuration of the coupling
         """
-        self._coupled_components: Dict[str, Component] = {}
+        self._coupled_components: dict[str, Component] = {}
 
         if coupling_config.couple_to_elmer_ice:
             elmer_comp = ElmerIce(self)
@@ -98,7 +98,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         return self._coupled_components[component_name]
 
     @abstractmethod
-    def setup(self, grid: Grid, time: Dict[str, float]):
+    def setup(self, grid: Grid, time: dict[str, float]):
         raise NotImplementedError("setup method must be implemented in subclasses.")
 
     def _add_grid(self, grid_name: str, grid: Grid):
@@ -121,7 +121,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         raise NotImplementedError("_map_exchange_type must be implemented in subclasses.")
 
     @abstractmethod
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
         """
         Put data to another component
 
@@ -134,7 +134,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         raise NotImplementedError("put method must be implemented in subclasses.")
 
     @abstractmethod
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
         """
         Get data from another component
 

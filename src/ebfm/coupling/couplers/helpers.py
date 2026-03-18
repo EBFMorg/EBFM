@@ -2,11 +2,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Optional
-
 coupling_supported: bool
-coupling_supported_import_error: Optional[Exception] = None
-yac_import_error: Optional[Exception] = None
+coupling_supported_import_error: Exception | None = None
+yac_import_error: Exception | None = None
 
 try:
     import yac  # noqa: F401
