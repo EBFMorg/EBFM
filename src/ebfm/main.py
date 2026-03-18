@@ -317,16 +317,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     except KeyError:
         grid["mesh"] = None  # add dummy to make coupler.setup pass.
 
-    if coupling_config.defines_coupling():
-        if args.fake_coupling:
-            logger.info(
-                "Using FakeCoupler for testing the coupling infrastructure without YAC or actual coupled models."
-            )
-            coupler = ebfm.coupling.FakeCoupler(coupling_config=coupling_config)
-        else:
-            coupler = ebfm.coupling.YACCoupler(coupling_config=coupling_config)
-    else:
-        coupler = ebfm.coupling.DummyCoupler(coupling_config=coupling_config)
+    coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
+    coupler = coupler_cls(coupling_config=coupling_config)
 
     # TODO: Try to improve this by storing a mesh object in grid["mesh"] also for MATLAB
     if coupling_config.use_fake_coupling:
