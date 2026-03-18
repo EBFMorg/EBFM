@@ -245,7 +245,7 @@ def write_dem_as_elmer(
     )
 
     # Postprocess file to ensure it matches Elmer's expected format
-    with open(dem_file, "r") as f:
+    with open(dem_file) as f:
         content = (
             "\n".join(line.rstrip() + " " for line in f.read().splitlines())  # append space to each line
             .replace("\\ ", " ")  # replace escaped spaces with actual spaces

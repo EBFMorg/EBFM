@@ -120,7 +120,7 @@ class TriangleMesh(Mesh):
         source_crs_epsg: int = 3413,
     ):
         assert cell_to_vertex.shape[1] == self.num_vertices_per_cell  # a triangle mesh has 3 nodes for all cells
-        super(TriangleMesh, self).__init__(
+        super().__init__(
             x_vertices,
             y_vertices,
             z_vertices,

@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from typing import Dict, TYPE_CHECKING
+from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ class IconAtmo(Component):
     def __init__(self, coupler: "Coupler"):
         super().__init__(coupler)
 
-    def get_field_definitions(self, time: Dict[str, float]) -> FieldSet:
+    def get_field_definitions(self, time: dict[str, float]) -> FieldSet:
         """
         Get generic field definitions for EBFM coupling to IconAtmo.
         """
@@ -104,7 +104,7 @@ class IconAtmo(Component):
             }
         )
 
-    def exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def exchange(self, data_to_exchange: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Exchange data with IconAtmo.
 
@@ -112,7 +112,7 @@ class IconAtmo(Component):
 
         @returns dictionary of received field data
         """
-        received_data: Dict[str, np.ndarray] = {}
+        received_data: dict[str, np.ndarray] = {}
 
         # Put data to IconAtmo
         self._put_if_coupled("albedo", data_to_exchange)

@@ -7,13 +7,12 @@ import numpy as np
 
 from ebfm.core import logging
 
-from .base import Coupler, Grid, Dict, CouplingConfig, CouplerErrorCode
+from .base import Coupler, Grid, CouplingConfig, CouplerErrorCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
 from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
 from ebfm.coupling.fields import YACField
 
-from typing import Tuple, Optional
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
@@ -41,7 +40,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         self.grid: yac.UnstructuredGrid = None
         self.cell_centers: yac.Points = None
 
-    def setup(self, grid: Dict | Grid, time: Dict[str, float]):
+    def setup(self, grid: dict | Grid, time: dict[str, float]):
         """
         Setup the coupling interface
 
@@ -109,7 +108,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
         return field
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> Optional[CouplerErrorCode]:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
         """
         Put data to another component
 
@@ -137,7 +136,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name} complete.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> Tuple[Optional[np.ndarray], Optional[CouplerErrorCode]]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
         """
         Get data from another component
 

@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from abc import ABC, abstractmethod
-from typing import Dict, TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ class Component(ABC):
         """
         return self._coupler.__class__.__name__ == coupler_class_type
 
-    def _put_if_coupled(self, field_name: str, data_to_exchange: Dict[str, np.ndarray]):
+    def _put_if_coupled(self, field_name: str, data_to_exchange: dict[str, np.ndarray]):
         """
         Put a source field if it is coupled.
 
@@ -53,7 +53,7 @@ class Component(ABC):
             ), f"Field '{field_name}' is missing in data_to_exchange for component '{self.name}'."
             self._coupler.put(self.name, field_name, data_to_exchange[field_name])
 
-    def _get_if_coupled(self, field_name: str) -> Optional[np.ndarray]:
+    def _get_if_coupled(self, field_name: str) -> np.ndarray | None:
         """
         Get a target field from the coupler if it is coupled.
 
@@ -70,7 +70,7 @@ class Component(ABC):
         return None
 
     @abstractmethod
-    def exchange(self, data_to_exchange: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    def exchange(self, data_to_exchange: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Exchange of EBFM with this component
 
@@ -81,7 +81,7 @@ class Component(ABC):
         pass
 
     @abstractmethod
-    def get_field_definitions(self, time: Dict[str, float]) -> "FieldSet":
+    def get_field_definitions(self, time: dict[str, float]) -> "FieldSet":
         """
         Get field definitions for this component.
         Subclasses must implement this method.
