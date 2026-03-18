@@ -9,7 +9,6 @@ This file exposes a some configuration dataclasses for EBFM components.
 from argparse import Namespace
 from pathlib import Path
 from enum import Enum
-from typing import Optional
 
 from .grid import GridInputType
 
@@ -37,7 +36,7 @@ class CouplingConfig:
     component_name: str  # Name of this component
     couple_to_icon_atmo: bool  # Whether to couple this component to ICON atmosphere
     couple_to_elmer_ice: bool  # Whether to couple this component to Elmer/Ice
-    coupler_config: Optional[Path]  # Path to the coupler configuration file
+    coupler_config: Path | None  # Path to the coupler configuration file
     field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
 
     def __init__(self, args: Namespace, component_name: str):
@@ -80,7 +79,7 @@ class GridConfig:
 
     grid_type: GridInputType  # Name of the grid used in coupling
     mesh_file: Path  # Path to the grid file
-    dem_file: Optional[Path] = None  # Path to the DEM file (only relevant for CUSTOM grid type)
+    dem_file: Path | None = None  # Path to the DEM file (only relevant for CUSTOM grid type)
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool = False  # Whether the grid is unstructured
     partition_id: int  # Partition ID (only relevant if is_partitioned is True)

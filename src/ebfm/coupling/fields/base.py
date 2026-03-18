@@ -4,7 +4,7 @@
 
 from ebfm.coupling.components.base import Component
 from dataclasses import dataclass
-from typing import Set, Callable, Optional
+from collections.abc import Callable
 from enum import Enum
 
 
@@ -44,7 +44,7 @@ class Field:
     coupled_component: Component  # component this field couples to
     timestep: Timestep  # generic timestep representation
     exchange_type: ExchangeType  # generic field exchange role
-    metadata: Optional[str] = None  # optional metadata
+    metadata: str | None = None  # optional metadata
 
 
 def days_to_iso(days: float) -> Timestep:
@@ -73,7 +73,7 @@ class FieldSet:
         put_fields = fields.filter(lambda f: f.exchange_type == ExchangeType.PUT)
     """
 
-    def __init__(self, fields: Optional[Set[Field]] = None):
+    def __init__(self, fields: set[Field] | None = None):
         """
         Initialize FieldSet.
         """
@@ -94,7 +94,7 @@ class FieldSet:
     def is_empty(self) -> bool:
         return len(self._fields) == 0
 
-    def all(self) -> Set[Field]:
+    def all(self) -> set[Field]:
         return set(self._fields)
 
     def filter(self, condition: Callable[[Field], bool]) -> "FieldSet":
