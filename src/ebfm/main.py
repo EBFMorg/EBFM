@@ -66,6 +66,12 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
         "'WARNING': log warning on mismatch, "
         "'SILENT': only log at debug level on mismatch.",
     )
+    coupling_group.add_argument(
+        "--fake-coupling",
+        action="store_true",
+        help="Use FakeCoupler to provide synthetic data for coupled fields without requiring YAC or actual coupled "
+        "models. Useful for testing the coupling infrastructure.",
+    )
 
 
 def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
@@ -236,7 +242,7 @@ def main():
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
 
     has_active_coupling_features = extract_active_coupling_features(args)
-    if has_active_coupling_features and not ebfm.coupling.coupling_supported:
+    if has_active_coupling_features and not (ebfm.coupling.coupling_supported or args.fake_coupling):
         raise RuntimeError(
             f"""
 Coupling requested via command line argument(s) {has_active_coupling_features}, but the 'coupling' module could not be
@@ -298,11 +304,21 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         grid["mesh"] = None  # add dummy to make coupler.setup pass.
 
     if coupling_config.defines_coupling():
-        coupler = ebfm.coupling.YACCoupler(coupling_config=coupling_config)
+        if args.fake_coupling:
+            logger.info(
+                "Using FakeCoupler for testing the coupling infrastructure without YAC or actual coupled models."
+            )
+            coupler = ebfm.coupling.FakeCoupler(coupling_config=coupling_config)
+        else:
+            coupler = ebfm.coupling.YACCoupler(coupling_config=coupling_config)
     else:
         coupler = ebfm.coupling.DummyCoupler(coupling_config=coupling_config)
 
-    coupler.setup(grid["mesh"], time)
+    # TODO: Try to improve this by storing a mesh object in grid["mesh"] also for MATLAB
+    if args.fake_coupling:
+        coupler.setup(grid, time)
+    else:
+        coupler.setup(grid["mesh"], time)
 
     # Time-loop
     logger.info("Entering time loop...")
@@ -349,6 +365,8 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
                 IN["Pres"] = data_from_icon["sfcpres"]
             else:  # use fallback value
                 IN["Pres"] = _T0 + 101500.0
+
+        logger.info("EBFM main calculations")
 
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
