@@ -5,7 +5,7 @@
 import numpy as np
 
 from . import Coupler
-from .base import Grid, CouplingConfig, CouplerErrorCode
+from .base import GridDict, CouplingConfig, CouplerErrorCode
 from ebfm.coupling.fields import GenericExchangeType
 
 import logging
@@ -26,7 +26,7 @@ class DummyCoupler(Coupler):
         self._coupled_components = dict()
         logger.debug(f"DummyCoupler created for component '{coupling_config.component_name}'.")
 
-    def setup(self, grid: Grid, time: dict[str, float]):
+    def setup(self, grid: GridDict, time: dict[str, float]):
         """Setup the coupling interface (does nothing for DummyCoupler)
 
         Performs initialization operations after init and before entering the

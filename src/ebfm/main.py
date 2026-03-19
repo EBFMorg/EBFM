@@ -312,20 +312,10 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, init_with_restart_file=args.restart_init)
 
-    # TODO: some grids currently do not have grid["mesh"]
-    try:
-        grid["mesh"]
-    except KeyError:
-        grid["mesh"] = None  # add dummy to make coupler.setup pass.
-
     coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
     coupler = coupler_cls(coupling_config=coupling_config)
 
-    # TODO: Try to improve this by storing a mesh object in grid["mesh"] also for MATLAB
-    if coupling_config.use_fake_coupling:
-        coupler.setup(grid, time)
-    else:
-        coupler.setup(grid["mesh"], time)
+    coupler.setup(grid, time)
 
     # Time-loop
     logger.info("Entering time loop...")

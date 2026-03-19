@@ -6,6 +6,7 @@ from typing import TypeVar, Generic
 import numpy as np
 from enum import Enum
 
+from ebfm.core.grid import GridDict
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
 # from ebfm.core.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
@@ -98,7 +99,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         return self._coupled_components[component_name]
 
     @abstractmethod
-    def setup(self, grid: Grid, time: dict[str, float]):
+    def setup(self, grid: GridDict, time: dict[str, float]):
         raise NotImplementedError("setup method must be implemented in subclasses.")
 
     def _add_grid(self, grid_name: str, grid: Grid):
