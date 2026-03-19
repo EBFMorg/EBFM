@@ -5,6 +5,8 @@
 import numpy as np
 import datetime
 
+from .grid import ShadingMethod
+
 
 def main(grid, time2, OUT):
     """
@@ -49,6 +51,7 @@ def main(grid, time2, OUT):
     Tcor_ecc = (
         9.87 * np.sin(2.0 * np.radians(B)) - 7.53 * np.cos(np.radians(B)) - 1.5 * np.sin(np.radians(B))
     )  # Correction for eccentricity
+
     Tcor_lon = 4 * (grid["lon"] - 15 * time2["dT_UTC"])  # Correction for longitude within time-zone
     Tcor = Tcor_ecc + Tcor_lon
     LST = time2["TCUR"].hour + time2["TCUR"].minute / 60 + Tcor / 60  # Local Solar Time
@@ -65,15 +68,14 @@ def main(grid, time2, OUT):
     ###########################################################
     # Shading by the surrounding topography
     ###########################################################
+    # Solar elevation angle (radians)
     elevationangle = np.arcsin(
         np.sin(lat_rad) * np.sin(d_rad) + np.cos(lat_rad) * np.cos(d_rad) * np.cos(h_rad)
     )  # SOURCE: Iqbal (1983)
 
     if grid["has_shading"]:
-        yl = grid["Ly"]
-        xl = grid["Lx"]
 
-        # Azimuth calculation
+        # Azimuth (radians)
         cos_elevation = np.cos(elevationangle)
         azimuth = np.where(
             h < 0,
@@ -85,66 +87,106 @@ def main(grid, time2, OUT):
             ),
         )
 
-        # Directional gradients based on azimuth
-        ddx = np.zeros_like(azimuth)
-        ddy = np.zeros_like(azimuth)
+        if grid["shading_method"] == ShadingMethod.CLASSICAL:
+            yl = grid["Ly"]
+            xl = grid["Lx"]
 
-        ddx[azimuth <= -0.75 * np.pi] = -np.tan(np.pi + azimuth[azimuth <= -0.75 * np.pi])
-        ddx[(azimuth > -0.75 * np.pi) & (azimuth <= -0.25 * np.pi)] = -1
-        ddx[(azimuth > -0.25 * np.pi) & (azimuth <= 0.25 * np.pi)] = np.tan(
-            azimuth[(azimuth > -0.25 * np.pi) & (azimuth <= 0.25 * np.pi)]
-        )
-        ddx[(azimuth > 0.25 * np.pi) & (azimuth <= 0.75 * np.pi)] = 1
-        ddx[azimuth > 0.75 * np.pi] = np.tan(np.pi - azimuth[azimuth > 0.75 * np.pi])
+            # Azimuth calculation
+            cos_elevation = np.cos(elevationangle)
+            azimuth = np.where(
+                h < 0,
+                np.arccos(
+                    (np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)) / cos_elevation
+                ),
+                -np.arccos(
+                    (np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)) / cos_elevation
+                ),
+            )
 
-        ddy[azimuth <= -0.75 * np.pi] = 1
-        ddy[(azimuth > -0.75 * np.pi) & (azimuth <= -0.25 * np.pi)] = -np.tan(
-            np.pi / 2 + azimuth[(azimuth > -0.75 * np.pi) & (azimuth <= -0.25 * np.pi)]
-        )
-        ddy[(azimuth > -0.25 * np.pi) & (azimuth <= 0.25 * np.pi)] = -1
-        ddy[(azimuth > 0.25 * np.pi) & (azimuth <= 0.75 * np.pi)] = -np.tan(
-            np.pi / 2 - azimuth[(azimuth > 0.25 * np.pi) & (azimuth <= 0.75 * np.pi)]
-        )
-        ddy[azimuth > 0.75 * np.pi] = 1
+            # Directional gradients based on azimuth
+            ddx = np.zeros_like(azimuth)
+            ddy = np.zeros_like(azimuth)
 
-        # Shading routine
-        z_flat = grid["z_2D"].ravel()
-        z_current = z_flat[grid["ind"]]
-        shade = np.zeros(grid["gpsum"], dtype=int)
-        max_count = 200
+            ddx[azimuth <= -0.75 * np.pi] = -np.tan(np.pi + azimuth[azimuth <= -0.75 * np.pi])
+            ddx[(azimuth > -0.75 * np.pi) & (azimuth <= -0.25 * np.pi)] = -1
+            ddx[(azimuth > -0.25 * np.pi) & (azimuth <= 0.25 * np.pi)] = np.tan(
+                azimuth[(azimuth > -0.25 * np.pi) & (azimuth <= 0.25 * np.pi)]
+            )
+            ddx[(azimuth > 0.25 * np.pi) & (azimuth <= 0.75 * np.pi)] = 1
+            ddx[azimuth > 0.75 * np.pi] = np.tan(np.pi - azimuth[azimuth > 0.75 * np.pi])
 
-        # Precompute grid indices and deltas ahead of time
-        delta_y, delta_x = np.round(ddx).astype(int), np.round(ddy).astype(int)
+            ddy[azimuth <= -0.75 * np.pi] = 1
+            ddy[(azimuth > -0.75 * np.pi) & (azimuth <= -0.25 * np.pi)] = -np.tan(
+                np.pi / 2 + azimuth[(azimuth > -0.75 * np.pi) & (azimuth <= -0.25 * np.pi)]
+            )
+            ddy[(azimuth > -0.25 * np.pi) & (azimuth <= 0.25 * np.pi)] = -1
+            ddy[(azimuth > 0.25 * np.pi) & (azimuth <= 0.75 * np.pi)] = -np.tan(
+                np.pi / 2 - azimuth[(azimuth > 0.25 * np.pi) & (azimuth <= 0.75 * np.pi)]
+            )
+            ddy[azimuth > 0.75 * np.pi] = 1
 
-        # Precompute flattened grid distances
-        ddx_scaled = ddx * grid["dx"]
-        ddy_scaled = ddy * grid["dx"]
-        distance_grid = np.sqrt(ddx_scaled**2 + ddy_scaled**2)
-        distance_scaled = np.outer(np.arange(1, max_count + 1), distance_grid)
+            # Shading routine
+            z_flat = grid["z_2D"].ravel()
+            z_current = z_flat[grid["ind"]]
+            shade = np.zeros(grid["gpsum"], dtype=bool)
+            max_count = 200
 
-        for count in range(1, max_count + 1):
-            kk = np.clip(grid["yind"] + delta_y * count, 0, yl - 1)
-            ll = np.clip(grid["xind"] + delta_x * count, 0, xl - 1)
-            ind_kkll = ll * yl + kk
+            # Precompute grid indices and deltas ahead of time
+            delta_y, delta_x = np.round(ddx).astype(int), np.round(ddy).astype(int)
 
-            elev_diff = z_flat[ind_kkll] - z_current
-            gridangle = np.arctan(elev_diff / distance_scaled[count - 1])
+            # Precompute flattened grid distances
+            ddx_scaled = ddx * grid["dx"]
+            ddy_scaled = ddy * grid["dx"]
+            distance_grid = np.sqrt(ddx_scaled**2 + ddy_scaled**2)
+            distance_scaled = np.outer(np.arange(1, max_count + 1), distance_grid)
 
-            # Update shade array where elevation angle is exceeded
-            shade[elevationangle <= gridangle] = 1
+            for count in range(1, max_count + 1):
+                kk = np.clip(grid["yind"] + delta_y * count, 0, yl - 1)
+                ll = np.clip(grid["xind"] + delta_x * count, 0, xl - 1)
+                ind_kkll = ll * yl + kk
 
-            # Break the loop if all cells are shaded
-            if np.all(shade == 1):
-                break
+                elev_diff = z_flat[ind_kkll] - z_current
+                gridangle = np.arctan(elev_diff / distance_scaled[count - 1])
 
-        # Build the final shade 2D array
-        shade_2D = np.ones((xl, yl), dtype=int)
-        shade_2D.flat[grid["ind"]] = shade
-        OUT["shade"] = shade_2D.flatten()[grid["ind"]]
-    else:
+                # Update shade array where elevation angle is exceeded
+                shade[elevationangle <= gridangle] = True
+
+                # Break the loop if all cells are shaded
+                if np.all(shade):
+                    break
+
+            # Build the final shaded mask on glacier cells
+            is_shaded_2D = np.zeros((xl, yl), dtype=bool)
+            is_shaded_2D.flat[grid["ind"]] = shade
+            OUT["is_shaded"] = is_shaded_2D.flatten()[grid["ind"]]
+
+        elif (
+            grid["shading_method"] == ShadingMethod.LUT
+        ):  # shading based on comparison of solar elevation angle with grid angle from look-up table (LUT)
+            # TODO: Shading based on lookup tables from Elmer/Ice (DONE?)
+
+            # Select nearest pre-computed azimuth angle for every grid cell (1..grid.nr_az_steps)
+            az_nearest = np.rint((np.pi - azimuth) / (2.0 * np.pi) * grid["nr_az_steps"]).astype(int)
+            az_nearest[az_nearest == 0] = grid["nr_az_steps"]
+
+            # Indices into lookup table (0-based for Python)
+            ind_az = az_nearest - 1 + np.arange(grid["gpsum"], dtype=int) * grid["nr_az_steps"]
+
+            # Shading happens when the solar elevation angle <= maximum grid angle
+            temp = grid["maxgridangle"]
+            OUT["is_shaded"] = elevationangle <= temp.flat[ind_az]
+
+            # For now: assume flat surface and no shading by surrounding terrain (no longer needed!)
+            # OUT["is_shaded"] = np.zeros_like(grid["x"])
+            # OUT["is_shaded"][elevationangle < 0] = 1
+
+        OUT["is_shaded_2D"] = np.zeros(grid["x_2D"].shape, dtype=bool)
+        OUT["is_shaded_2D"].flat[grid["ind"]] = OUT["is_shaded"]
+
+    else:  # fall-back values for no shading
         # TODO: Shading based on lookup tables from Elmer/Ice
         # For now: assume flat surface and no shading by surrounding terrain
-        OUT["shade"] = np.zeros_like(grid["x"])
-        OUT["shade"][elevationangle < 0] = 1
+        OUT["is_shaded"] = np.zeros(grid["x"].shape, dtype=bool)
+        OUT["is_shaded"][elevationangle < 0] = True
 
     return OUT
