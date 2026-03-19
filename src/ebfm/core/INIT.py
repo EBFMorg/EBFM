@@ -17,7 +17,7 @@ from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
 from .config import TimeConfig, GridConfig
-from .grid import GridInputType
+from .grid import GridInputType, GridDict
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
@@ -60,7 +60,7 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     # ---------------------------------------------------------------------
     # Grid parameters
     # ---------------------------------------------------------------------
-    grid = {}
+    grid: GridDict = {}
     grid["utmzone"] = 33  # UTM zone
     grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
     grid["nl"] = 50  # Number of vertical layers
@@ -188,7 +188,7 @@ def init_constants():
     return C
 
 
-def compute_number_of_glacier_cells(grid):
+def compute_number_of_glacier_cells(grid: GridDict) -> int:
     """
     Computes the number of glacier cells in the grid based on the mask.
 
@@ -201,10 +201,11 @@ def compute_number_of_glacier_cells(grid):
     return np.sum(grid["mask"] == 1)
 
 
-def init_grid(grid, io, config: GridConfig):
+def init_grid(grid: GridDict, io, config: GridConfig):
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
     grid["has_shading"] = config.use_shading
+    grid["mesh"] = None  # placeholder, added for compatibility reasons
 
     # Read grid from Elmer, elevations from BedMachine
     if config.dem_file:
@@ -372,6 +373,8 @@ def init_grid(grid, io, config: GridConfig):
         grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
+
+        # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
@@ -420,7 +423,7 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def init_initial_conditions(C, grid, io, time, init_with_restart_file: bool):
+def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file: bool):
     """
     Sets the model's initial conditions at the start of the simulation.
 

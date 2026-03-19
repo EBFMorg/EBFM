@@ -7,7 +7,7 @@ import numpy as np
 
 from ebfm.core import logging
 
-from .base import Coupler, Grid, CouplingConfig, CouplerErrorCode
+from .base import Coupler, Grid, GridDict, CouplingConfig, CouplerErrorCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
 from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
@@ -40,7 +40,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         self.grid: yac.UnstructuredGrid = None
         self.cell_centers: yac.Points = None
 
-    def setup(self, grid: dict | Grid, time: dict[str, float]):
+    def setup(self, grid: GridDict, time: dict[str, float]):
         """
         Setup the coupling interface
 
@@ -54,9 +54,11 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
 
+        grid_object: Grid = grid["mesh"]
+
         grid_name = "ebfm_grid"  # TODO: get from ebfm_coupling_config?
 
-        self._add_grid(grid_name, grid)
+        self._add_grid(grid_name, grid_object)
 
         field_definitions = FieldSet()
 
