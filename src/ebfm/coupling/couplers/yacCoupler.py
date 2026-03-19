@@ -33,7 +33,8 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         if coupling_config.coupler_config:
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
 
-        self.component: yac.Component = self.interface.def_comp(coupling_config.component_name)
+        self.component_name = coupling_config.component_name
+        self.component: yac.Component = self.interface.def_comp(self.component_name)
         self.field_validation_level = coupling_config.field_validation_level
 
         # will be initialized in self._add_grid()
@@ -72,7 +73,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         for field in self.fields.all():
             assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
             logger.debug(f"Performing consistency checks for field '{field.name}'...")
-            field.perform_consistency_checks(self.interface, self.field_validation_level)
+            field.perform_consistency_checks(self.interface, self.component_name, self.field_validation_level)
 
     def _map_exchange_type(self, exchange_type: GenericExchangeType) -> yac.ExchangeType:
         """
