@@ -440,10 +440,10 @@ def init_initial_conditions(C, grid, io, time):
 
         OUT["Tsurf"] = np.full((gpsum,), 273.15)  # Surface temperature (K)
         OUT["subT"] = np.full((gpsum, nl), 265.0)  # Vertical temperatures (K)
+        OUT["subTmean"] = OUT["subT"].copy()  # Annual mean vertical layer temperature (K)
         OUT["subW"] = np.zeros((gpsum, nl))  # Vertical irreducible water content (kg)
         OUT["subS"] = np.zeros((gpsum, nl))  # Vertical slush water content (kg)
         OUT["subD"] = np.full((gpsum, nl), C["Dice"])  # Vertical densities (kg m-3)
-        OUT["subTmean"] = OUT["subT"]  # Annual mean vertical layer temperature (K)
         OUT["timelastsnow"] = np.full((gpsum,), time["ts"])  # Timestep of last snowfall (days)
         OUT["ys"] = np.full((gpsum,), 500.0)  # Annual snowfall (mm water equivalent)
         OUT["subZ"] = np.full((gpsum, nl), grid["max_subZ"])  # Vertical layer depths (m)
