@@ -155,7 +155,7 @@ class YACField:
 
         return replace(self, field_handle=yac_field)
 
-    def perform_consistency_checks(self, yac_interface: yac.YAC, field_validation_level=None):
+    def perform_consistency_checks(self, yac_interface: yac.YAC, ebfm_component_name: str, field_validation_level=None):
         """
         Perform consistency checks on the YACField.
 

@@ -43,16 +43,14 @@ class CouplingConfig:
     def __init__(
         self,
         args: Namespace,
-        component_name: str,
     ):
         """
         Initialize coupling configuration from command line arguments.
 
         @param[in] args command line arguments
-        @param[in] component_name name of this component
         """
 
-        self.component_name = component_name
+        self.component_name = args.component_name
         self.couple_to_icon_atmo = args.couple_to_icon_atmo
         self.couple_to_elmer_ice = args.couple_to_elmer_ice
         self.use_fake_coupling = args.fake_coupling

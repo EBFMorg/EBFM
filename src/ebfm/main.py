@@ -35,6 +35,7 @@ class CliDefaults(Enum):
     FIELD_VALIDATION_LEVEL = FieldValidationLevel.FATAL
     TIME_STEP_SIZE_IN_DAYS = 0.125  # = 0.125 days = 3 hours
     LOG_LEVEL_CONSOLE = "INFO"
+    COMPONENT_NAME = "ebfm"
 
     @classmethod
     def default_time_step_size_in_hours(cls) -> float:
@@ -86,6 +87,13 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
         action="store_true",
         help="Use FakeCoupler to provide synthetic data for coupled fields without requiring YAC or actual coupled "
         "models. Useful for testing the coupling infrastructure.",
+    )
+
+    coupling_group.add_argument(
+        "--component-name",
+        type=str,
+        default=CliDefaults.COMPONENT_NAME.value,
+        help="Identifier for this EBFM instance used by the coupler.",
     )
 
 
@@ -255,20 +263,8 @@ def main():
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
 
     active_coupling_features = extract_active_coupling_features(args)
-    coupling_config = CouplingConfig(args, component_name="ebfm")
-    is_coupled_run = len(active_coupling_features) > 0
-    if is_coupled_run and not (ebfm.coupling.coupling_supported or coupling_config.use_fake_coupling):
-        raise RuntimeError(
-            f"""
-Coupling requested via command line argument(s) {active_coupling_features}, but the 'coupling' module could not be
-imported due to the following error:
-
-{ebfm.coupling.coupling_supported_import_error}
-
-Hint: If you are missing 'yac', please install YAC and the python bindings as described under
-https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
-"""
-        )
+    coupling_config = CouplingConfig(args)
+    ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
     # TODO: replace MPI.COMM_WORLD with communicator from ebfm; either from couplers comm splitting or default comm
     setup_logging(
@@ -288,7 +284,6 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     logger.debug("Reading configuration and checking for consistency.")
 
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    coupling_config = CouplingConfig(args, component_name="ebfm")  # TODO: get from EBFM's coupling configuration?
     grid_config = GridConfig(args)
 
     # Ensure shading routine is only used in uncoupled runs

@@ -12,6 +12,31 @@ if coupling_supported:
     from .couplers.oasisCoupler import OASISCoupler  # noqa: F401
 
 
+def check_coupling_requirements(coupling_config, active_coupling_features: list[str]) -> None:
+    """Raise RuntimeError if real coupling is requested but no backend is available.
+
+    @param[in] coupling_config CouplingConfig holding coupling flags
+    @param[in] active_coupling_features list of active coupling CLI flags (used in the error message)
+    @raises RuntimeError if coupling is requested, fake mode is off, and YAC could not be imported
+    """
+    if coupling_config.use_fake_coupling:
+        return  # Fake coupling bypasses requirements for real coupling backends
+
+    coupling_used = len(active_coupling_features) > 0
+    if coupling_used and not coupling_supported:
+        raise RuntimeError(
+            f"""
+Coupling requested via command line argument(s) {active_coupling_features}, but the 'coupling' module could not be
+imported due to the following error:
+
+{coupling_supported_import_error}
+
+Hint: If you are missing 'yac', please install YAC and the python bindings as described under
+https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
+"""
+        )
+
+
 def select_coupler_class(coupling_config) -> type[Coupler]:
     """Factory pattern: return the Coupler subclass for this run.
 
