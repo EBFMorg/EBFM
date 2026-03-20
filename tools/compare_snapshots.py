@@ -53,27 +53,44 @@ def compare(baseline_path: str, candidate_path: str, atol: float, rtol: float, n
     print(header)
     print("  " + "-" * (len(header) - 2))
 
+
     for key in common_keys:
-        b = baseline[key].astype(float)
-        c = candidate[key].astype(float)
+        b = baseline[key]
+        c = candidate[key]
 
         if b.shape != c.shape:
             print(f"  {key:<{col_w}}  SHAPE MISMATCH: baseline={b.shape} candidate={c.shape}")
             any_failed = True
             continue
 
+        # General case: exact integer comparison for all integer-typed arrays
+        if np.issubdtype(b.dtype, np.integer) and np.issubdtype(c.dtype, np.integer):
+            exact_equal = np.array_equal(b, c)
+            max_abs = np.abs(c - b).max() if b.size > 0 else 0.0
+            mean_abs = np.abs(c - b).mean() if b.size > 0 else 0.0
+            max_rel = 0.0 if exact_equal else float('inf')
+            passed = exact_equal
+            status = "OK" if passed else "FAIL"
+            if not passed:
+                any_failed = True
+            print(
+                f"  {key:<{col_w}}  {str(b.shape):<20}  {max_abs:>14.4e}  "
+                f"{max_rel:>14.4e}  {mean_abs:>14.4e}  {status:>8}  (int exact)"
+            )
+            continue
+
+        # Default: float/tolerance-based comparison
+        b = b.astype(float)
+        c = c.astype(float)
         abs_diff = np.abs(c - b)
         max_abs = abs_diff.max()
         mean_abs = abs_diff.mean()
-
         denom = np.where(np.abs(b) > 0, np.abs(b), 1.0)
         max_rel = (abs_diff / denom).max()
-
         passed = bool(max_abs <= atol + rtol * np.abs(b).max())
         status = "OK" if passed else "FAIL"
         if not passed:
             any_failed = True
-
         print(
             f"  {key:<{col_w}}  {str(b.shape):<20}  {max_abs:>14.4e}  "
             f"{max_rel:>14.4e}  {mean_abs:>14.4e}  {status:>8}"
