@@ -64,7 +64,8 @@ class CouplingConfig:
         self.field_validation_level = FieldValidationLevel(args.field_validation_level)
 
         if args.coupler_config:
-            assert Path(args.coupler_config).is_file(), f"Coupler configuration file {args.coupler_config} not found."
+            if not Path(args.coupler_config).is_file():
+                raise FileNotFoundError(f"Coupler configuration file {args.coupler_config} not found.")
             self.coupler_config = args.coupler_config
         else:
             self.coupler_config = None
@@ -78,10 +79,11 @@ class CouplingConfig:
 
         @param[in] group_comms dict with MPI communicators for different groups
         """
-        assert not self.has_group_communicators(), (
-            "Group communicators have already been set. Overwriting them is not allowed since "
-            "mpi-handshake should only be performed once and this hints at a programming error in your code."
-        )
+        if self.has_group_communicators():
+            raise RuntimeError(
+                "Group communicators have already been set. Overwriting them is not allowed since "
+                "mpi-handshake should only be performed once and this hints at a programming error in your code."
+            )
         self.comms = group_comms
 
     def has_group_communicators(self) -> bool:
@@ -105,7 +107,8 @@ class CouplingConfig:
         @param[in] group_label label of the group
         @returns MPI communicator for the group label
         """
-        assert self.has_group_communicator(group_label), f"Communicator for group label '{group_label}' not found."
+        if not self.has_group_communicator(group_label):
+            raise KeyError(f"Communicator for group label '{group_label}' not found.")
         return self.comms[group_label]
 
     def defines_coupling(self) -> bool:
