@@ -95,7 +95,14 @@ def extract_active_coupling_features(args: argparse.Namespace) -> List[str]:
 
 
 # Arrays saved by --dump-reference
-_REFERENCE_KEYS = ["smb", "smb_cumulative", "Tsurf", "subT", "subD", "subZ"]
+_REFERENCE_KEYS = [
+    "smb", "smb_cumulative", "Tsurf",
+    "subT", "subD", "subZ", "subW", "subS", "surfH",
+    "subTmean", "runoff_irr",
+    "Dens_destr_metam", "Dens_overb_pres", "Dens_drift",
+    # reboot / restart state
+    "snowmass", "ys", "timelastsnow_netCDF", "alb_snow",
+]
 
 
 def dump_reference(logger, OUT, filepath: str):
@@ -112,7 +119,6 @@ def dump_reference(logger, OUT, filepath: str):
 
 def print_diagnostics(logger, grid, OUT, t):
     """Log key diagnostic values each timestep for performance and correctness analysis."""
-    import numpy as np
 
     gpsum = grid.get("gpsum", "N/A")
     has_shading = grid.get("has_shading", False)
@@ -126,7 +132,10 @@ def print_diagnostics(logger, grid, OUT, t):
         )
     if smb_cum is not None:
         logger.info(
-            f"[DIAG t={t + 1}] smb_cumulative: min={smb_cum.min():.4e}  max={smb_cum.max():.4e}  mean={smb_cum.mean():.4e}"
+            f"[DIAG t={t + 1}] smb_cumulative: "
+            f"min={smb_cum.min():.4e}  "
+            f"max={smb_cum.max():.4e}  "
+            f"mean={smb_cum.mean():.4e}"
         )
 
 
@@ -295,6 +304,47 @@ def main():
         ),
     )
 
+    diag_group.add_argument(
+        "--numba-threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Number of Numba threads to use per MPI rank for the parallel heat_conduction() "
+            "kernel (requires numba; install via 'pip install ebfm[performance]'). "
+            "Defaults to cpu_count // mpi_world_size to avoid CPU oversubscription when "
+            "running multiple MPI ranks on a shared node. Has no effect without numba."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--with-numba",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable the parallel Numba kernel for heat_conduction() (opt-in). "
+            "Requires numba; install via: pip install 'ebfm[performance]'. "
+            "Without this flag the fast NumPy A+B+C path is used regardless of whether "
+            "numba is installed. Do NOT use NUMBA_DISABLE_JIT=1 to benchmark the NumPy "
+            "path: that env-var makes @njit a no-op so the kernel runs as plain Python "
+            "loops which are ~100x slower than NumPy."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--diag-dump",
+        type=str,
+        default=None,
+        metavar="DIR",
+        help=(
+            "Save per-function diagnostic snapshots (subT, subD, subZ, subW, subS, surfH) "
+            "to DIR after every inner function call in LOOP_SNOW.main(). "
+            "Files are named step<NNN>_<function>.npz. "
+            "Run twice (once NumPy, once with --with-numba) to two different directories, "
+            "then compare matching files with tools/compare_snapshots.py or numpy.testing."
+        ),
+    )
+
     # Add args for features requiring 'import coupling'
     add_coupling_arguments(parser)
 
@@ -331,6 +381,38 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     logger = getLogger(__name__)
     logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
 
+    # Numba is opt-in: only activate when --with-numba is explicitly passed.
+    # set_num_threads() must be called before any prange() kernel runs.
+    if args.with_numba:
+        if not LOOP_SNOW._NUMBA_AVAILABLE:
+            parser.error("--with-numba: numba is not installed. " "Run: pip install 'ebfm[performance]'")
+        import multiprocessing as _mp
+        import numba as _numba_mod
+
+        _n_threads = (
+            args.numba_threads if args.numba_threads is not None else max(1, _mp.cpu_count() // MPI.COMM_WORLD.size)
+        )
+        _numba_mod.set_num_threads(_n_threads)
+        LOOP_SNOW._USE_NUMBA = True
+        logger.info(
+            f"[NUMBA] --with-numba: parallel Numba kernels enabled — "
+            f"threads per rank: {_n_threads} "
+            f"(cpu_count={_mp.cpu_count()}, MPI world size={MPI.COMM_WORLD.size}). "
+            f"First-call JIT cost is amortised by cache=True."
+        )
+    else:
+        logger.info(
+            "Pass --with-numba to enable the parallel Numba kernels " "(requires: pip install 'ebfm[performance]')."
+        )
+
+    if args.diag_dump is not None:
+        import os as _os
+
+        _os.makedirs(args.diag_dump, exist_ok=True)
+        LOOP_SNOW._DIAG_DUMP = args.diag_dump
+        LOOP_SNOW._DIAG_STEP = 0
+        logger.info(f"[DIAG] Per-function dumps enabled → {args.diag_dump}")
+
     if args.profile:
         import cProfile as _cProfile
         import io as _io
@@ -359,6 +441,11 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
     time = time_config.to_dict()
 
     C = INIT.init_constants()
+
+    if args.random_seed is not None:
+        np.random.seed(args.random_seed)
+        logger.info(f"[DIAG] NumPy random seed fixed to {args.random_seed} for reproducibility.")
+
     grid = INIT.init_grid(grid, io, grid_config)
 
     if args.no_shading and grid["has_shading"]:
@@ -386,10 +473,6 @@ https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
         coupler = ebfm.coupling.DummyCoupler(coupling_config=coupling_config)
 
     coupler.setup(grid["mesh"], time)
-
-    if args.random_seed is not None:
-        np.random.seed(args.random_seed)
-        logger.info(f"[DIAG] NumPy random seed fixed to {args.random_seed} for reproducibility.")
 
     # Time-loop
     logger.info("Entering time loop...")
