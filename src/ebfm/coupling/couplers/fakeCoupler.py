@@ -162,6 +162,10 @@ class FakeCoupler(Coupler):
             "n_points, x, lon, lat, mask (for MATLAB/full EBFM grids)."
         )
 
+    @staticmethod
+    def get_mpi_handshake_group_name() -> str:
+        return "ebfmFakeCoupler"
+
     def _setup(self, grid: GridDict, field_definitions: FieldSet):
         """
         Store grid size so fake arrays can be sized correctly in :meth:`get`.

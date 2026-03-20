@@ -29,18 +29,60 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         """
         super().__init__(coupling_config)
         logger.debug(f"YAC version is {yac.version()}")
-        self.interface: yac.YAC = yac.YAC()
+        self.interface: yac.YAC
+
+        yac_performs_mpi_handshake = not coupling_config.has_group_communicators()
+
+        if yac_performs_mpi_handshake:
+            # MPI handshake has not been performed yet, so YAC will perform the splitting
+            self.interface = yac.YAC()
+        else:
+            yac_group_label = self.get_mpi_handshake_group_name()
+            # EBFM has already performed MPI handshake, so we just need to use the provided communicator
+            if not coupling_config.has_group_communicator(yac_group_label):
+                raise RuntimeError(
+                    f"Coupling configuration provides group communicators {coupling_config.comms}. But the "
+                    f"communicator with the group label '{yac_group_label}' required for coupling with YAC "
+                    f"is missing. Please 1) let EBFM perform mpi-handshake and include the label "
+                    f"'{yac_group_label}' or 2) let YAC perform mpi-handshake."
+                )
+            coupling_comm = coupling_config.get_group_communicator(yac_group_label)
+            logging.debug(f"YAC uses the following comm from EBFM's mpi-handshake: {yac_group_label}: {coupling_comm}.")
+            self.interface = yac.YAC(comm=coupling_comm)
 
         if coupling_config.coupler_config:
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
 
         self.component_name = coupling_config.component_name
         self.component: yac.Component = self.interface.def_comp(self.component_name)
+
+        if yac_performs_mpi_handshake:
+            # only possible after def_comp
+            ebfm_group_label = self.component_name
+            ebfm_comm = self.interface.get_comps_comm([ebfm_group_label])
+
+            logging.debug(
+                f"YAC performed mpi-handshake and created the following comm for EBFM: {ebfm_comm} "
+                f"(rank: {ebfm_comm.rank}; size: {ebfm_comm.size})."
+            )
+
+            comms = {ebfm_group_label: ebfm_comm}
+            coupling_config.set_group_communicators(comms)
+
         self.field_validation_level = coupling_config.field_validation_level
 
         # will be initialized in self._add_grid()
         self.grid: yac.UnstructuredGrid = None
         self.cell_centers: yac.Points = None
+
+    @staticmethod
+    def get_mpi_handshake_group_name() -> str:
+        """
+        Get the group name used with this coupler for MPI handshake.
+
+        @returns group name for MPI handshake
+        """
+        return yac.mpi_handshake_group_name()
 
     def _setup(self, grid: GridDict, field_definitions: FieldSet):
         """
