@@ -66,16 +66,19 @@ def compare(baseline_path: str, candidate_path: str, atol: float, rtol: float, n
         # General case: exact integer comparison for all integer-typed arrays
         if np.issubdtype(b.dtype, np.integer) and np.issubdtype(c.dtype, np.integer):
             exact_equal = np.array_equal(b, c)
-            max_abs = np.abs(c - b).max() if b.size > 0 else 0.0
-            mean_abs = np.abs(c - b).mean() if b.size > 0 else 0.0
-            max_rel = 0.0 if exact_equal else float('inf')
+            abs_diff = np.abs(c - b)
+            max_abs = abs_diff.max() if b.size > 0 else 0
+            mean_abs = int(abs_diff.mean()) if b.size > 0 else 0
+            # For relative difference, cast to float for division, but show as float
+            denom = np.where(np.abs(b) > 0, np.abs(b), 1)
+            max_rel = float((abs_diff / denom).max()) if b.size > 0 else 0.0
             passed = exact_equal
             status = "OK" if passed else "FAIL"
             if not passed:
                 any_failed = True
             print(
-                f"  {key:<{col_w}}  {str(b.shape):<20}  {max_abs:>14.4e}  "
-                f"{max_rel:>14.4e}  {mean_abs:>14.4e}  {status:>8}  (int exact)"
+                f"  {key:<{col_w}}  {str(b.shape):<20}  {max_abs:>14}  "
+                f"{max_rel:>14}  {mean_abs:>14}  {status:>8}"
             )
             continue
 
