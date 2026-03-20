@@ -19,6 +19,7 @@ from ebfm.core import (
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.grid import GridInputType
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel
+from ebfm.core.mpi_handshake import mpi_handshake
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
@@ -118,6 +119,32 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
         active_coupling_args.append("--coupler-config")
 
     return active_coupling_args
+
+
+def do_comm_splitting(comp_name: str, coupling_config: CouplingConfig) -> tuple[MPI.Comm, type[ebfm.coupling.Coupler]]:
+    """
+    Perform MPI communicator splitting.
+
+    The MPI communicator splitting will be performed using the mpi-handshake algorithm and it will create a
+    communication infrastructure that is compatible with the provided coupling configuration. The returned
+    coupler class must be used later to construct the coupling.
+
+    @param[in] comp_name local component name for which communicator is returned.
+    @param[in] coupling_config coupling configuration where group communicators are stored.
+
+    @return local communicator for EBFM and selected coupler class.
+    """
+    coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
+
+    groupnames = set()
+    groupnames.add(comp_name)
+    groupnames.add(coupler_cls.get_mpi_handshake_group_name())
+    groupcomms = mpi_handshake(groupnames=list(groupnames), comm=MPI.COMM_WORLD)
+
+    coupling_config.set_group_communicators(groupcomms)
+    ebfm_comm = groupcomms[comp_name]
+
+    return ebfm_comm, coupler_cls
 
 
 def main():
@@ -221,6 +248,13 @@ def main():
     parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
 
     parallel_group.add_argument(
+        "--local-group-label",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="MPI group label for the local EBFM communicator. Defaults to --component-name.",
+    )
+
+    parallel_group.add_argument(
         "--is-partitioned-elmer-mesh",
         action="store_true",
         help="Indicate if the provided Elmer mesh is partitioned for parallel runs.",
@@ -229,7 +263,7 @@ def main():
     parallel_group.add_argument(
         "--use-part",
         type=int,
-        default=MPI.COMM_WORLD.rank + 1,
+        default=argparse.SUPPRESS,  # To not print (default: ...) in --help
         help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. "
         "If not provided, the MPI rank + 1 will be used as partition ID.",
     )
@@ -255,8 +289,21 @@ def main():
 
     args = parser.parse_args()
 
+    if not hasattr(args, "local_group_label"):
+        args.local_group_label = args.component_name
+
     if args.version:
         ebfm.core.print_version_and_exit()
+
+    # Bootstrap logging before communicator splitting so early diagnostics are available.
+    setup_logging(
+        stdout_log_level=log_levels_map[args.log_level_console],
+        file=args.log_file,
+        comm=MPI.COMM_WORLD,
+        reset_handlers=True,
+    )
+    logger = getLogger(__name__)
+    logger.debug("Bootstrap logging initialized with MPI.COMM_WORLD.")
 
     # Validate that --elmer-mesh-crs-epsg is provided when using --elmer-mesh
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
@@ -266,12 +313,33 @@ def main():
     coupling_config = CouplingConfig(args)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
-    # TODO: replace MPI.COMM_WORLD with communicator from ebfm; either from couplers comm splitting or default comm
-    setup_logging(
-        stdout_log_level=log_levels_map[args.log_level_console],
-        file=args.log_file,
-        comm=MPI.COMM_WORLD,
-    )
+    do_mpi_handshake = True
+    ebfm_comm: MPI.Comm = None
+    coupler_cls: type[ebfm.coupling.Coupler] = None
+
+    if do_mpi_handshake:
+        ebfm_comm, coupler_cls = do_comm_splitting(args.local_group_label, coupling_config)
+        # Reconfigure logging for (now available) EBFM communicator.
+        setup_logging(
+            stdout_log_level=log_levels_map[args.log_level_console],
+            file=args.log_file,
+            comm=ebfm_comm,
+            reset_handlers=True,
+        )
+    else:
+        raise NotImplementedError(
+            "Currently, MPI handshake and communicator splitting is always performed. If you want to disable it, "
+            "please implement the necessary logic here."
+        )
+        # TODO: using MPI.COMM_WORLD below is a work around; better let coupler provide the local communicator;
+        #       but this is only possible at a relatively late point in time, currently not needed and would require
+        #       additional logic.
+        ebfm_comm = MPI.COMM_WORLD
+        coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
+
+    if not hasattr(args, "use_part"):
+        # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
+        args.use_part = ebfm_comm.rank + 1
 
     logger = getLogger(__name__)
     logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")

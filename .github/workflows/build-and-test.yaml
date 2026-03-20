@@ -46,3 +46,13 @@ jobs:
         run: |
           source .venv/bin/activate
           ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon --couple-to-elmer --fake-coupling --no-shading
+      - name: Run example with MPI handshake
+        run: |
+          source .venv/bin/activate
+          # Run dummy script first; dummy on rank 0, EBFM on rank 1
+          mpirun -np 1 python tests/core/mpi_handshake_dummy.py first : \
+                 -np 1 ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00"
+          # Run dummy script second; EBFM on rank 0, dummy on rank 1
+          mpirun -np 1 ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00" : \
+                 -np 1 python tests/core/mpi_handshake_dummy.py second
+
