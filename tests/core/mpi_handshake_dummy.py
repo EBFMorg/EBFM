@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 EBFM Authors
+# SPDX-FileCopyrightText: 2026 EBFM Authors
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
