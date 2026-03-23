@@ -53,7 +53,6 @@ def compare(baseline_path: str, candidate_path: str, atol: float, rtol: float, n
     print(header)
     print("  " + "-" * (len(header) - 2))
 
-
     for key in common_keys:
         b = baseline[key]
         c = candidate[key]
@@ -77,8 +76,7 @@ def compare(baseline_path: str, candidate_path: str, atol: float, rtol: float, n
             if not passed:
                 any_failed = True
             print(
-                f"  {key:<{col_w}}  {str(b.shape):<20}  {max_abs:>14}  "
-                f"{max_rel:>14}  {mean_abs:>14}  {status:>8}"
+                f"  {key:<{col_w}}  {str(b.shape):<20}  {max_abs:>14}  " f"{max_rel:>14}  {mean_abs:>14}  {status:>8}"
             )
             continue
 

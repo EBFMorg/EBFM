@@ -64,17 +64,31 @@ def _diag_dump(label: str, OUT: dict) -> None:
 
     os.makedirs(_DIAG_DUMP, exist_ok=True)
     keys = [
-    "smb", "smb_cumulative", "Tsurf",
-    "subT", "subD", "subZ", "subW", "subS", "surfH",
-    "subTmean", "runoff_irr",
-    "Dens_destr_metam", "Dens_overb_pres", "Dens_drift",
-    # reboot / restart state
-    "snowmass", "ys", "timelastsnow_netCDF", "alb_snow",
-]
+        "smb",
+        "smb_cumulative",
+        "Tsurf",
+        "subT",
+        "subD",
+        "subZ",
+        "subW",
+        "subS",
+        "surfH",
+        "subTmean",
+        "runoff_irr",
+        "Dens_destr_metam",
+        "Dens_overb_pres",
+        "Dens_drift",
+        # reboot / restart state
+        "snowmass",
+        "ys",
+        "timelastsnow_netCDF",
+        "alb_snow",
+    ]
     arrays = {k: OUT[k].copy() for k in keys if k in OUT}
     path = os.path.join(_DIAG_DUMP, f"step_{label}.npz")
     np.savez_compressed(path, **arrays)
     print(f"[DIAG] saved {path}")
+
 
 def main(C, OUT, IN, dt, grid, phys):
     """

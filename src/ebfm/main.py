@@ -96,12 +96,25 @@ def extract_active_coupling_features(args: argparse.Namespace) -> List[str]:
 
 # Arrays saved by --dump-reference
 _REFERENCE_KEYS = [
-    "smb", "smb_cumulative", "Tsurf",
-    "subT", "subD", "subZ", "subW", "subS", "surfH",
-    "subTmean", "runoff_irr",
-    "Dens_destr_metam", "Dens_overb_pres", "Dens_drift",
+    "smb",
+    "smb_cumulative",
+    "Tsurf",
+    "subT",
+    "subD",
+    "subZ",
+    "subW",
+    "subS",
+    "surfH",
+    "subTmean",
+    "runoff_irr",
+    "Dens_destr_metam",
+    "Dens_overb_pres",
+    "Dens_drift",
     # reboot / restart state
-    "snowmass", "ys", "timelastsnow_netCDF", "alb_snow",
+    "snowmass",
+    "ys",
+    "timelastsnow_netCDF",
+    "alb_snow",
 ]
 
 
@@ -127,9 +140,7 @@ def print_diagnostics(logger, grid, OUT, t):
 
     logger.info(f"[DIAG t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
     if smb is not None:
-        logger.info(
-            f"[DIAG t={t + 1}] smb:            min={smb.min():.4e}  max={smb.max():.4e}  mean={smb.mean():.4e}"
-        )
+        logger.info(f"[DIAG t={t + 1}] smb:            min={smb.min():.4e}  max={smb.max():.4e}  mean={smb.mean():.4e}")
     if smb_cum is not None:
         logger.info(
             f"[DIAG t={t + 1}] smb_cumulative: "
