@@ -451,8 +451,14 @@ def main(C, OUT, IN, dt, grid, phys):
         tt = np.zeros(grid["gpsum"])
         kdTdz = np.zeros_like(OUT["subT"])
 
+        # Ping-pong buffers:
+        # Pre-allocate two arrays once and swap references each iteration
+        T_old = OUT["subT"].copy()
+        T_new = np.empty_like(OUT["subT"])
+
         while np.any(tt < dt):
-            subT_old = OUT["subT"].copy()
+            # Copy T_old to T_new so inactive rows carry forward correctly across swaps
+            np.copyto(T_new, T_old)
             dt_temp = np.minimum(dt_stab, dt - tt)
             tt += dt_temp
 
@@ -463,22 +469,25 @@ def main(C, OUT, IN, dt, grid, phys):
                 break
 
             # Calculate vertical heat fluxes
-            kdTdz[idx, 1] = kk_sz_top[idx] * (subT_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
-            kdTdz[idx, 2:] = kk_sz_mid[idx] * (subT_old[idx, 2:] - subT_old[idx, 1:-1]) / dz2[idx]
+            kdTdz[idx, 1] = kk_sz_top[idx] * (T_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
+            kdTdz[idx, 2:] = kk_sz_mid[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
 
             # Update layer-wise temperatures
             C_day_dt = C["dayseconds"] * dt_temp[idx]
 
-            OUT["subT"][idx, 1] = subT_old[idx, 1] + C_day_dt * (kdTdz[idx, 2] - kdTdz[idx, 1]) / denom_l1[idx]
+            T_new[idx, 1] = T_old[idx, 1] + C_day_dt * (kdTdz[idx, 2] - kdTdz[idx, 1]) / denom_l1[idx]
 
-            OUT["subT"][idx, 2:-1] = (
-                subT_old[idx, 2:-1]
-                + C_day_dt[:, np.newaxis] * (kdTdz[idx, 3:] - kdTdz[idx, 2:-1]) / denom_interior[idx]
+            T_new[idx, 2:-1] = (
+                T_old[idx, 2:-1] + C_day_dt[:, np.newaxis] * (kdTdz[idx, 3:] - kdTdz[idx, 2:-1]) / denom_interior[idx]
             )
 
-            OUT["subT"][idx, -1] = subT_old[idx, -1] + C_day_dt * (
-                C["geothermal_flux"] - kdTdz[idx, -1]
-            ) / denom_bottom[idx]
+            T_new[idx, -1] = T_old[idx, -1] + C_day_dt * (C["geothermal_flux"] - kdTdz[idx, -1]) / denom_bottom[idx]
+
+            # Write final result back into the original OUT["subT"] array object in-place.
+            np.copyto(OUT["subT"], T_new)
+
+            # Swap buffer roles
+            T_old, T_new = T_new, T_old
 
         OUT["subT"][:, 0] = (
             OUT["Tsurf"]
