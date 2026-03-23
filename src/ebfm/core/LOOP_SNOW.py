@@ -427,59 +427,58 @@ def main(C, OUT, IN, dt, grid, phys):
         c_eff = OUT["subD"] * (152.2 + 7.122 * OUT["subT"])  # Effective heat capacity
 
         # Stability time step (CFL condition)
-        z_temp = OUT["subZ"][:, 1:]
-        c_eff_temp = c_eff[:, 1:]
-        kk_temp = kk[:, 1:]
         dt_stab = (
-            0.5 * np.min(c_eff_temp, axis=1) * np.min(z_temp, axis=1) ** 2 / np.max(kk_temp, axis=1) / C["dayseconds"]
+            0.5
+            * np.min(c_eff[:, 1:], axis=1)
+            * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
+            / np.max(kk[:, 1:], axis=1)
+            / C["dayseconds"]
         )
+
+        # subZ and c_eff do not change
+        # Precompute kk*subZ products once
+        kk_sz_top = kk[:, 0] * OUT["subZ"][:, 0] + 0.5 * kk[:, 1] * OUT["subZ"][:, 1]
+        kk_sz_mid = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
+
+        # Precompute full temperature-update denominators once
+        denom_l1 = c_eff[:, 1] * (0.5 * OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1] + 0.25 * OUT["subZ"][:, 2])
+        denom_interior = c_eff[:, 2:-1] * (
+            0.25 * OUT["subZ"][:, 1:-2] + 0.5 * OUT["subZ"][:, 2:-1] + 0.25 * OUT["subZ"][:, 3:]
+        )
+        denom_bottom = c_eff[:, -1] * (0.25 * OUT["subZ"][:, -2] + 0.75 * OUT["subZ"][:, -1])
 
         # ------ Heat Conduction Loop ------
         tt = np.zeros(grid["gpsum"])
-        cond_dt_temp = np.zeros_like(tt, dtype=bool)
         kdTdz = np.zeros_like(OUT["subT"])
 
         while np.any(tt < dt):
             subT_old = OUT["subT"].copy()
             dt_temp = np.minimum(dt_stab, dt - tt)
             tt += dt_temp
-            cond_dt = dt_temp > 0
-            cond_dt_temp[:] = cond_dt  # Reuse mask to reduce allocations
+
+            # Integer indices of still-active grid points; early exit when all are done
+            # Replaces cond_dt mask
+            idx = np.flatnonzero(dt_temp > 0)
+            if idx.size == 0:
+                break
 
             # Calculate vertical heat fluxes
-            kdTdz[cond_dt, 1] = (
-                (kk[cond_dt, 0] * OUT["subZ"][cond_dt, 0] + 0.5 * kk[cond_dt, 1] * OUT["subZ"][cond_dt, 1])
-                * (subT_old[cond_dt, 1] - OUT["Tsurf"][cond_dt])
-                / dz1[cond_dt]
-            )
-
-            kdTdz[cond_dt, 2:] = (
-                (kk[cond_dt, 1:-1] * OUT["subZ"][cond_dt, 1:-1] + kk[cond_dt, 2:] * OUT["subZ"][cond_dt, 2:])
-                * (subT_old[cond_dt, 2:] - subT_old[cond_dt, 1:-1])
-                / dz2[cond_dt]
-            )
+            kdTdz[idx, 1] = kk_sz_top[idx] * (subT_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
+            kdTdz[idx, 2:] = kk_sz_mid[idx] * (subT_old[idx, 2:] - subT_old[idx, 1:-1]) / dz2[idx]
 
             # Update layer-wise temperatures
-            C_day_dt = C["dayseconds"] * dt_temp[cond_dt]
-            OUT["subT"][cond_dt, 1] = subT_old[cond_dt, 1] + C_day_dt * (kdTdz[cond_dt, 2] - kdTdz[cond_dt, 1]) / (
-                c_eff[cond_dt, 1]
-                * (0.5 * OUT["subZ"][cond_dt, 0] + 0.5 * OUT["subZ"][cond_dt, 1] + 0.25 * OUT["subZ"][cond_dt, 2])
+            C_day_dt = C["dayseconds"] * dt_temp[idx]
+
+            OUT["subT"][idx, 1] = subT_old[idx, 1] + C_day_dt * (kdTdz[idx, 2] - kdTdz[idx, 1]) / denom_l1[idx]
+
+            OUT["subT"][idx, 2:-1] = (
+                subT_old[idx, 2:-1]
+                + C_day_dt[:, np.newaxis] * (kdTdz[idx, 3:] - kdTdz[idx, 2:-1]) / denom_interior[idx]
             )
 
-            OUT["subT"][cond_dt, 2:-1] = subT_old[cond_dt, 2:-1] + C_day_dt[:, np.newaxis] * (
-                kdTdz[cond_dt, 3:] - kdTdz[cond_dt, 2:-1]
-            ) / (
-                c_eff[cond_dt, 2:-1]
-                * (
-                    0.25 * OUT["subZ"][cond_dt, 1:-2]
-                    + 0.5 * OUT["subZ"][cond_dt, 2:-1]
-                    + 0.25 * OUT["subZ"][cond_dt, 3:]
-                )
-            )
-
-            OUT["subT"][cond_dt, -1] = subT_old[cond_dt, -1] + C_day_dt * (
-                C["geothermal_flux"] - kdTdz[cond_dt, -1]
-            ) / (c_eff[cond_dt, -1] * (0.25 * OUT["subZ"][cond_dt, -2] + 0.75 * OUT["subZ"][cond_dt, -1]))
+            OUT["subT"][idx, -1] = subT_old[idx, -1] + C_day_dt * (
+                C["geothermal_flux"] - kdTdz[idx, -1]
+            ) / denom_bottom[idx]
 
         OUT["subT"][:, 0] = (
             OUT["Tsurf"]
