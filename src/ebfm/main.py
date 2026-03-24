@@ -26,8 +26,6 @@ import ebfm.coupling
 
 from mpi4py import MPI
 
-from typing import List
-
 # logger for this module
 logger: Logger
 
@@ -345,17 +343,6 @@ def main():
     )
 
     diag_group.add_argument(
-        "--no-shading",
-        action="store_true",
-        default=False,
-        help=(
-            "Disable the topographic shading routine even when using a MATLAB mesh. "
-            "Useful for performance comparisons: shading adds up to 200 ray-tracing "
-            "iterations per timestep but does not couple grid points to each other."
-        ),
-    )
-
-    diag_group.add_argument(
         "--random-seed",
         type=int,
         default=None,
@@ -501,7 +488,7 @@ def main():
     time = time_config.to_dict()
     grid, io, phys = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
 
-   if args.random_seed is not None:
+    if args.random_seed is not None:
         np.random.seed(args.random_seed)
         logger.info(f"[DIAG] NumPy random seed fixed to {args.random_seed} for reproducibility.")
 
