@@ -498,6 +498,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
         return True
 
+    @profile
     def percolation_refreezing_and_storage():
         #########################################################
         # Percolation, refreezing and irreducible water storage
@@ -517,10 +518,10 @@ def main(C, OUT, IN, dt, grid, phys):
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]  # Specific heat capacity
         c1 = OUT["cpi"] * OUT["subD"] * OUT["subZ"] * (C["T0"] - OUT["subT"]) / C["Lm"]
         c2 = OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dice"]
-        cond1 = c1 >= c2  # No need for separate cond2 as it's just the negation
 
         # Compute refreezing potential (`Wlim`) per layer
-        Wlim = np.maximum(np.where(cond1, c2, c1), 0)
+        # np.minimum(c1, c2) is equivalent to np.where(c1 >= c2, c2, c1)
+        Wlim = np.maximum(np.minimum(c1, c2), 0)
 
         # Maximum irreducible water storage (`mliqmax`)
         mliqmax = np.zeros_like(OUT["subD"])
@@ -558,26 +559,29 @@ def main(C, OUT, IN, dt, grid, phys):
         carrot *= avail_W[:, np.newaxis]  # Distribute water input among layers
 
         # ------ Refreezing and Irreducible Water Storage Iteration ------
-        RP = np.zeros_like(OUT["subZ"])  # Refreezing potential
-        leftW = np.zeros(grid["gpsum"])  # Remaining water
+        # RP reused across calls: same check-and-fill pattern as Dens_* in compaction
+        _rp_shape = OUT["subZ"].shape
+        if "_perc_RP" not in OUT or OUT["_perc_RP"].shape != _rp_shape:
+            OUT["_perc_RP"] = np.zeros(_rp_shape)
+        else:
+            OUT["_perc_RP"].fill(0.0)
+        RP = OUT["_perc_RP"]
+
         avail_W_loc = np.zeros(grid["gpsum"])  # Available water per layer
 
         for n in range(nl):
             # Compute available water per layer
             avail_W_loc += carrot[:, n]
 
-            # Condition: water > refreezing limit
-            cond1 = avail_W_loc > Wlim[:, n]
+            # RP = min(available water, refreezing capacity), correct for both cond1 and ~cond1
+            # No branching: when avail <= Wlim the full amount refreezes; when avail > Wlim
+            # only Wlim refreezes and the excess goes into irreducible storage.
+            np.minimum(avail_W_loc, Wlim[:, n], out=RP[:, n])
+            # Excess water after refreezing, clamped to zero when there is none
+            excess = np.maximum(avail_W_loc - Wlim[:, n], 0.0)
+            OUT["subW"][:, n] = subW_old[:, n] + np.minimum(excess, Wirr[:, n])
 
-            RP[cond1, n] = Wlim[cond1, n]  # Refreezing limited by Wlim
-            leftW[cond1] = avail_W_loc[cond1] - Wlim[cond1, n]
-            OUT["subW"][cond1, n] = subW_old[cond1, n] + np.minimum(leftW[cond1], Wirr[cond1, n])
-
-            # Condition: water <= refreezing limit
-            RP[~cond1, n] = avail_W_loc[~cond1]
-            OUT["subW"][~cond1, n] = subW_old[~cond1, n]
-
-            # Update available water after refreezing
+            # Deduct water consumed (refrozen + stored) from the running total
             avail_W_loc -= RP[:, n] + (OUT["subW"][:, n] - subW_old[:, n])
 
             # Update temperature and density after refreezing
@@ -612,15 +616,17 @@ def main(C, OUT, IN, dt, grid, phys):
         avail_S = 1.0 / (1.0 + dt / C["Trunoff"]) * avail_S
         avail_S[avail_S < 1e-25] = 0.0  # Set near-zero available slush to zero
 
-        # Initialize slush water in all layers
-        OUT["subS"] = np.zeros((grid["gpsum"], nl))
+        # Initialize slush water in all layers (reusing arrays)
+        if "subS" not in OUT or OUT["subS"].shape != (gpsum, nl):
+            OUT["subS"] = np.zeros((gpsum, nl))
+        else:
+            OUT["subS"].fill(0.0)
 
         # Bottom-up filling of pore space with slush water
+        # Each layer takes min(available, pore space), no branching needed
         for n in range(nl - 1, -1, -1):  # Loop from bottom (nl) to top (1)
-            cond1 = avail_S > slushspace[:, n]  # Mask for layers where more water is available than the slush space
-            OUT["subS"][cond1, n] = slushspace[cond1, n]  # Fill slush space in those layers
-            OUT["subS"][~cond1, n] = avail_S[~cond1]  # Fill remaining water in other layers
-            avail_S -= OUT["subS"][:, n]  # Reduce available slush water by the amount stored
+            np.minimum(avail_S, slushspace[:, n], out=OUT["subS"][:, n])
+            avail_S -= OUT["subS"][:, n]
 
         #####################################
         # Refreezing of slush water
@@ -631,14 +637,12 @@ def main(C, OUT, IN, dt, grid, phys):
         c2 = OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dice"]
         Wlim = np.minimum(c1, c2)
 
-        # Available slush water
-        slush_W = OUT["subS"].copy()  # Make a copy to avoid overwriting inputs (vectorized across all layers)
-
-        # Determine refreezing amounts
+        # Refreezing of slush:
+        # RS = min(subS, Wlim) where layer is cold and wet, else 0
+        # No temporaries needed, min() handles both branches; mask zeroes inactive elements
         layer_cond = (OUT["subS"] > 0) & (OUT["subT"] < C["T0"])
-        Wlim_effective = Wlim * layer_cond
-        slush_W_effective = slush_W * layer_cond
-        RS = np.where(slush_W_effective > Wlim_effective, Wlim_effective, slush_W_effective)
+        RS = np.minimum(OUT["subS"], Wlim)
+        RS[~layer_cond] = 0.0
 
         # Update slush water content
         OUT["subS"] -= RS
@@ -656,11 +660,12 @@ def main(C, OUT, IN, dt, grid, phys):
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
         c1 = OUT["cpi"] * OUT["subD"] * OUT["subZ"] * (C["T0"] - OUT["subT"]) / C["Lm"]
         c2 = OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dice"]
-        Wlim = np.where(c1 >= c2, c2, c1)
+        Wlim = np.minimum(c1, c2)
 
         # Calculate refreezing amounts
         valid_mask = (OUT["subW"] > 0) & (OUT["subT"] < C["T0"])
-        RI = np.minimum(OUT["subW"], Wlim) * valid_mask
+        RI = np.minimum(OUT["subW"], Wlim)
+        RI[~valid_mask] = 0.0
 
         # Update water content (subW), temperature (subT), and density (subD)
         OUT["subW"] -= RI
