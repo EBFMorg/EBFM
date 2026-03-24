@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime
 import argparse
 from enum import Enum
+import numpy as np
 
 import ebfm.core
 from ebfm.core import (
@@ -24,6 +25,8 @@ from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 import ebfm.coupling
 
 from mpi4py import MPI
+
+from typing import List
 
 # logger for this module
 logger: Logger
@@ -118,6 +121,62 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
         active_coupling_args.append("--coupler-config")
 
     return active_coupling_args
+
+
+# Arrays saved by --dump-reference
+_REFERENCE_KEYS = [
+    "smb",
+    "smb_cumulative",
+    "Tsurf",
+    "subT",
+    "subD",
+    "subZ",
+    "subW",
+    "subS",
+    "surfH",
+    "subTmean",
+    "runoff_irr",
+    "Dens_destr_metam",
+    "Dens_overb_pres",
+    "Dens_drift",
+    # reboot / restart state
+    "snowmass",
+    "ys",
+    "timelastsnow_netCDF",
+    "alb_snow",
+]
+
+
+def dump_reference(logger, OUT, filepath: str):
+    """Save key output arrays to a .npz file for later comparison."""
+    import numpy as np
+
+    data = {k: OUT[k] for k in _REFERENCE_KEYS if k in OUT}
+    missing = [k for k in _REFERENCE_KEYS if k not in OUT]
+    if missing:
+        logger.warning(f"[DUMP] Keys not found in OUT and will be skipped: {missing}")
+    np.savez(filepath, **data)
+    logger.info(f"[DUMP] Reference snapshot saved to '{filepath}' (keys: {list(data.keys())})")
+
+
+def print_diagnostics(logger, grid, OUT, t):
+    """Log key diagnostic values each timestep for performance and correctness analysis."""
+
+    gpsum = grid.get("gpsum", "N/A")
+    has_shading = grid.get("has_shading", False)
+    smb = OUT.get("smb")
+    smb_cum = OUT.get("smb_cumulative")
+
+    logger.info(f"[DIAG t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
+    if smb is not None:
+        logger.info(f"[DIAG t={t + 1}] smb:            min={smb.min():.4e}  max={smb.max():.4e}  mean={smb.mean():.4e}")
+    if smb_cum is not None:
+        logger.info(
+            f"[DIAG t={t + 1}] smb_cumulative: "
+            f"min={smb_cum.min():.4e}  "
+            f"max={smb_cum.max():.4e}  "
+            f"mean={smb_cum.mean():.4e}"
+        )
 
 
 def main():
@@ -250,6 +309,105 @@ def main():
         help="If provided, log output will be written to the specified file (one file per MPI rank).",
     )
 
+    diag_group = parser.add_argument_group("diagnostics and profiling")
+
+    diag_group.add_argument(
+        "--diagnostics",
+        action="store_true",
+        default=False,
+        help=(
+            "Log diagnostic info each timestep via the INFO logger: "
+            "gpsum, shading status, and smb / smb_cumulative statistics."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--profile",
+        action="store_true",
+        default=False,
+        help=(
+            "Wrap the run with cProfile and log the top-30 hotspots by cumulative time at the end. "
+            "For line-level profiling of heat_conduction(), run with kernprof instead: "
+            "kernprof -l src/main.py <args> && python -m line_profiler main.py.lprof"
+        ),
+    )
+
+    diag_group.add_argument(
+        "--dump-reference",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help=(
+            "After the final timestep, save key output arrays (smb, smb_cumulative, "
+            "Tsurf, subT, subD, subZ) to FILE as a NumPy .npz archive. "
+            "Use tools/compare_snapshots.py to diff two such files."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--no-shading",
+        action="store_true",
+        default=False,
+        help=(
+            "Disable the topographic shading routine even when using a MATLAB mesh. "
+            "Useful for performance comparisons: shading adds up to 200 ray-tracing "
+            "iterations per timestep but does not couple grid points to each other."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--random-seed",
+        type=int,
+        default=None,
+        metavar="INT",
+        help=(
+            "Fix the NumPy random seed before the time loop. Required for reproducible "
+            "results when using random climate forcing (e.g. set_random_weather_data), "
+            "so that --dump-reference snapshots from two identical runs can be compared."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--numba-threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Number of Numba threads to use per MPI rank for the parallel heat_conduction() "
+            "kernel (requires numba; install via 'pip install ebfm[performance]'). "
+            "Defaults to cpu_count // mpi_world_size to avoid CPU oversubscription when "
+            "running multiple MPI ranks on a shared node. Has no effect without numba."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--with-numba",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable the parallel Numba kernel for heat_conduction() (opt-in). "
+            "Requires numba; install via: pip install 'ebfm[performance]'. "
+            "Without this flag the fast NumPy A+B+C path is used regardless of whether "
+            "numba is installed. Do NOT use NUMBA_DISABLE_JIT=1 to benchmark the NumPy "
+            "path: that env-var makes @njit a no-op so the kernel runs as plain Python "
+            "loops which are ~100x slower than NumPy."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--diag-dump",
+        type=str,
+        default=None,
+        metavar="DIR",
+        help=(
+            "Save per-function diagnostic snapshots (subT, subD, subZ, subW, subS, surfH) "
+            "to DIR after every inner function call in LOOP_SNOW.main(). "
+            "Files are named step<NNN>_<function>.npz. "
+            "Run twice (once NumPy, once with --with-numba) to two different directories, "
+            "then compare matching files with tools/compare_snapshots.py or numpy.testing."
+        ),
+    )
+
     # Add args for features requiring 'import coupling'
     add_coupling_arguments(parser)
 
@@ -276,6 +434,47 @@ def main():
     logger = getLogger(__name__)
     logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
 
+    # Numba is opt-in: only activate when --with-numba is explicitly passed.
+    # set_num_threads() must be called before any prange() kernel runs.
+    if args.with_numba:
+        if not LOOP_SNOW._NUMBA_AVAILABLE:
+            parser.error("--with-numba: numba is not installed. " "Run: pip install 'ebfm[performance]'")
+        import multiprocessing as _mp
+        import numba as _numba_mod
+
+        _n_threads = (
+            args.numba_threads if args.numba_threads is not None else max(1, _mp.cpu_count() // MPI.COMM_WORLD.size)
+        )
+        _numba_mod.set_num_threads(_n_threads)
+        LOOP_SNOW._USE_NUMBA = True
+        logger.info(
+            f"[NUMBA] --with-numba: parallel Numba kernels enabled — "
+            f"threads per rank: {_n_threads} "
+            f"(cpu_count={_mp.cpu_count()}, MPI world size={MPI.COMM_WORLD.size}). "
+            f"First-call JIT cost is amortised by cache=True."
+        )
+    else:
+        logger.info(
+            "Pass --with-numba to enable the parallel Numba kernels " "(requires: pip install 'ebfm[performance]')."
+        )
+
+    if args.diag_dump is not None:
+        import os as _os
+
+        _os.makedirs(args.diag_dump, exist_ok=True)
+        LOOP_SNOW._DIAG_DUMP = args.diag_dump
+        LOOP_SNOW._DIAG_STEP = 0
+        logger.info(f"[DIAG] Per-function dumps enabled → {args.diag_dump}")
+
+    if args.profile:
+        import cProfile as _cProfile
+        import io as _io
+        import pstats as _pstats
+
+        _pr = _cProfile.Profile()
+        _pr.enable()
+        logger.info("[PROFILE] cProfile enabled.")
+
     logger.info("Done parsing command line arguments.")
     logger.debug("Parsed the following command line arguments:")
     for arg, val in vars(args).items():
@@ -301,6 +500,10 @@ def main():
     # Model setup & initialization
     time = time_config.to_dict()
     grid, io, phys = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
+
+   if args.random_seed is not None:
+        np.random.seed(args.random_seed)
+        logger.info(f"[DIAG] NumPy random seed fixed to {args.random_seed} for reproducibility.")
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
@@ -371,6 +574,9 @@ def main():
         # Calculate surface mass balance
         OUT = LOOP_mass_balance.main(OUT, IN, C)
 
+        if args.diagnostics:
+            print_diagnostics(logger, grid, OUT, t)
+
         if coupler.has_coupling_to("elmer_ice"):
             elmer_ice = coupler.get_component("elmer_ice")
             # Exchange data with Elmer
@@ -422,6 +628,16 @@ def main():
         logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
 
     logger.info("Time loop completed.")
+
+    if args.dump_reference:
+        dump_reference(logger, OUT, args.dump_reference)
+
+    if args.profile:
+        _pr.disable()
+        _s = _io.StringIO()
+        _ps = _pstats.Stats(_pr, stream=_s).sort_stats("cumulative")
+        _ps.print_stats(30)
+        logger.info("[PROFILE] cProfile top 30 by cumulative time:\n" + _s.getvalue())
 
     coupler.finalize()
 
