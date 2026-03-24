@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import numpy as np
+import math
 
 from .constants import SECONDS_PER_HOUR
 
@@ -88,6 +89,145 @@ def _diag_dump(label: str, OUT: dict) -> None:
     path = os.path.join(_DIAG_DUMP, f"step_{label}.npz")
     np.savez_compressed(path, **arrays)
     print(f"[DIAG] saved {path}")
+
+
+@njit(parallel=True, cache=True)
+def _compaction_kernel(
+    subD,  # (gpsum, nl) Output array, updated in-place
+    subZ,  # (gpsum, nl) Output array, updated in-place
+    subT,  # (gpsum, nl)
+    subW,  # (gpsum, nl), Output array
+    subTmean,  # (gpsum, nl) Output array, updated in-place
+    subD_old,  # (gpsum, nl)
+    subZ_old,  # (gpsum, nl)
+    logyearsnow,  # (gpsum, nl)
+    yearsnow,  # (gpsum, nl)
+    WS,  # (gpsum,)
+    Dens_destr_metam,  # (gpsum, nl)
+    Dens_overb_pres,  # (gpsum, nl)
+    Dens_drift,  # (gpsum, nl)
+    surfH,  # (gpsum,), Output array
+    sumWinit,  # (gpsum,)
+    runoff_irr,  # (gpsum,), Output array
+    dt_yearfrac,
+    dt_seconds,
+    dt,
+    Dice,
+    Dfirn,
+    Dwater,
+    g,
+    T0,  # scalar
+    rd,  # scalar
+    Ec,  # scalar
+    Eg,  # scalar
+    dayseconds,
+    tau_drift,
+    compaction_mode,
+):
+    """Per-column compaction kernel, parallelized over gpsum
+
+    1. Firn compaction
+    2. Seasonal snow compaction
+      2.1 Densification by destructive metamorphism
+      2.2 Densification by Overburden pressure
+      2.3 Drifting-snow densification
+    3. Layer-thickness and surface height, adjustment and subW clipping to mliqmax.
+    """
+    gpsum, nl = subD.shape
+    for i in prange(gpsum):
+        # ------ 1. FIRN COMPACTION ------ #
+        for k in range(nl):
+            subTmean[i, k] = subTmean[i, k] * (1.0 - dt_yearfrac) + dt_yearfrac * subT[i, k]
+            cond_firn_k = (compaction_mode == 0) or (subD[i, k] >= Dfirn)
+            if cond_firn_k:
+                if subD[i, k] < 550.0:
+                    grav_const = 0.07 * max(1.435 - 0.151 * logyearsnow[i, k], 0.25)
+                else:
+                    grav_const = 0.03 * max(2.366 - 0.293 * logyearsnow[i, k], 0.25)
+                temp_factor = math.exp(-Ec / (rd * subT[i, k]) + Eg / (rd * subTmean[i, k]))
+                firn_inc = dt_yearfrac * grav_const * yearsnow[i, k] * g * (Dice - subD[i, k]) * temp_factor
+                subD[i, k] += firn_inc
+
+        # ------ 2. SEASONAL SNOW COMPACTION ------ #
+        if compaction_mode == 1:  # firn+snow
+            # ------ 2.1 DENSIFICATION BY DESTRUCTIVE METAMORPHISM ------ #                                  #
+            # Capture pre-DM snow mask (subD < Dfirn) BEFORE modifying subD.
+            # Reuses it for overburden and drifting
+            was_snow = np.empty(nl, dtype=np.bool_)
+            for k in range(nl):
+                was_snow[k] = subD[i, k] < Dfirn
+
+            for k in range(nl):
+                if was_snow[k]:
+                    cc1 = math.exp(-0.046 * max(subD[i, k] - 175.0, 0.0))
+                    cc2 = 1.0 + (1.0 if subW[i, k] != 0.0 else 0.0)
+                    temp_exp = math.exp(0.04 * (subT[i, k] - T0))
+                    snow_inc = cc1 * cc2 * 2.777e-6 * temp_exp * dt_seconds * subD[i, k]
+                    subD[i, k] = min(subD[i, k] + snow_inc, Dice)
+                    Dens_destr_metam[i, k] = snow_inc
+                else:
+                    Dens_destr_metam[i, k] = 0.0
+
+            # ------ 2.2 DENSIFICATION BY OVERBURDEN PRESSURE ------ #
+            # Two passes:
+            # (1) compute Psload from post-DM densities
+            # (2) apply updates
+            # Refactoring into a loop introduces slight rounding errors!
+            psload = np.empty(nl)
+            psload[0] = 0.5 * subD[i, 0] * subZ[i, 0] * g
+            for k in range(1, nl):
+                xm = subD[i, k - 1] * subZ[i, k - 1] * g
+                xk = subD[i, k] * subZ[i, k] * g
+                psload[k] = psload[k - 1] + 0.5 * (xm + xk)
+
+            for k in range(nl):
+                Dens_overb_pres[i, k] = 0.0
+                if was_snow[k]:  # use pre-DM mask to match NumPy cond_snow
+                    cc7 = 4.0 * 7.62237e6 / 250.0 * subD[i, k] / (1.0 + 60.0 * subW[i, k] / (Dwater * subZ[i, k]))
+                    visc = cc7 * math.exp(0.1 * (T0 - subT[i, k]) + 0.023 * subD[i, k])
+                    overb_inc = dt * dayseconds * subD[i, k] * psload[k] / visc
+                    subD[i, k] = min(subD[i, k] + overb_inc, Dice)
+                    Dens_overb_pres[i, k] = dt * dayseconds * subD[i, k] * psload[k] / visc
+
+            # ------ 2.3 DRIFTING SNOW DENSIFICATION ------ #
+            # Refactoring into a loop introduces slight rounding errors!
+            # Use updated subD < Dfirn to match cond_drift_total
+            z_i_k = 0.0  # z_i[0] = 0
+            for k in range(nl):
+                d_k = max(subD[i, k], 50.0)
+                mo_k = -0.069 + 0.66 * (1.25 - 0.0042 * (d_k - 50.0))
+                si_k = -2.868 * math.exp(-0.085 * WS[i]) + 1.0 + mo_k
+                gamma_k = max(0.0, si_k * math.exp(-z_i_k / 0.1))
+                Dens_drift[i, k] = 0.0
+                if si_k > 0.0 and subD[i, k] < Dfirn:  # use updated mask to match NumPy cond_drift_total
+                    tau_i_k = tau_drift / gamma_k  # gamma_k > 0 since si_k > 0
+                    drift_inc = dt_seconds * max(350.0 - subD[i, k], 0.0) / tau_i_k
+                    subD[i, k] = min(subD[i, k] + drift_inc, Dice)
+                    Dens_drift[i, k] = drift_inc
+                # z_i[k+1] = z_i[k] + subZ[k] * (3.25 - SI[k])
+                z_i_k += subZ[i, k] * (3.25 - si_k)
+
+        # ------ 3. UPDATE LAYER THICKNESS & SURFACE HEIGHT AFTER COMPACTION ------
+        z_sum = 0.0
+        z_sum_old = 0.0
+        subW_sum = 0.0
+        for k in range(nl):
+            if subD[i, k] < Dice:
+                subZ[i, k] = subZ_old[i, k] * subD_old[i, k] / subD[i, k]
+                exp_f = 0.0143 * math.exp(3.3 * (Dice - subD[i, k]) / Dice)
+                denom = 1.0 - exp_f
+                mliqmax_k = subD[i, k] * subZ[i, k] * exp_f / denom * 0.05 * min(Dice - subD[i, k], 20.0)
+                if subW[i, k] > mliqmax_k:
+                    subW[i, k] = mliqmax_k
+            else:
+                # Ice layer: mliqmax = 0 => clamp subW to zero
+                subW[i, k] = 0.0
+            z_sum += subZ[i, k]
+            z_sum_old += subZ_old[i, k]
+            subW_sum += subW[i, k]
+
+        surfH[i] += z_sum - z_sum_old
+        runoff_irr[i] = sumWinit[i] - subW_sum
 
 
 def main(C, OUT, IN, dt, grid, phys):
@@ -299,6 +439,52 @@ def main(C, OUT, IN, dt, grid, phys):
             else:
                 OUT[_key].fill(0.0)
 
+        # runoff_irr is written by kernel function
+        # ensure it exists before the Numba kernel reads it
+        _gshape = (gpsum,)
+        if "runoff_irr" not in OUT or OUT["runoff_irr"].shape != _gshape:
+            OUT["runoff_irr"] = np.zeros(_gshape)
+
+        # Numba parallel path:
+        if _USE_NUMBA:
+            _mode = {"firn_only": 0, "firn+snow": 1}.get(phys["snow_compaction"], -1)
+            if _mode < 0:
+                raise ValueError(f"_compaction_kernel: unknown snow_compaction={phys['snow_compaction']!r}")
+            _compaction_kernel(
+                OUT["subD"],
+                OUT["subZ"],
+                OUT["subT"],
+                OUT["subW"],
+                OUT["subTmean"],
+                subD_old,
+                subZ_old,
+                IN["logyearsnow"],
+                IN["yearsnow"],
+                IN["WS"],
+                OUT["Dens_destr_metam"],
+                OUT["Dens_overb_pres"],
+                OUT["Dens_drift"],
+                OUT["surfH"],
+                OUT["sumWinit"],
+                OUT["runoff_irr"],
+                dt_yearfrac,
+                dt_seconds,
+                dt,
+                C["Dice"],
+                C["Dfirn"],
+                C["Dwater"],
+                C["g"],
+                C["T0"],
+                C["rd"],
+                C["Ec"],
+                C["Eg"],
+                C["dayseconds"],
+                48 * 2 * SECONDS_PER_HOUR,
+                _mode,
+            )
+            return True
+
+        # Original NumPy path:
         # ------ FIRN COMPACTION ------ #
         if phys["snow_compaction"] in ["firn_only", "firn+snow"]:
             # Pre-compute the logical condition based on the snow compaction type
