@@ -37,59 +37,13 @@ except ImportError:
 
     prange = range  # type: ignore[assignment]  # noqa: F811
 
-# Dispatch flag — False by default (opt-in via --with-numba).
+# Dispatch flag, false by default (opt-in via --with-numba).
 # Set to True by main.py when --with-numba is passed and numba is properly available.
 _USE_NUMBA = False
 
-# Optional per-function diagnostic dumps.
-# Set to a directory path string to save subT/subD/subZ/subW after every inner
-# function call, e.g.:
-#   import ebfm.core.LOOP_SNOW as LS; LS._DIAG_DUMP = "/tmp/numpy"
-# Then run again with _USE_NUMBA=True and LS._DIAG_DUMP = "/tmp/numba".
-# Compare pairs with: numpy.testing.assert_allclose or compare_snapshots.py.
-_DIAG_DUMP = None  # type: str | None
-_DIAG_MAX_STEPS = 1  # only dump this many timesteps (0 = unlimited)
 
-
-def _diag_dump(label: str, OUT: dict) -> None:
-    """Save tracked arrays to _DIAG_DUMP/<label>.npz when _DIAG_DUMP is set.
-
-    Only writes for timesteps 0 .. _DIAG_MAX_STEPS-1.
-    Set _DIAG_MAX_STEPS = 0 to dump every timestep.
-    """
-    if _DIAG_DUMP is None:
-        return
-    if _DIAG_MAX_STEPS > 0:
-        return
-    import os
-
-    os.makedirs(_DIAG_DUMP, exist_ok=True)
-    keys = [
-        "smb",
-        "smb_cumulative",
-        "Tsurf",
-        "subT",
-        "subD",
-        "subZ",
-        "subW",
-        "subS",
-        "surfH",
-        "subTmean",
-        "runoff_irr",
-        "Dens_destr_metam",
-        "Dens_overb_pres",
-        "Dens_drift",
-        # reboot / restart state
-        "snowmass",
-        "ys",
-        "timelastsnow_netCDF",
-        "alb_snow",
-    ]
-    arrays = {k: OUT[k].copy() for k in keys if k in OUT}
-    path = os.path.join(_DIAG_DUMP, f"step_{label}.npz")
-    np.savez_compressed(path, **arrays)
-    print(f"[DIAG] saved {path}")
-
+# Kernels for compaction, heatconduction and percolation steps
+# Compiled with numba when available and _USE_NUMBA is True.
 @njit(parallel=True, cache=True)
 def _compaction_kernel(
     subD,  # (gpsum, nl) Output array, updated in-place

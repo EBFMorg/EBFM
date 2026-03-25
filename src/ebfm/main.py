@@ -307,7 +307,7 @@ def main():
         help="If provided, log output will be written to the specified file (one file per MPI rank).",
     )
 
-    diag_group = parser.add_argument_group("diagnostics and profiling")
+    diag_group = parser.add_argument_group("diagnostics, reference snapshots, random seed")
 
     diag_group.add_argument(
         "--diagnostics",
@@ -320,24 +320,13 @@ def main():
     )
 
     diag_group.add_argument(
-        "--profile",
-        action="store_true",
-        default=False,
-        help=(
-            "Wrap the run with cProfile and log the top-30 hotspots by cumulative time at the end. "
-            "For line-level profiling of heat_conduction(), run with kernprof instead: "
-            "kernprof -l src/main.py <args> && python -m line_profiler main.py.lprof"
-        ),
-    )
-
-    diag_group.add_argument(
         "--dump-reference",
         type=str,
         default=None,
         metavar="FILE",
         help=(
-            "After the final timestep, save key output arrays (smb, smb_cumulative, "
-            "Tsurf, subT, subD, subZ) to FILE as a NumPy .npz archive. "
+            "After the final timestep, save key output arrays "
+            "(see defined `_REFERENCE_KEYS`) to FILE as a NumPy .npz archive. "
             "Use tools/compare_snapshots.py to diff two such files."
         ),
     )
@@ -354,45 +343,24 @@ def main():
         ),
     )
 
-    diag_group.add_argument(
+    performance_group = parser.add_argument_group("Performance and Numba configuration")
+
+    performance_group.add_argument(
         "--numba-threads",
         type=int,
         default=None,
         metavar="N",
         help=(
-            "Number of Numba threads to use per MPI rank for the parallel heat_conduction() "
-            "kernel (requires numba; install via 'pip install ebfm[performance]'). "
-            "Defaults to cpu_count // mpi_world_size to avoid CPU oversubscription when "
-            "running multiple MPI ranks on a shared node. Has no effect without numba."
+            "Number of Numba threads to use per MPI rank. "
+            "Requires numba; install via 'pip install ebfm[performance]'. "
         ),
     )
 
-    diag_group.add_argument(
+    performance_group.add_argument(
         "--with-numba",
         action="store_true",
         default=False,
-        help=(
-            "Enable the parallel Numba kernel for heat_conduction() (opt-in). "
-            "Requires numba; install via: pip install 'ebfm[performance]'. "
-            "Without this flag the fast NumPy A+B+C path is used regardless of whether "
-            "numba is installed. Do NOT use NUMBA_DISABLE_JIT=1 to benchmark the NumPy "
-            "path: that env-var makes @njit a no-op so the kernel runs as plain Python "
-            "loops which are ~100x slower than NumPy."
-        ),
-    )
-
-    diag_group.add_argument(
-        "--diag-dump",
-        type=str,
-        default=None,
-        metavar="DIR",
-        help=(
-            "Save per-function diagnostic snapshots (subT, subD, subZ, subW, subS, surfH) "
-            "to DIR after every inner function call in LOOP_SNOW.main(). "
-            "Files are named step<NNN>_<function>.npz. "
-            "Run twice (once NumPy, once with --with-numba) to two different directories, "
-            "then compare matching files with tools/compare_snapshots.py or numpy.testing."
-        ),
+        help=("Enable the parallel Numba kernel. " "Requires numba; install via: pip install 'ebfm[performance]'. "),
     )
 
     # Add args for features requiring 'import coupling'
@@ -422,45 +390,49 @@ def main():
     logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
 
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
-    # set_num_threads() must be called before any prange() kernel runs.
+    # set_num_threads() must be called before any kernel runs.
     if args.with_numba:
         if not LOOP_SNOW._NUMBA_AVAILABLE:
             parser.error("--with-numba: numba is not installed. " "Run: pip install 'ebfm[performance]'")
+
         import multiprocessing as _mp
         import numba as _numba_mod
 
-        _n_threads = (
-            args.numba_threads if args.numba_threads is not None else max(1, _mp.cpu_count() // MPI.COMM_WORLD.size)
-        )
-        _numba_mod.set_num_threads(_n_threads)
+        cpu_count = _mp.cpu_count()
+        mpi_size = MPI.COMM_WORLD.size
+        suggested_max_threads = max(1, cpu_count // mpi_size)
+
+        # Default: 1 thread unless user explicitly sets --numba-threads
+        n_threads = args.numba_threads if args.numba_threads is not None else 1
+
+        if args.numba_threads is None:
+            logger.info(
+                f"[NUMBA] --with-numba enabled. Using default threads per rank: {n_threads}. "
+                f"To increase, pass --numba-threads N (suggested max: {suggested_max_threads}; "
+                f"cpu_count={cpu_count}, MPI world size={mpi_size})."
+            )
+        else:
+            if n_threads < 1:
+                parser.error("--numba-threads must be a >= 1")
+            if n_threads > suggested_max_threads:
+                parser.error(
+                    f"[NUMBA] --numba-threads={n_threads} exceeds suggested max {suggested_max_threads} "
+                    f"(cpu_count={cpu_count}, MPI world size={mpi_size}). "
+                    f"--numba-threads must be between 1 and {suggested_max_threads} on this system. "
+                )
+
+            logger.info(
+                f"[NUMBA] --with-numba enabled. Threads per rank: {n_threads} "
+                f"(suggested max {suggested_max_threads}; cpu_count={cpu_count}, MPI world size={mpi_size})."
+            )
+
+        _numba_mod.set_num_threads(n_threads)
         LOOP_SNOW._USE_NUMBA = True
-        logger.info(
-            f"[NUMBA] --with-numba: parallel Numba kernels enabled — "
-            f"threads per rank: {_n_threads} "
-            f"(cpu_count={_mp.cpu_count()}, MPI world size={MPI.COMM_WORLD.size}). "
-            f"First-call JIT cost is amortised by cache=True."
-        )
+
     else:
         logger.info(
             "Pass --with-numba to enable the parallel Numba kernels " "(requires: pip install 'ebfm[performance]')."
         )
-
-    if args.diag_dump is not None:
-        import os as _os
-
-        _os.makedirs(args.diag_dump, exist_ok=True)
-        LOOP_SNOW._DIAG_DUMP = args.diag_dump
-        LOOP_SNOW._DIAG_STEP = 0
-        logger.info(f"[DIAG] Per-function dumps enabled → {args.diag_dump}")
-
-    if args.profile:
-        import cProfile as _cProfile
-        import io as _io
-        import pstats as _pstats
-
-        _pr = _cProfile.Profile()
-        _pr.enable()
-        logger.info("[PROFILE] cProfile enabled.")
 
     logger.info("Done parsing command line arguments.")
     logger.debug("Parsed the following command line arguments:")
@@ -618,13 +590,6 @@ def main():
 
     if args.dump_reference:
         dump_reference(logger, OUT, args.dump_reference)
-
-    if args.profile:
-        _pr.disable()
-        _s = _io.StringIO()
-        _ps = _pstats.Stats(_pr, stream=_s).sort_stats("cumulative")
-        _ps.print_stats(30)
-        logger.info("[PROFILE] cProfile top 30 by cumulative time:\n" + _s.getvalue())
 
     coupler.finalize()
 
