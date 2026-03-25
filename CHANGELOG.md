@@ -6,6 +6,15 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Introduced options:
+** `--diagnostics` to show diagnostics for every timestep
+** `--dump-reference` to create file at the end of the run for comparison
+** `--random-seed` to fix the random seed for reproducible results
+** `--with-numba` and `--numba-threads` to run numba kernels with N threads
+* Added `tools/compare_snapshots.py` to compare two runs using dumped `.npz` files
+* Performance improvements:
+** Improvements in LOOP_SNOW.py (compaction, heat_conduction, percolation_refreezing_and_storage and layer_merging_and_splitting)
+** Added numba kernels for compaction, heat_conduction and percolation_refreezing_and_storage, addresses: https://github.com/EBFMorg/EBFM/issues/55
 * Introduce option `--component-name` to allow configuration of the name this component used to identify to the coupler. https://github.com/EBFMorg/EBFM/pull/101
 
 # v0.3.0
@@ -17,7 +26,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * Introduce type checking with mypy for `ebfm.coupling` module. https://github.com/EBFMorg/EBFM/pull/92
 * Generalize restart by providing additional options `--restart-dir` and `--restart-init`. https://github.com/EBFMorg/EBFM/pull/90
 * Introduce `--field-validation-level` to let user specify how EBFM should treat fields that are defined by EBFM but not provided/accepted by the coupled component. https://github.com/EBFMorg/EBFM/pull/87.
-* Fix put/get signatures of couplers and return types to match the Coupler base class, 
+* Fix put/get signatures of couplers and return types to match the Coupler base class,
 * Dropped Python 3.9 support in favor of Python >= 3.10 (required for PEP 604 union type annotations). https://github.com/EBFMorg/EBFM/pull/82
 * Added tox testing infrastructure with multi-version Python support (3.9-3.13) and separate unit/example test environments. https://github.com/EBFMorg/EBFM/pull/78.
 * Introduce `--elmer-mesh-crs-epsg` to let user define the projection used in the Elmer mesh. Mandatory when using `--elmer-mesh`. https://github.com/EBFMorg/EBFM/pull/86.
