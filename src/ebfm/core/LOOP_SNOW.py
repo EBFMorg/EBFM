@@ -90,7 +90,6 @@ def _diag_dump(label: str, OUT: dict) -> None:
     np.savez_compressed(path, **arrays)
     print(f"[DIAG] saved {path}")
 
-
 @njit(parallel=True, cache=True)
 def _compaction_kernel(
     subD,  # (gpsum, nl) Output array, updated in-place
@@ -228,6 +227,63 @@ def _compaction_kernel(
 
         surfH[i] += z_sum - z_sum_old
         runoff_irr[i] = sumWinit[i] - subW_sum
+
+
+@njit(parallel=True, cache=True)
+def _heat_conduction_kernel(
+    subT,  # (gpsum, nl) Output array, updated in-place
+    Tsurf,  # (gpsum,)
+    kk_sz_top,  # (gpsum,)
+    kk_sz_mid,  # (gpsum, nl-2)
+    dz1,  # (gpsum,)
+    dz2,  # (gpsum, nl-2)
+    denom_l1,  # (gpsum,)
+    denom_interior,  # (gpsum, nl-3)
+    denom_bottom,  # (gpsum,)
+    dt_stab,  # (gpsum,)
+    dt,  # scalar — total time step in days
+    dayseconds,  # scalar — seconds per day
+    geothermal_flux,  # scalar — W m-2
+):
+    """Per-column heat-conduction kernel, parallelized over gpsum.
+
+    Each column is independent over gpsum: the CFL sub-stepping while-loop runs entirely
+    per grid point with no inter-column communication,
+
+    For each sub-step inside the while-loop:
+      1. Compute all inter-layer heat fluxes ``kdTdz`` from the *current*
+         column temperatures ``T_loc``.
+      2. Update ``T_loc`` in-place using ``kdTdz``.
+      3. Repeat until the full time step ``dt`` is covered.
+    """
+    gpsum, nl = subT.shape
+    for i in prange(gpsum):
+        # Thread-local working copy and flux array
+        T_loc = subT[i, :].copy()
+        kdTdz = np.zeros(nl)
+
+        tt_i = 0.0
+        while tt_i < dt:
+            dt_temp_i = min(dt_stab[i], dt - tt_i)
+            if dt_temp_i == 0.0:
+                break
+            tt_i += dt_temp_i
+            C_day_dt = dayseconds * dt_temp_i
+
+            # ---- Step 1: freeze all fluxes from current T_loc ----
+            kdTdz[1] = kk_sz_top[i] * (T_loc[1] - Tsurf[i]) / dz1[i]
+            for k in range(2, nl):
+                kdTdz[k] = kk_sz_mid[i, k - 2] * (T_loc[k] - T_loc[k - 1]) / dz2[i, k - 2]
+
+            # ---- Step 2: update T_loc in-place (kdTdz is now frozen) ----
+            T_loc[1] += C_day_dt * (kdTdz[2] - kdTdz[1]) / denom_l1[i]
+            for k in range(2, nl - 1):
+                T_loc[k] += C_day_dt * (kdTdz[k + 1] - kdTdz[k]) / denom_interior[i, k - 2]
+            T_loc[nl - 1] += C_day_dt * (geothermal_flux - kdTdz[nl - 1]) / denom_bottom[i]
+
+        # Write results back to the shared subT array
+        for k in range(nl):
+            subT[i, k] = T_loc[k]
 
 
 def main(C, OUT, IN, dt, grid, phys):
@@ -622,59 +678,86 @@ def main(C, OUT, IN, dt, grid, phys):
         c_eff = OUT["subD"] * (152.2 + 7.122 * OUT["subT"])  # Effective heat capacity
 
         # Stability time step (CFL condition)
-        z_temp = OUT["subZ"][:, 1:]
-        c_eff_temp = c_eff[:, 1:]
-        kk_temp = kk[:, 1:]
         dt_stab = (
-            0.5 * np.min(c_eff_temp, axis=1) * np.min(z_temp, axis=1) ** 2 / np.max(kk_temp, axis=1) / C["dayseconds"]
+            0.5
+            * np.min(c_eff[:, 1:], axis=1)
+            * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
+            / np.max(kk[:, 1:], axis=1)
+            / C["dayseconds"]
         )
 
+        # subZ and c_eff do not change
+        # Precompute kk*subZ products once
+        kk_sz_top = kk[:, 0] * OUT["subZ"][:, 0] + 0.5 * kk[:, 1] * OUT["subZ"][:, 1]
+        kk_sz_mid = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
+
+        # Precompute full temperature-update denominators once
+        denom_l1 = c_eff[:, 1] * (0.5 * OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1] + 0.25 * OUT["subZ"][:, 2])
+        denom_interior = c_eff[:, 2:-1] * (
+            0.25 * OUT["subZ"][:, 1:-2] + 0.5 * OUT["subZ"][:, 2:-1] + 0.25 * OUT["subZ"][:, 3:]
+        )
+        denom_bottom = c_eff[:, -1] * (0.25 * OUT["subZ"][:, -2] + 0.75 * OUT["subZ"][:, -1])
+
         # ------ Heat Conduction Loop ------
-        tt = np.zeros(grid["gpsum"])
-        cond_dt_temp = np.zeros_like(tt, dtype=bool)
-        kdTdz = np.zeros_like(OUT["subT"])
-
-        while np.any(tt < dt):
-            subT_old = OUT["subT"].copy()
-            dt_temp = np.minimum(dt_stab, dt - tt)
-            tt += dt_temp
-            cond_dt = dt_temp > 0
-            cond_dt_temp[:] = cond_dt  # Reuse mask to reduce allocations
-
-            # Calculate vertical heat fluxes
-            kdTdz[cond_dt, 1] = (
-                (kk[cond_dt, 0] * OUT["subZ"][cond_dt, 0] + 0.5 * kk[cond_dt, 1] * OUT["subZ"][cond_dt, 1])
-                * (subT_old[cond_dt, 1] - OUT["Tsurf"][cond_dt])
-                / dz1[cond_dt]
+        if _USE_NUMBA:
+            # Numba parallel path: prange(gpsum), each column solved independently.
+            _heat_conduction_kernel(
+                OUT["subT"],
+                OUT["Tsurf"],
+                kk_sz_top,
+                kk_sz_mid,
+                dz1,
+                dz2,
+                denom_l1,
+                denom_interior,
+                denom_bottom,
+                dt_stab,
+                dt,
+                C["dayseconds"],
+                C["geothermal_flux"],
             )
 
-            kdTdz[cond_dt, 2:] = (
-                (kk[cond_dt, 1:-1] * OUT["subZ"][cond_dt, 1:-1] + kk[cond_dt, 2:] * OUT["subZ"][cond_dt, 2:])
-                * (subT_old[cond_dt, 2:] - subT_old[cond_dt, 1:-1])
-                / dz2[cond_dt]
-            )
+        else:
+            # NumPy path: explicit while-loop with vectorized column updates.
+            tt = np.zeros(grid["gpsum"])
+            kdTdz = np.zeros_like(OUT["subT"])
+            # Ping-pong buffers:
+            # Pre-allocate two arrays once and swap references each iteration
+            T_old = OUT["subT"].copy()
+            T_new = np.empty_like(OUT["subT"])
 
-            # Update layer-wise temperatures
-            C_day_dt = C["dayseconds"] * dt_temp[cond_dt]
-            OUT["subT"][cond_dt, 1] = subT_old[cond_dt, 1] + C_day_dt * (kdTdz[cond_dt, 2] - kdTdz[cond_dt, 1]) / (
-                c_eff[cond_dt, 1]
-                * (0.5 * OUT["subZ"][cond_dt, 0] + 0.5 * OUT["subZ"][cond_dt, 1] + 0.25 * OUT["subZ"][cond_dt, 2])
-            )
+            while np.any(tt < dt):
+                # Copy T_old to T_new so inactive rows carry forward correctly across swaps
+                np.copyto(T_new, T_old)
+                dt_temp = np.minimum(dt_stab, dt - tt)
+                tt += dt_temp
 
-            OUT["subT"][cond_dt, 2:-1] = subT_old[cond_dt, 2:-1] + C_day_dt[:, np.newaxis] * (
-                kdTdz[cond_dt, 3:] - kdTdz[cond_dt, 2:-1]
-            ) / (
-                c_eff[cond_dt, 2:-1]
-                * (
-                    0.25 * OUT["subZ"][cond_dt, 1:-2]
-                    + 0.5 * OUT["subZ"][cond_dt, 2:-1]
-                    + 0.25 * OUT["subZ"][cond_dt, 3:]
+                # Integer indices of still-active grid points; early exit when all are done
+                # Replaces cond_dt mask
+                idx = np.flatnonzero(dt_temp > 0)
+                if idx.size == 0:
+                    break
+                # Calculate vertical heat fluxes
+                kdTdz[idx, 1] = kk_sz_top[idx] * (T_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
+                kdTdz[idx, 2:] = kk_sz_mid[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
+
+                # Update layer-wise temperatures
+                C_day_dt = C["dayseconds"] * dt_temp[idx]
+
+                T_new[idx, 1] = T_old[idx, 1] + C_day_dt * (kdTdz[idx, 2] - kdTdz[idx, 1]) / denom_l1[idx]
+
+                T_new[idx, 2:-1] = (
+                    T_old[idx, 2:-1]
+                    + C_day_dt[:, np.newaxis] * (kdTdz[idx, 3:] - kdTdz[idx, 2:-1]) / denom_interior[idx]
                 )
-            )
 
-            OUT["subT"][cond_dt, -1] = subT_old[cond_dt, -1] + C_day_dt * (
-                C["geothermal_flux"] - kdTdz[cond_dt, -1]
-            ) / (c_eff[cond_dt, -1] * (0.25 * OUT["subZ"][cond_dt, -2] + 0.75 * OUT["subZ"][cond_dt, -1]))
+                T_new[idx, -1] = T_old[idx, -1] + C_day_dt * (C["geothermal_flux"] - kdTdz[idx, -1]) / denom_bottom[idx]
+
+                # Write final result back into the original OUT["subT"] array object in-place.
+                np.copyto(OUT["subT"], T_new)
+
+                # Swap buffer roles
+                T_old, T_new = T_new, T_old
 
         OUT["subT"][:, 0] = (
             OUT["Tsurf"]
