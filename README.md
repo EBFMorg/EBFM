@@ -106,6 +106,9 @@ of the input x/y coordinates. EBFM uses this CRS to convert coordinates to lon/l
   ebfm --elmer-mesh examples/DEM --elmer-mesh-crs-epsg 3413
   ```
 
+  As an example, you can use the mesh from the Elmer/Ice website for the
+  [Greenland Ice Sheet](https://elmerice.elmerfem.org/wiki/doku.php?id=eis:greenland).
+
 * Elmer Mesh with Elevation data from NetCDF: The Elmer mesh file provides x-y
   coordinate. An additioal NetCDF file is given to provide elevation data for
   these x-y coordinates. Please use the arguments `--elmer-mesh /path/to/your/elmer/MESH`
