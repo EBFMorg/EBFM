@@ -378,7 +378,9 @@ def main():
             logger.debug("Started...")
 
             data_to_elmer = {
-                "smb": OUT["smb"],
+                "smb": OUT["smb"]
+                / time_config.time_step.total_seconds()
+                * C["yearseconds"],  # convert from m w.e. per time step to m w.e. per year
                 "T_ice": OUT["T_ice"],
                 "runoff": OUT["runoff"],
             }
