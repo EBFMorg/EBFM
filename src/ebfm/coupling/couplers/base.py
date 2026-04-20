@@ -101,9 +101,36 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
             raise KeyError(f"Coupling to component '{component_name}' is not enabled.")
         return self._coupled_components[component_name]
 
-    @abstractmethod
     def setup(self, grid: GridDict, time: dict[str, float]):
-        raise NotImplementedError("setup method must be implemented in subclasses.")
+        """
+        Setup the coupling interface.
+
+        Performs initialization operations after init and before entering the
+        time loop
+
+        @param[in] grid Grid used by EBFM where coupling happens
+        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
+        """
+        self._time = time
+
+        field_definitions = FieldSet()
+
+        for component in self._coupled_components.values():
+            field_definitions |= component.get_field_definitions(self._time)
+
+        self._setup(grid, field_definitions)
+
+    @abstractmethod
+    def _setup(self, grid: GridDict, field_definitions: FieldSet):
+        """
+        Perform coupler-specific setup tasks such as:
+        - Adding the grid to the coupler interface
+        - Adding coupled fields to the coupler interface based on component definitions
+
+        @param[in] grid grid information dictionary
+        @param[in] field_definitions set of field definitions collected from all coupled components
+        """
+        raise NotImplementedError("_setup method must be implemented in subclasses.")
 
     def get_conversion_per_year_factor(self) -> float:
         """
