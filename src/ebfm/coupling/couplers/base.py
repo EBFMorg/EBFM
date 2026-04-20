@@ -138,14 +138,13 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         Performs the calculation based on the current time step size stored in the instance.
 
-        @note This method assumes that self.time has been set and contains the key 'dt'.
+        @note This method assumes that self._time has been set (i.e. self.setup() has been called).
 
         @return The conversion factor (unitless).
         """
-        assert self._time is not None, "Time information must be set before calling get_conversion_per_year_factor."
-        assert "dt" in self._time, "Time information must include 'dt' key representing the time step size."
+        assert self._time is not None, "self._time must be set before calling get_conversion_per_year_factor."
 
-        ebfm_time_step = self._time["dt"]  # time step size in days
+        ebfm_time_step = self._time.time_step_in_days()
 
         return DAYS_PER_YEAR / ebfm_time_step
 
