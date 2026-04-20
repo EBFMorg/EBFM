@@ -7,6 +7,8 @@ import numpy as np
 from enum import Enum
 
 from ebfm.core.grid import GridDict
+from ebfm.core.constants import DAYS_PER_YEAR
+
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
 # from ebfm.core.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
@@ -73,7 +75,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
             self._coupled_components[icon_comp.name] = icon_comp
 
         self.fields: FieldSet = FieldSet()
-        self._time = None
+        self._time: dict[str, float] | None = None
 
     def has_coupling_to(self, component_name: str) -> bool:
         """
@@ -103,8 +105,22 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
     def setup(self, grid: GridDict, time: dict[str, float]):
         raise NotImplementedError("setup method must be implemented in subclasses.")
 
-    def get_conversion_per_year_factor(self):
-        raise NotImplementedError("setup method must be implemented in subclasses.")
+    def get_conversion_per_year_factor(self) -> float:
+        """
+        Returns the conversion factor to scale a per-timestep value to a per-year value.
+
+        Performs the calculation based on the current time step size stored in the instance.
+
+        @note This method assumes that self.time has been set and contains the key 'dt'.
+
+        @return The conversion factor (unitless).
+        """
+        assert self._time is not None, "Time information must be set before calling get_conversion_per_year_factor."
+        assert "dt" in self._time, "Time information must include 'dt' key representing the time step size."
+
+        ebfm_time_step = self._time["dt"]  # time step size in days
+
+        return DAYS_PER_YEAR / ebfm_time_step
 
     def _add_grid(self, grid_name: str, grid: Grid):
         """
