@@ -116,7 +116,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         field_definitions = FieldSet()
 
         for component in self._coupled_components.values():
-            field_definitions |= component.get_field_definitions(self._time.to_dict())
+            field_definitions |= component.get_field_definitions(self._time)
 
         self._setup(grid, field_definitions)
 
