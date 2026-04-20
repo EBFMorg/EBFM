@@ -10,7 +10,8 @@ if TYPE_CHECKING:
 
 from .base import Component
 
-from ebfm.coupling.fields import FieldSet, Field, ExchangeType, days_to_iso
+from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
+from ebfm.core.config import TimeConfig
 
 
 class ElmerIce(Component):
@@ -23,11 +24,11 @@ class ElmerIce(Component):
     def __init__(self, coupler: "Coupler"):
         super().__init__(coupler)
 
-    def get_field_definitions(self, time: dict[str, float]) -> FieldSet:
+    def get_field_definitions(self, time: TimeConfig) -> FieldSet:
         """
         Get generic field definitions for EBFM coupling to Elmer/Ice.
         """
-        timestep = days_to_iso(time["dt"])
+        timestep = Timestep(value=time.time_step_iso8601())
 
         return FieldSet(
             {
