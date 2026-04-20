@@ -168,6 +168,7 @@ class FakeCoupler(Coupler):
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
         self._n_points = self._infer_n_points(grid)
+        self._time = time
 
         field_definitions = FieldSet()
 
