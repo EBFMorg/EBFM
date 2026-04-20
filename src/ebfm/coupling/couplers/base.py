@@ -73,6 +73,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
             self._coupled_components[icon_comp.name] = icon_comp
 
         self.fields: FieldSet = FieldSet()
+        self._time = None
 
     def has_coupling_to(self, component_name: str) -> bool:
         """
@@ -100,6 +101,9 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
     @abstractmethod
     def setup(self, grid: GridDict, time: dict[str, float]):
+        raise NotImplementedError("setup method must be implemented in subclasses.")
+
+    def get_conversion_per_year_factor(self):
         raise NotImplementedError("setup method must be implemented in subclasses.")
 
     def _add_grid(self, grid_name: str, grid: Grid):

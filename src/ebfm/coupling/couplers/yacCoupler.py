@@ -6,8 +6,10 @@ import yac
 import numpy as np
 
 from ebfm.core import logging
+from ebfm.core.constants import SECONDS_PER_DAY, DAYS_PER_YEAR
 
 from .base import Coupler, Grid, GridDict, CouplingConfig, CouplerErrorCode
+
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
 from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
@@ -41,6 +43,18 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         self.grid: yac.UnstructuredGrid = None
         self.cell_centers: yac.Points = None
 
+    def get_conversion_per_year_factor(self) -> float:
+        """
+        Returns the conversion factor to scale a per-timestep value to a per-year value.
+
+        Performs the calculation based on the current time step size stored in the instance.
+
+        @note This method assumes that self.time has been set and contains the key 'dt'.
+
+        @return The conversion factor (unitless).
+        """
+        return (DAYS_PER_YEAR * SECONDS_PER_DAY) / (self._time["dt"] * SECONDS_PER_DAY)
+
     def setup(self, grid: GridDict, time: dict[str, float]):
         """
         Setup the coupling interface
@@ -69,6 +83,8 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         self._add_couples(field_definitions)
 
         self.interface.enddef()
+
+        self._time = time
 
         for field in self.fields.all():
             assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"

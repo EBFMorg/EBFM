@@ -84,6 +84,11 @@ class ElmerIce(Component):
         @returns dictionary of received field data
         """
         received_data: dict[str, np.ndarray] = {}
+        if "smb" in data_to_exchange.keys():
+            data_to_exchange["smb"] = self._coupler.get_conversion_per_year_factor() * data_to_exchange["smb"]
+
+        if "runoff" in data_to_exchange.keys():
+            data_to_exchange["runoff"] = self._coupler.get_conversion_per_year_factor() * data_to_exchange["runoff"]
 
         # Put data to Elmer/Ice
         self._put_if_coupled("T_ice", data_to_exchange)
