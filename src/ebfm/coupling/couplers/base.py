@@ -12,7 +12,7 @@ from ebfm.core.constants import DAYS_PER_YEAR
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
 # from ebfm.core.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
-from ebfm.core.config import CouplingConfig
+from ebfm.core.config import CouplingConfig, TimeConfig
 
 import logging
 
@@ -75,7 +75,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
             self._coupled_components[icon_comp.name] = icon_comp
 
         self.fields: FieldSet = FieldSet()
-        self._time: dict[str, float] | None = None
+        self._time: TimeConfig | None = None  # will be set in setup()
 
     def has_coupling_to(self, component_name: str) -> bool:
         """
@@ -101,7 +101,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
             raise KeyError(f"Coupling to component '{component_name}' is not enabled.")
         return self._coupled_components[component_name]
 
-    def setup(self, grid: GridDict, time: dict[str, float]):
+    def setup(self, grid: GridDict, time: TimeConfig):
         """
         Setup the coupling interface.
 
@@ -109,14 +109,14 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         time loop
 
         @param[in] grid Grid used by EBFM where coupling happens
-        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
+        @param[in] time TimeConfig with time parameters
         """
         self._time = time
 
         field_definitions = FieldSet()
 
         for component in self._coupled_components.values():
-            field_definitions |= component.get_field_definitions(self._time)
+            field_definitions |= component.get_field_definitions(self._time.to_dict())
 
         self._setup(grid, field_definitions)
 
