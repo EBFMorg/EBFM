@@ -310,7 +310,7 @@ def main():
     coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
     coupler = coupler_cls(coupling_config=coupling_config)
 
-    coupler.setup(grid, time)
+    coupler.setup(grid, time_config)
 
     # Time-loop
     logger.info("Entering time loop...")
