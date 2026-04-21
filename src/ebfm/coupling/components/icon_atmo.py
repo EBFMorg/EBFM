@@ -5,7 +5,7 @@
 from typing import TYPE_CHECKING
 from collections.abc import Mapping
 import numpy as np
-from ebfm.core.constants import DAYS_PER_YEAR, SECONDS_PER_DAY
+from ebfm.core.constants import SECONDS_PER_DAY
 
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
@@ -118,16 +118,18 @@ class IconAtmo(Component):
         received_data: dict[str, np.ndarray] = {}
 
         # We need to convert precipitation received from ICON from kg / m^2 / s
-        # to the unit expected by EBFM (???)
-        def map_pr_icon_to_ebfm(x: np.ndarray) -> np.ndarray:
-            seconds_per_year = DAYS_PER_YEAR * SECONDS_PER_DAY
-            return x * seconds_per_year * 1e-3
+        # to m w.e. (per EBFM timestep)
+        def map_pr_to_ebfm(precipitation: np.ndarray) -> np.ndarray:
+            mwe_per_second = precipitation * 1e-3
+            mwe_per_day = mwe_per_second * SECONDS_PER_DAY
+            mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
+            return mwe_per_timestep
 
         # Put data to IconAtmo
         self._put_if_coupled("albedo", data_to_exchange)
 
         # Get data from IconAtmo
-        pr = self._get_if_coupled("pr", transform=map_pr_icon_to_ebfm)
+        pr = self._get_if_coupled("pr", transform=map_pr_to_ebfm)
         if pr is not None:
             received_data["pr"] = pr
 

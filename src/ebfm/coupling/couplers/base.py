@@ -7,7 +7,6 @@ import numpy as np
 from enum import Enum
 
 from ebfm.core.grid import GridDict
-from ebfm.core.constants import DAYS_PER_YEAR
 
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
@@ -132,21 +131,16 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         """
         raise NotImplementedError("_setup method must be implemented in subclasses.")
 
-    def get_conversion_per_year_factor(self) -> float:
+    def get_time_step_in_days(self) -> float:
         """
-        Returns the conversion factor to scale a per-timestep value to a per-year value.
-
-        Performs the calculation based on the current time step size stored in the instance.
+        Get the current time step size of the model in days.
 
         @note This method assumes that self._time has been set (i.e. self.setup() has been called).
 
-        @return The conversion factor (unitless).
+        @returns time step size in days
         """
-        assert self._time is not None, "self._time must be set before calling get_conversion_per_year_factor."
-
-        ebfm_time_step = self._time.time_step_in_days()
-
-        return DAYS_PER_YEAR / ebfm_time_step
+        assert self._time is not None, "self._time must be set before calling get_time_step."
+        return self._time.time_step_in_days()
 
     def _add_grid(self, grid_name: str, grid: Grid):
         """

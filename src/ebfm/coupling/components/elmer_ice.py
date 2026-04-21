@@ -13,6 +13,7 @@ from .base import Component
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
 from ebfm.core.config import TimeConfig
+from ebfm.core.constants import DAYS_PER_YEAR
 
 
 class ElmerIce(Component):
@@ -90,7 +91,9 @@ class ElmerIce(Component):
         # For fields representing rates (e.g. SMB, runoff), we need to convert them from per timestep to per year
         # before sending to Elmer/Ice, which expects annual values.
         def map_per_timestep_to_per_year(x_per_timestep: np.ndarray) -> np.ndarray:
-            return self._coupler.get_conversion_per_year_factor() * x_per_timestep
+            x_per_day = x_per_timestep / self._coupler.get_time_step_in_days()
+            x_per_year = x_per_day * DAYS_PER_YEAR
+            return x_per_year
 
         # Put data to Elmer/Ice
         self._put_if_coupled("T_ice", data_to_exchange)
