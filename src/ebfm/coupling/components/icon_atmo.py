@@ -117,16 +117,21 @@ class IconAtmo(Component):
         """
         received_data: dict[str, np.ndarray] = {}
 
+        # We need to convert precipitation received from ICON from kg / m^2 / s
+        # to the unit expected by EBFM (???)
+        def map_pr_icon_to_ebfm(x: np.ndarray) -> np.ndarray:
+            seconds_per_year = DAYS_PER_YEAR * SECONDS_PER_DAY
+            return x * seconds_per_year * 1e-3
+
         # Put data to IconAtmo
         self._put_if_coupled("albedo", data_to_exchange)
 
         # Get data from IconAtmo
-        pr = self._get_if_coupled("pr")
+        pr = self._get_if_coupled("pr", transform=map_pr_icon_to_ebfm)
         if pr is not None:
-            # convert precipitation from kg m-2 s-1 to m w.e.
-            received_data["pr"] = pr * self._coupler.get_seconds_per_year() * 1e-3
+            received_data["pr"] = pr
 
-        # TO DO: check what units are needed for pr_snow in EBFM
+        # TODO: check what units are needed for pr_snow in EBFM
         pr_snow = self._get_if_coupled("pr_snow")
         if pr_snow is not None:
             received_data["pr_snow"] = pr_snow

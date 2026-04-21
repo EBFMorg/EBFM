@@ -7,7 +7,7 @@ import numpy as np
 from enum import Enum
 
 from ebfm.core.grid import GridDict
-from ebfm.core.constants import DAYS_PER_YEAR, SECONDS_PER_DAY
+from ebfm.core.constants import DAYS_PER_YEAR
 
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
@@ -147,16 +147,6 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         ebfm_time_step = self._time.time_step_in_days()
 
         return DAYS_PER_YEAR / ebfm_time_step
-
-    def get_seconds_per_year(self) -> float:
-        """
-        Returns the number of seconds in a year.
-
-        This is a constant value based on the definition of a year in days and the number of seconds in a day.
-
-        @return The number of seconds in a year.
-        """
-        return DAYS_PER_YEAR * SECONDS_PER_DAY
 
     def _add_grid(self, grid_name: str, grid: Grid):
         """
