@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from typing import TYPE_CHECKING
+from collections.abc import Mapping
 import numpy as np
 
 if TYPE_CHECKING:
@@ -105,11 +106,11 @@ class IconAtmo(Component):
             }
         )
 
-    def exchange(self, data_to_exchange: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Exchange data with IconAtmo.
 
-        @param[in] data_to_exchange dictionary of field names and their data to be sent
+        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
 
         @returns dictionary of received field data
         """

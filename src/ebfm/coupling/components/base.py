@@ -4,11 +4,23 @@
 
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
+from collections.abc import Mapping, Callable
 import numpy as np
 
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
     from ebfm.coupling.fields.base import FieldSet
+
+
+def identity(x: np.ndarray) -> np.ndarray:
+    """
+    Identity function for default transform.
+
+    @param[in] x input data
+
+    @returns the input data unchanged
+    """
+    return x
 
 
 class Component(ABC):
@@ -38,12 +50,15 @@ class Component(ABC):
         """
         return self._coupler.__class__.__name__ == coupler_class_type
 
-    def _put_if_coupled(self, field_name: str, data_to_exchange: dict[str, np.ndarray]):
+    def _put_if_coupled(
+        self, field_name: str, data_to_exchange: Mapping[str, np.ndarray], transform: Callable = identity
+    ):
         """
         Put a source field if it is coupled.
 
         @param[in] field_name field name
         @param[in] data_to_exchange dictionary containing data to send
+        @param[in] transform optional function to apply to the data before sending (e.g. for unit conversion)
         """
         from ebfm.coupling.fields.base import ExchangeType
 
@@ -51,9 +66,9 @@ class Component(ABC):
             assert (
                 field_name in data_to_exchange
             ), f"Field '{field_name}' is missing in data_to_exchange for component '{self.name}'."
-            self._coupler.put(self.name, field_name, data_to_exchange[field_name])
+            self._coupler.put(self.name, field_name, transform(data_to_exchange[field_name]))
 
-    def _get_if_coupled(self, field_name: str) -> np.ndarray | None:
+    def _get_if_coupled(self, field_name: str, transform: Callable = identity) -> np.ndarray | None:
         """
         Get a target field from the coupler if it is coupled.
 
@@ -66,15 +81,15 @@ class Component(ABC):
         if self._coupler.has_field(self.name, field_name, ExchangeType.TARGET):
             data, err = self._coupler.get(self.name, field_name)
             assert data is not None, f"Received data for field '{field_name}' is None. {err}"
-            return data
+            return transform(data)
         return None
 
     @abstractmethod
-    def exchange(self, data_to_exchange: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Exchange of EBFM with this component
 
-        @param[in] data_to_exchange dictionary of field names and their data to be sent
+        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
 
         @returns dictionary of received field data
         """

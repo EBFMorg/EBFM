@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from typing import TYPE_CHECKING
+from collections.abc import Mapping
 import numpy as np
 
 if TYPE_CHECKING:
@@ -76,25 +77,28 @@ class ElmerIce(Component):
             }
         )
 
-    def exchange(self, data_to_exchange: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Exchange data with Elmer/Ice.
 
-        @param[in] data_to_exchange dictionary of field names and their data to be sent
+        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
 
         @returns dictionary of received field data
         """
         received_data: dict[str, np.ndarray] = {}
-        if "smb" in data_to_exchange.keys():
-            data_to_exchange["smb"] = self._coupler.get_conversion_per_year_factor() * data_to_exchange["smb"]
-
-        if "runoff" in data_to_exchange.keys():
-            data_to_exchange["runoff"] = self._coupler.get_conversion_per_year_factor() * data_to_exchange["runoff"]
 
         # Put data to Elmer/Ice
         self._put_if_coupled("T_ice", data_to_exchange)
-        self._put_if_coupled("smb", data_to_exchange)
-        self._put_if_coupled("runoff", data_to_exchange)
+
+        # For fields representing rates (e.g. SMB, runoff), we need to convert them from per timestep to per year
+        # before sending to Elmer/Ice, which expects annual values.
+
+        def map_per_timestep_to_per_year(x_per_timestep: np.ndarray) -> np.ndarray:
+            return self._coupler.get_conversion_per_year_factor() * x_per_timestep
+
+        self._put_if_coupled("smb", data_to_exchange, transform=map_per_timestep_to_per_year)
+
+        self._put_if_coupled("runoff", data_to_exchange, transform=map_per_timestep_to_per_year)
 
         # Get data from Elmer/Ice
         h = self._get_if_coupled("h")
