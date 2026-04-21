@@ -184,6 +184,7 @@ def init_constants():
     # ---------------------------------------------------------------------
     C["yeardays"] = DAYS_PER_YEAR
     C["dayseconds"] = SECONDS_PER_DAY
+
     return C
 
 

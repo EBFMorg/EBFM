@@ -87,17 +87,14 @@ class ElmerIce(Component):
         """
         received_data: dict[str, np.ndarray] = {}
 
-        # Put data to Elmer/Ice
-        self._put_if_coupled("T_ice", data_to_exchange)
-
         # For fields representing rates (e.g. SMB, runoff), we need to convert them from per timestep to per year
         # before sending to Elmer/Ice, which expects annual values.
-
         def map_per_timestep_to_per_year(x_per_timestep: np.ndarray) -> np.ndarray:
             return self._coupler.get_conversion_per_year_factor() * x_per_timestep
 
+        # Put data to Elmer/Ice
+        self._put_if_coupled("T_ice", data_to_exchange)
         self._put_if_coupled("smb", data_to_exchange, transform=map_per_timestep_to_per_year)
-
         self._put_if_coupled("runoff", data_to_exchange, transform=map_per_timestep_to_per_year)
 
         # Get data from Elmer/Ice
