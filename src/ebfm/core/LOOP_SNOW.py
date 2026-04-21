@@ -3,8 +3,449 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import numpy as np
+import math
 
 from .constants import SECONDS_PER_HOUR
+
+# line_profiler support: `profile` is injected as a builtin by kernprof.
+# When running normally, fall back to a no-op so the decorator stays in place.
+try:
+    profile  # noqa: F821
+except NameError:
+    profile = lambda f: f  # noqa: E731
+
+# ---------------------------------------------------------------------------
+# Optional Numba support
+# Install via:  pip install "ebfm[performance]"
+# Without numba the module falls back to the NumPy path automatically.
+# ---------------------------------------------------------------------------
+try:
+    from numba import njit, prange  # noqa: F401
+
+    _NUMBA_AVAILABLE = True
+except ImportError:
+    _NUMBA_AVAILABLE = False
+
+    def njit(*args, **kwargs):  # noqa: E302
+        """No-op replacement for numba.njit when numba is not installed."""
+
+        def _wrap(fn):
+            return fn
+
+        # Handle both @njit and @njit(parallel=True, ...) call styles
+        return _wrap if kwargs or (args and not callable(args[0])) else args[0]
+
+    prange = range  # type: ignore[assignment]  # noqa: F811
+
+# Dispatch flag, false by default (opt-in via --with-numba).
+# Set to True by main.py when --with-numba is passed and numba is properly available.
+_USE_NUMBA = False
+
+
+# Kernels for compaction, heatconduction and percolation steps
+# Compiled with numba when available and _USE_NUMBA is True.
+@njit(parallel=True, cache=True)
+def _compaction_kernel(
+    subD,  # (gpsum, nl) Output array, updated in-place
+    subZ,  # (gpsum, nl) Output array, updated in-place
+    subT,  # (gpsum, nl)
+    subW,  # (gpsum, nl), Output array
+    subTmean,  # (gpsum, nl) Output array, updated in-place
+    subD_old,  # (gpsum, nl)
+    subZ_old,  # (gpsum, nl)
+    logyearsnow,  # (gpsum, nl)
+    yearsnow,  # (gpsum, nl)
+    WS,  # (gpsum,)
+    Dens_destr_metam,  # (gpsum, nl)
+    Dens_overb_pres,  # (gpsum, nl)
+    Dens_drift,  # (gpsum, nl)
+    surfH,  # (gpsum,), Output array
+    sumWinit,  # (gpsum,)
+    runoff_irr,  # (gpsum,), Output array
+    dt_yearfrac,
+    dt_seconds,
+    dt,
+    Dice,
+    Dfirn,
+    Dwater,
+    g,
+    T0,  # scalar
+    rd,  # scalar
+    Ec,  # scalar
+    Eg,  # scalar
+    dayseconds,
+    tau_drift,
+    compaction_mode,
+):
+    """Per-column compaction kernel, parallelized over gpsum
+
+    1. Firn compaction
+    2. Seasonal snow compaction
+      2.1 Densification by destructive metamorphism
+      2.2 Densification by Overburden pressure
+      2.3 Drifting-snow densification
+    3. Layer-thickness and surface height, adjustment and subW clipping to mliqmax.
+    """
+    gpsum, nl = subD.shape
+    for i in prange(gpsum):
+        # ------ 1. FIRN COMPACTION ------ #
+        for k in range(nl):
+            subTmean[i, k] = subTmean[i, k] * (1.0 - dt_yearfrac) + dt_yearfrac * subT[i, k]
+            cond_firn_k = (compaction_mode == 0) or (subD[i, k] >= Dfirn)
+            if cond_firn_k:
+                if subD[i, k] < 550.0:
+                    grav_const = 0.07 * max(1.435 - 0.151 * logyearsnow[i, k], 0.25)
+                else:
+                    grav_const = 0.03 * max(2.366 - 0.293 * logyearsnow[i, k], 0.25)
+                temp_factor = math.exp(-Ec / (rd * subT[i, k]) + Eg / (rd * subTmean[i, k]))
+                firn_inc = dt_yearfrac * grav_const * yearsnow[i, k] * g * (Dice - subD[i, k]) * temp_factor
+                subD[i, k] += firn_inc
+
+        # ------ 2. SEASONAL SNOW COMPACTION ------ #
+        if compaction_mode == 1:  # firn+snow
+            # ------ 2.1 DENSIFICATION BY DESTRUCTIVE METAMORPHISM ------ #                                  #
+            # Capture pre-DM snow mask (subD < Dfirn) BEFORE modifying subD.
+            # Reuses it for overburden and drifting
+            was_snow = np.empty(nl, dtype=np.bool_)
+            for k in range(nl):
+                was_snow[k] = subD[i, k] < Dfirn
+
+            for k in range(nl):
+                if was_snow[k]:
+                    cc1 = math.exp(-0.046 * max(subD[i, k] - 175.0, 0.0))
+                    cc2 = 1.0 + (1.0 if subW[i, k] != 0.0 else 0.0)
+                    temp_exp = math.exp(0.04 * (subT[i, k] - T0))
+                    snow_inc = cc1 * cc2 * 2.777e-6 * temp_exp * dt_seconds * subD[i, k]
+                    subD[i, k] = min(subD[i, k] + snow_inc, Dice)
+                    Dens_destr_metam[i, k] = snow_inc
+                else:
+                    Dens_destr_metam[i, k] = 0.0
+
+            # ------ 2.2 DENSIFICATION BY OVERBURDEN PRESSURE ------ #
+            # Two passes:
+            # (1) compute Psload from post-DM densities
+            # (2) apply updates
+            # Refactoring into a loop introduces slight rounding errors!
+            psload = np.empty(nl)
+            psload[0] = 0.5 * subD[i, 0] * subZ[i, 0] * g
+            for k in range(1, nl):
+                xm = subD[i, k - 1] * subZ[i, k - 1] * g
+                xk = subD[i, k] * subZ[i, k] * g
+                psload[k] = psload[k - 1] + 0.5 * (xm + xk)
+
+            for k in range(nl):
+                Dens_overb_pres[i, k] = 0.0
+                if was_snow[k]:  # use pre-DM mask to match NumPy cond_snow
+                    cc7 = 4.0 * 7.62237e6 / 250.0 * subD[i, k] / (1.0 + 60.0 * subW[i, k] / (Dwater * subZ[i, k]))
+                    visc = cc7 * math.exp(0.1 * (T0 - subT[i, k]) + 0.023 * subD[i, k])
+                    overb_inc = dt * dayseconds * subD[i, k] * psload[k] / visc
+                    subD[i, k] = min(subD[i, k] + overb_inc, Dice)
+                    Dens_overb_pres[i, k] = dt * dayseconds * subD[i, k] * psload[k] / visc
+
+            # ------ 2.3 DRIFTING SNOW DENSIFICATION ------ #
+            # Refactoring into a loop introduces slight rounding errors!
+            # Use updated subD < Dfirn to match cond_drift_total
+            z_i_k = 0.0  # z_i[0] = 0
+            for k in range(nl):
+                d_k = max(subD[i, k], 50.0)
+                mo_k = -0.069 + 0.66 * (1.25 - 0.0042 * (d_k - 50.0))
+                si_k = -2.868 * math.exp(-0.085 * WS[i]) + 1.0 + mo_k
+                gamma_k = max(0.0, si_k * math.exp(-z_i_k / 0.1))
+                Dens_drift[i, k] = 0.0
+                if si_k > 0.0 and subD[i, k] < Dfirn:  # use updated mask to match NumPy cond_drift_total
+                    tau_i_k = tau_drift / gamma_k  # gamma_k > 0 since si_k > 0
+                    drift_inc = dt_seconds * max(350.0 - subD[i, k], 0.0) / tau_i_k
+                    subD[i, k] = min(subD[i, k] + drift_inc, Dice)
+                    Dens_drift[i, k] = drift_inc
+                # z_i[k+1] = z_i[k] + subZ[k] * (3.25 - SI[k])
+                z_i_k += subZ[i, k] * (3.25 - si_k)
+
+        # ------ 3. UPDATE LAYER THICKNESS & SURFACE HEIGHT AFTER COMPACTION ------
+        z_sum = 0.0
+        z_sum_old = 0.0
+        subW_sum = 0.0
+        for k in range(nl):
+            if subD[i, k] < Dice:
+                subZ[i, k] = subZ_old[i, k] * subD_old[i, k] / subD[i, k]
+                exp_f = 0.0143 * math.exp(3.3 * (Dice - subD[i, k]) / Dice)
+                denom = 1.0 - exp_f
+                mliqmax_k = subD[i, k] * subZ[i, k] * exp_f / denom * 0.05 * min(Dice - subD[i, k], 20.0)
+                if subW[i, k] > mliqmax_k:
+                    subW[i, k] = mliqmax_k
+            else:
+                # Ice layer: mliqmax = 0 => clamp subW to zero
+                subW[i, k] = 0.0
+            z_sum += subZ[i, k]
+            z_sum_old += subZ_old[i, k]
+            subW_sum += subW[i, k]
+
+        surfH[i] += z_sum - z_sum_old
+        runoff_irr[i] = sumWinit[i] - subW_sum
+
+
+@njit(parallel=True, cache=True)
+def _heat_conduction_kernel(
+    subT,  # (gpsum, nl) Output array, updated in-place
+    Tsurf,  # (gpsum,)
+    kk_sz_top,  # (gpsum,)
+    kk_sz_mid,  # (gpsum, nl-2)
+    dz1,  # (gpsum,)
+    dz2,  # (gpsum, nl-2)
+    denom_l1,  # (gpsum,)
+    denom_interior,  # (gpsum, nl-3)
+    denom_bottom,  # (gpsum,)
+    dt_stab,  # (gpsum,)
+    dt,  # scalar — total time step in days
+    dayseconds,  # scalar — seconds per day
+    geothermal_flux,  # scalar — W m-2
+):
+    """Per-column heat-conduction kernel, parallelized over gpsum.
+
+    Each column is independent over gpsum: the CFL sub-stepping while-loop runs entirely
+    per grid point with no inter-column communication,
+
+    For each sub-step inside the while-loop:
+      1. Compute all inter-layer heat fluxes ``kdTdz`` from the *current*
+         column temperatures ``T_loc``.
+      2. Update ``T_loc`` in-place using ``kdTdz``.
+      3. Repeat until the full time step ``dt`` is covered.
+    """
+    gpsum, nl = subT.shape
+    for i in prange(gpsum):
+        # Thread-local working copy and flux array
+        T_loc = subT[i, :].copy()
+        kdTdz = np.zeros(nl)
+
+        tt_i = 0.0
+        while tt_i < dt:
+            dt_temp_i = min(dt_stab[i], dt - tt_i)
+            if dt_temp_i == 0.0:
+                break
+            tt_i += dt_temp_i
+            C_day_dt = dayseconds * dt_temp_i
+
+            # ---- Step 1: freeze all fluxes from current T_loc ----
+            kdTdz[1] = kk_sz_top[i] * (T_loc[1] - Tsurf[i]) / dz1[i]
+            for k in range(2, nl):
+                kdTdz[k] = kk_sz_mid[i, k - 2] * (T_loc[k] - T_loc[k - 1]) / dz2[i, k - 2]
+
+            # ---- Step 2: update T_loc in-place (kdTdz is now frozen) ----
+            T_loc[1] += C_day_dt * (kdTdz[2] - kdTdz[1]) / denom_l1[i]
+            for k in range(2, nl - 1):
+                T_loc[k] += C_day_dt * (kdTdz[k + 1] - kdTdz[k]) / denom_interior[i, k - 2]
+            T_loc[nl - 1] += C_day_dt * (geothermal_flux - kdTdz[nl - 1]) / denom_bottom[i]
+
+        # Write results back to the shared subT array
+        for k in range(nl):
+            subT[i, k] = T_loc[k]
+
+
+@njit(parallel=True, cache=True)
+def _percolation_kernel(
+    subT,  # (gpsum, nl) Output array, updated in-place
+    subD,  # (gpsum, nl) Output array, updated in-place
+    subW,  # (gpsum, nl) Output array, updated in-place
+    subS,  # (gpsum, nl) Output array, rewritten
+    subZ,  # (gpsum, nl)
+    subW_old,  # (gpsum, nl)
+    avail_W,  # (gpsum,)
+    RP,  # (gpsum, nl)
+    runoff_surface,  # (gpsum,)
+    runoff_slush,  # (gpsum,)
+    refr_P,  # (gpsum,)
+    refr_S,  # (gpsum,)
+    refr_I,  # (gpsum,)
+    slushw,  # (gpsum,)
+    irrw,  # (gpsum,)
+    T0,
+    Dice,
+    Dwater,
+    Lm,
+    Trunoff,
+    perc_depth,
+    percolation_mode,  # 0=bucket, 1=normal, 2=linear, 3=uniform
+    dt,
+):
+    """Per-column percolation, slush storage and refreezing kernel, parallelized over gpsum
+
+    1. Compute Wlim and Wirr (refreezing potential and available irreducible water storate)
+    2. carrot distribution profile (bucket / normal / linear / uniform)
+    3. Refreezing and irreducible-water-storage
+    4. Slush storage
+    5. Slush refreezing
+    6. Irreducible-water refreezing
+    """
+    gpsum, nl = subT.shape
+    sigma2_2 = 2.0 * (perc_depth / 3.0) ** 2
+    norm_coeff = 2.0 / (perc_depth / 3.0) / math.sqrt(2.0 * math.pi)
+    trunoff_factor = 1.0 / (1.0 + dt / Trunoff)
+
+    for i in prange(gpsum):
+        # ------ Refreezing and Irreducible Water Storage Limits ------
+        # Compute refreezing potential (`Wlim`) per layer
+        # Compute maximum irreducible water storage (`mliqmax`)
+        # Compute available irreducible water storage (`Wirr`) per layer
+        wlim_loc = np.empty(nl)
+        wirr_loc = np.empty(nl)
+        for k in range(nl):
+            cpi_k = 152.2 + 7.122 * subT[i, k]
+            c1_k = cpi_k * subD[i, k] * subZ[i, k] * (T0 - subT[i, k]) / Lm
+            c2_k = subZ[i, k] * (1.0 - subD[i, k] / Dice) * Dice
+            wlim_loc[k] = max(min(c1_k, c2_k), 0.0)
+            if subD[i, k] < Dice - 1.0:
+                factor_k = 3.3 * (Dice - subD[i, k]) / Dice
+                exp_f = math.exp(factor_k)
+                irr_f = 0.0143 * exp_f / (1.0 - 0.0143 * exp_f)
+                mliqmax_k = subD[i, k] * subZ[i, k] * irr_f * 0.05 * min(Dice - subD[i, k], 20.0)
+            else:
+                mliqmax_k = 0.0
+            wirr_loc[k] = mliqmax_k - subW_old[i, k]
+
+        # ------ Compute carrot (water-distribution profile) by percolation mode ------
+        carrot_loc = np.zeros(nl)
+        if percolation_mode == 0:  # bucket: all water enters surface layer
+            carrot_loc[0] = 1.0
+        else:
+            # Compute zz (midpoint depth of each layer) for mode 1/2/3
+            depth = 0.0
+            for k in range(nl):
+                zz_k = depth + 0.5 * subZ[i, k]
+                if percolation_mode == 1:  # normal (Gaussian)
+                    carrot_loc[k] = norm_coeff * math.exp(-(zz_k * zz_k) / sigma2_2)
+                elif percolation_mode == 2:  # linear
+                    v = 2.0 * (perc_depth - zz_k) / (perc_depth * perc_depth)
+                    carrot_loc[k] = v if v > 0.0 else 0.0
+                else:  # uniform (mode 3): temporarily store zz for the argmin pass below
+                    carrot_loc[k] = zz_k
+                depth += subZ[i, k]
+
+            if percolation_mode == 3:  # uniform: resolve argmin, then fill layers 0..ind
+                min_dist = math.inf
+                ind = 0
+                for k in range(nl):
+                    d = abs(carrot_loc[k] - perc_depth)
+                    if d < min_dist:
+                        min_dist = d
+                        ind = k
+                for k in range(nl):
+                    carrot_loc[k] = (1.0 / perc_depth) if k <= ind else 0.0
+
+        # Scale by layer thickness, normalize, multiply by avail_W
+        s = 0.0
+        for k in range(nl):
+            carrot_loc[k] *= subZ[i, k]
+            s += carrot_loc[k]
+        avail_W_i = avail_W[i]
+        for k in range(nl):
+            carrot_loc[k] = carrot_loc[k] / s * avail_W_i
+
+        #########################################################
+        # Percolation loop: top-to-bottom refreezing + irreducible storage
+        # avail_W_loc carries unabsorbed water forward across layers
+        #########################################################
+        avail_W_loc = 0.0
+        rp_sum = 0.0
+        for n in range(nl):
+            avail_W_loc += carrot_loc[n]
+            rp_n = min(avail_W_loc, wlim_loc[n])
+            RP[i, n] = rp_n
+            excess = avail_W_loc - wlim_loc[n]
+            if excess < 0.0:
+                excess = 0.0
+            new_subW_n = subW_old[i, n] + min(excess, wirr_loc[n])
+            subW[i, n] = new_subW_n
+            avail_W_loc -= rp_n + (new_subW_n - subW_old[i, n])
+            # Temperature and density update after percolating-water refreezing
+            cpi_n = 152.2 + 7.122 * subT[i, n]
+            subT[i, n] += Lm * rp_n / (subD[i, n] * cpi_n * subZ[i, n])
+            subD[i, n] += rp_n / subZ[i, n]
+            rp_sum += rp_n
+
+        avail_W[i] = avail_W_loc  # write leftover back (becomes avail_W for slush section)
+
+        #########################################################
+        # Slush water storage
+        #########################################################
+        slushspace = np.empty(nl)
+        total_slushspace = 0.0
+        for k in range(nl):
+            ss_k = subZ[i, k] * (1.0 - subD[i, k] / Dice) * Dwater - subW[i, k]
+            if ss_k < 0.0:
+                ss_k = 0.0
+            slushspace[k] = ss_k
+            total_slushspace += ss_k
+
+        # Old slush + leftover water form the available slush input
+        old_slush_sum = 0.0
+        for k in range(nl):
+            old_slush_sum += subS[i, k]
+        avail_W_slush = avail_W_loc + old_slush_sum
+
+        surf_ro = avail_W_slush - total_slushspace
+        runoff_surface[i] = surf_ro if surf_ro > 0.0 else 0.0
+        avail_S = avail_W_slush if avail_W_slush < total_slushspace else total_slushspace
+        runoff_slush[i] = avail_S - trunoff_factor * avail_S
+        avail_S = trunoff_factor * avail_S
+        if avail_S < 1e-25:
+            avail_S = 0.0
+
+        # Bottom-up fill of slush pore space
+        for n in range(nl - 1, -1, -1):
+            fill = avail_S if avail_S < slushspace[n] else slushspace[n]
+            subS[i, n] = fill
+            avail_S -= fill
+
+        #####################################
+        # Refreezing of slush water
+        #####################################
+        rs_sum = 0.0
+        for k in range(nl):
+            cpi_k = 152.2 + 7.122 * subT[i, k]
+            c1_k = cpi_k * subD[i, k] * subZ[i, k] * (T0 - subT[i, k]) / Lm
+            c2_k = subZ[i, k] * (1.0 - subD[i, k] / Dice) * Dice
+            wlim_k = min(c1_k, c2_k)
+            rs_k = 0.0
+            if subS[i, k] > 0.0 and subT[i, k] < T0:
+                rs_k = subS[i, k] if subS[i, k] < wlim_k else wlim_k
+                if rs_k < 0.0:
+                    rs_k = 0.0
+            subS[i, k] -= rs_k
+            subT[i, k] += (Lm * rs_k) / (subD[i, k] * cpi_k * subZ[i, k])
+            subD[i, k] += rs_k / subZ[i, k]
+            rs_sum += rs_k
+
+        #########################################################
+        # Irreducible water refreezing
+        #########################################################
+        ri_sum = 0.0
+        for k in range(nl):
+            cpi_k = 152.2 + 7.122 * subT[i, k]
+            c1_k = cpi_k * subD[i, k] * subZ[i, k] * (T0 - subT[i, k]) / Lm
+            c2_k = subZ[i, k] * (1.0 - subD[i, k] / Dice) * Dice
+            wlim_k = min(c1_k, c2_k)
+            ri_k = 0.0
+            if subW[i, k] > 0.0 and subT[i, k] < T0:
+                ri_k = subW[i, k] if subW[i, k] < wlim_k else wlim_k
+                if ri_k < 0.0:
+                    ri_k = 0.0
+            subW[i, k] -= ri_k
+            subT[i, k] += (Lm * ri_k) / (subD[i, k] * cpi_k * subZ[i, k])
+            subD[i, k] += ri_k / subZ[i, k]
+            ri_sum += ri_k
+
+        #########################################################
+        # Scalar outputs per column
+        #########################################################
+        slushw_i = 0.0
+        irrw_i = 0.0
+        for k in range(nl):
+            slushw_i += subS[i, k]
+            irrw_i += subW[i, k]
+        refr_P[i] = 1e-3 * rp_sum
+        refr_S[i] = 1e-3 * rs_sum
+        refr_I[i] = 1e-3 * ri_sum
+        slushw[i] = slushw_i
+        irrw[i] = irrw_i
 
 
 def main(C, OUT, IN, dt, grid, phys):
@@ -191,6 +632,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
         return True
 
+    @profile
     def compaction():
         """
         Calculate snow and firn compaction and update density and layer thickness
@@ -206,6 +648,61 @@ def main(C, OUT, IN, dt, grid, phys):
         dt_yearfrac = dt / C["yeardays"]
         dt_seconds = dt * C["dayseconds"]
 
+        # Pre-zero diagnostic arrays once
+        # Avoids np.zeros_like allocation for each array on every timestep.
+        _dshape = OUT["subD"].shape
+        for _key in ("Dens_destr_metam", "Dens_overb_pres", "Dens_drift"):
+            if _key not in OUT or OUT[_key].shape != _dshape:
+                OUT[_key] = np.zeros(_dshape)
+            else:
+                OUT[_key].fill(0.0)
+
+        # runoff_irr is written by kernel function
+        # ensure it exists before the Numba kernel reads it
+        _gshape = (gpsum,)
+        if "runoff_irr" not in OUT or OUT["runoff_irr"].shape != _gshape:
+            OUT["runoff_irr"] = np.zeros(_gshape)
+
+        # Numba parallel path:
+        if _USE_NUMBA:
+            _mode = {"firn_only": 0, "firn+snow": 1}.get(phys["snow_compaction"], -1)
+            if _mode < 0:
+                raise ValueError(f"_compaction_kernel: unknown snow_compaction={phys['snow_compaction']!r}")
+            _compaction_kernel(
+                OUT["subD"],
+                OUT["subZ"],
+                OUT["subT"],
+                OUT["subW"],
+                OUT["subTmean"],
+                subD_old,
+                subZ_old,
+                IN["logyearsnow"],
+                IN["yearsnow"],
+                IN["WS"],
+                OUT["Dens_destr_metam"],
+                OUT["Dens_overb_pres"],
+                OUT["Dens_drift"],
+                OUT["surfH"],
+                OUT["sumWinit"],
+                OUT["runoff_irr"],
+                dt_yearfrac,
+                dt_seconds,
+                dt,
+                C["Dice"],
+                C["Dfirn"],
+                C["Dwater"],
+                C["g"],
+                C["T0"],
+                C["rd"],
+                C["Ec"],
+                C["Eg"],
+                C["dayseconds"],
+                48 * 2 * SECONDS_PER_HOUR,
+                _mode,
+            )
+            return True
+
+        # Original NumPy path:
         # ------ FIRN COMPACTION ------ #
         if phys["snow_compaction"] in ["firn_only", "firn+snow"]:
             # Pre-compute the logical condition based on the snow compaction type
@@ -218,19 +715,21 @@ def main(C, OUT, IN, dt, grid, phys):
             OUT["subTmean"] *= 1 - dt_yearfrac
             OUT["subTmean"] += dt_yearfrac * OUT["subT"]
 
-            # Set gravitational constants
-            subD_cond = np.where(cond_firn, OUT["subD"], 0)  # Using a masked version of subD
-            logyearsnow_cond = np.where(cond_firn, IN["logyearsnow"], 0)
-            grav_const = np.zeros_like(OUT["subD"])  # Allocation happens here.
-            low_density_mask = cond_firn & (subD_cond < 550)
-            high_density_mask = cond_firn & (subD_cond >= 550)
-            grav_const[low_density_mask] = 0.07 * np.maximum(1.435 - 0.151 * logyearsnow_cond[low_density_mask], 0.25)
-            grav_const[high_density_mask] = 0.03 * np.maximum(2.366 - 0.293 * logyearsnow_cond[high_density_mask], 0.25)
+            # Set gravitational constants and masks
+            # Use OUT["subD"] and IN["logyearsnow"] directly
+            # cond_firn is already incorporated into both masks
+            grav_const = np.zeros_like(OUT["subD"])
+            low_density_mask = cond_firn & (OUT["subD"] < 550)
+            high_density_mask = cond_firn & (OUT["subD"] >= 550)
+            grav_const[low_density_mask] = 0.07 * np.maximum(1.435 - 0.151 * IN["logyearsnow"][low_density_mask], 0.25)
+            grav_const[high_density_mask] = 0.03 * np.maximum(
+                2.366 - 0.293 * IN["logyearsnow"][high_density_mask], 0.25
+            )
 
             # Update firn densities
             temp_factor = np.exp(-C["Ec"] / (C["rd"] * OUT["subT"]) + C["Eg"] / (C["rd"] * OUT["subTmean"]))
             firn_increment = dt_yearfrac * grav_const * IN["yearsnow"] * C["g"] * (Dice - OUT["subD"]) * temp_factor
-            OUT["subD"][cond_firn] += firn_increment[cond_firn]
+            np.add(OUT["subD"], firn_increment, where=cond_firn, out=OUT["subD"])
         else:
             raise ValueError("phys.snow_compaction not set correctly!")
 
@@ -252,12 +751,11 @@ def main(C, OUT, IN, dt, grid, phys):
             snow_increment = CC1 * CC2 * CC3 * temp_exp * dt_seconds * OUT["subD"]
 
             # Apply snow increment only to relevant layers
-            OUT["subD"][cond_snow] += snow_increment[cond_snow]
-            OUT["subD"][cond_snow] = np.minimum(OUT["subD"][cond_snow], Dice)
+            np.add(OUT["subD"], snow_increment, where=cond_snow, out=OUT["subD"])
+            np.minimum(OUT["subD"], Dice, where=cond_snow, out=OUT["subD"])
 
             # Store densification by destructive metamorphism
-            OUT["Dens_destr_metam"] = np.zeros_like(OUT["subD"])
-            OUT["Dens_destr_metam"][cond_snow] = snow_increment[cond_snow]
+            np.copyto(OUT["Dens_destr_metam"], snow_increment, where=cond_snow)
 
             # ------ DENSIFICATION BY OVERBURDEN PRESSURE ------ #
             CC5, CC6 = 0.1, 0.023
@@ -277,17 +775,16 @@ def main(C, OUT, IN, dt, grid, phys):
             OUT["subD"][cond_snow] += (
                 dt * C["dayseconds"] * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
             )
-            OUT["subD"][cond_snow] = np.minimum(OUT["subD"][cond_snow], C["Dice"])
+            np.minimum(OUT["subD"], C["Dice"], where=cond_snow, out=OUT["subD"])
 
             # Store densification by overburden pressure
-            OUT["Dens_overb_pres"] = np.zeros_like(OUT["subD"])
             OUT["Dens_overb_pres"][cond_snow] = (
                 dt * C["dayseconds"] * OUT["subD"][cond_snow] * Psload[cond_snow] / Visc[cond_snow]
             )
 
             # ------ DRIFTING SNOW DENSIFICATION ------ #
             MO = -0.069 + 0.66 * (1.25 - 0.0042 * (np.maximum(OUT["subD"], 50) - 50))
-            SI = -2.868 * np.exp(-0.085 * np.tile(IN["WS"], (nl, 1)).T) + 1 + MO
+            SI = -2.868 * np.exp(-0.085 * IN["WS"][:, np.newaxis]) + 1 + MO
             cond_drift = SI > 0
 
             z_i = np.zeros_like(OUT["subZ"])
@@ -295,18 +792,17 @@ def main(C, OUT, IN, dt, grid, phys):
                 z_i[:, 1:] = np.cumsum(OUT["subZ"][:, :-1] * (3.25 - SI[:, :-1]), axis=1)
             gamma_drift = np.maximum(0, SI * np.exp(-z_i / 0.1))
             tau = 48 * 2 * SECONDS_PER_HOUR
-            np.seterr(divide="ignore")
-            tau_i = tau / gamma_drift
+            with np.errstate(divide="ignore", invalid="ignore"):
+                tau_i = tau / gamma_drift
 
             # Update densities
             drift_increment = dt_seconds * np.maximum(350 - OUT["subD"], 0) / tau_i
             cond_drift_total = cond_drift & (OUT["subD"] < Dfirn)
-            OUT["subD"][cond_drift_total] += drift_increment[cond_drift_total]
-            OUT["subD"][cond_drift_total] = np.minimum(OUT["subD"][cond_drift_total], Dice)
+            np.add(OUT["subD"], drift_increment, where=cond_drift_total, out=OUT["subD"])
+            np.minimum(OUT["subD"], Dice, where=cond_drift_total, out=OUT["subD"])
 
             # Store densification by wind shearing
-            OUT["Dens_drift"] = np.zeros_like(OUT["subD"])
-            OUT["Dens_drift"][cond_drift_total] = drift_increment[cond_drift_total]
+            np.copyto(OUT["Dens_drift"], drift_increment, where=cond_drift_total)
 
         # ------ UPDATE LAYER THICKNESS & SURFACE HEIGHT AFTER COMPACTION ------ #
         cond_layers = OUT["subD"] < Dice
@@ -333,6 +829,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
         return True
 
+    @profile
     def heat_conduction():
         """
         Calculate heat diffusion and update temperatures
@@ -343,59 +840,86 @@ def main(C, OUT, IN, dt, grid, phys):
         c_eff = OUT["subD"] * (152.2 + 7.122 * OUT["subT"])  # Effective heat capacity
 
         # Stability time step (CFL condition)
-        z_temp = OUT["subZ"][:, 1:]
-        c_eff_temp = c_eff[:, 1:]
-        kk_temp = kk[:, 1:]
         dt_stab = (
-            0.5 * np.min(c_eff_temp, axis=1) * np.min(z_temp, axis=1) ** 2 / np.max(kk_temp, axis=1) / C["dayseconds"]
+            0.5
+            * np.min(c_eff[:, 1:], axis=1)
+            * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
+            / np.max(kk[:, 1:], axis=1)
+            / C["dayseconds"]
         )
 
+        # subZ and c_eff do not change
+        # Precompute kk*subZ products once
+        kk_sz_top = kk[:, 0] * OUT["subZ"][:, 0] + 0.5 * kk[:, 1] * OUT["subZ"][:, 1]
+        kk_sz_mid = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
+
+        # Precompute full temperature-update denominators once
+        denom_l1 = c_eff[:, 1] * (0.5 * OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1] + 0.25 * OUT["subZ"][:, 2])
+        denom_interior = c_eff[:, 2:-1] * (
+            0.25 * OUT["subZ"][:, 1:-2] + 0.5 * OUT["subZ"][:, 2:-1] + 0.25 * OUT["subZ"][:, 3:]
+        )
+        denom_bottom = c_eff[:, -1] * (0.25 * OUT["subZ"][:, -2] + 0.75 * OUT["subZ"][:, -1])
+
         # ------ Heat Conduction Loop ------
-        tt = np.zeros(grid["gpsum"])
-        cond_dt_temp = np.zeros_like(tt, dtype=bool)
-        kdTdz = np.zeros_like(OUT["subT"])
-
-        while np.any(tt < dt):
-            subT_old = OUT["subT"].copy()
-            dt_temp = np.minimum(dt_stab, dt - tt)
-            tt += dt_temp
-            cond_dt = dt_temp > 0
-            cond_dt_temp[:] = cond_dt  # Reuse mask to reduce allocations
-
-            # Calculate vertical heat fluxes
-            kdTdz[cond_dt, 1] = (
-                (kk[cond_dt, 0] * OUT["subZ"][cond_dt, 0] + 0.5 * kk[cond_dt, 1] * OUT["subZ"][cond_dt, 1])
-                * (subT_old[cond_dt, 1] - OUT["Tsurf"][cond_dt])
-                / dz1[cond_dt]
+        if _USE_NUMBA:
+            # Numba parallel path: prange(gpsum), each column solved independently.
+            _heat_conduction_kernel(
+                OUT["subT"],
+                OUT["Tsurf"],
+                kk_sz_top,
+                kk_sz_mid,
+                dz1,
+                dz2,
+                denom_l1,
+                denom_interior,
+                denom_bottom,
+                dt_stab,
+                dt,
+                C["dayseconds"],
+                C["geothermal_flux"],
             )
 
-            kdTdz[cond_dt, 2:] = (
-                (kk[cond_dt, 1:-1] * OUT["subZ"][cond_dt, 1:-1] + kk[cond_dt, 2:] * OUT["subZ"][cond_dt, 2:])
-                * (subT_old[cond_dt, 2:] - subT_old[cond_dt, 1:-1])
-                / dz2[cond_dt]
-            )
+        else:
+            # NumPy path: explicit while-loop with vectorized column updates.
+            tt = np.zeros(grid["gpsum"])
+            kdTdz = np.zeros_like(OUT["subT"])
+            # Ping-pong buffers:
+            # Pre-allocate two arrays once and swap references each iteration
+            T_old = OUT["subT"].copy()
+            T_new = np.empty_like(OUT["subT"])
 
-            # Update layer-wise temperatures
-            C_day_dt = C["dayseconds"] * dt_temp[cond_dt]
-            OUT["subT"][cond_dt, 1] = subT_old[cond_dt, 1] + C_day_dt * (kdTdz[cond_dt, 2] - kdTdz[cond_dt, 1]) / (
-                c_eff[cond_dt, 1]
-                * (0.5 * OUT["subZ"][cond_dt, 0] + 0.5 * OUT["subZ"][cond_dt, 1] + 0.25 * OUT["subZ"][cond_dt, 2])
-            )
+            while np.any(tt < dt):
+                # Copy T_old to T_new so inactive rows carry forward correctly across swaps
+                np.copyto(T_new, T_old)
+                dt_temp = np.minimum(dt_stab, dt - tt)
+                tt += dt_temp
 
-            OUT["subT"][cond_dt, 2:-1] = subT_old[cond_dt, 2:-1] + C_day_dt[:, np.newaxis] * (
-                kdTdz[cond_dt, 3:] - kdTdz[cond_dt, 2:-1]
-            ) / (
-                c_eff[cond_dt, 2:-1]
-                * (
-                    0.25 * OUT["subZ"][cond_dt, 1:-2]
-                    + 0.5 * OUT["subZ"][cond_dt, 2:-1]
-                    + 0.25 * OUT["subZ"][cond_dt, 3:]
+                # Integer indices of still-active grid points; early exit when all are done
+                # Replaces cond_dt mask
+                idx = np.flatnonzero(dt_temp > 0)
+                if idx.size == 0:
+                    break
+                # Calculate vertical heat fluxes
+                kdTdz[idx, 1] = kk_sz_top[idx] * (T_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
+                kdTdz[idx, 2:] = kk_sz_mid[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
+
+                # Update layer-wise temperatures
+                C_day_dt = C["dayseconds"] * dt_temp[idx]
+
+                T_new[idx, 1] = T_old[idx, 1] + C_day_dt * (kdTdz[idx, 2] - kdTdz[idx, 1]) / denom_l1[idx]
+
+                T_new[idx, 2:-1] = (
+                    T_old[idx, 2:-1]
+                    + C_day_dt[:, np.newaxis] * (kdTdz[idx, 3:] - kdTdz[idx, 2:-1]) / denom_interior[idx]
                 )
-            )
 
-            OUT["subT"][cond_dt, -1] = subT_old[cond_dt, -1] + C_day_dt * (
-                C["geothermal_flux"] - kdTdz[cond_dt, -1]
-            ) / (c_eff[cond_dt, -1] * (0.25 * OUT["subZ"][cond_dt, -2] + 0.75 * OUT["subZ"][cond_dt, -1]))
+                T_new[idx, -1] = T_old[idx, -1] + C_day_dt * (C["geothermal_flux"] - kdTdz[idx, -1]) / denom_bottom[idx]
+
+                # Write final result back into the original OUT["subT"] array object in-place.
+                np.copyto(OUT["subT"], T_new)
+
+                # Swap buffer roles
+                T_old, T_new = T_new, T_old
 
         OUT["subT"][:, 0] = (
             OUT["Tsurf"]
@@ -414,6 +938,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
         return True
 
+    @profile
     def percolation_refreezing_and_storage():
         #########################################################
         # Percolation, refreezing and irreducible water storage
@@ -421,6 +946,66 @@ def main(C, OUT, IN, dt, grid, phys):
         subW_old = OUT["subW"].copy()  # Store the old water content
         gpsum, nl = OUT["subT"].shape
 
+        if _USE_NUMBA:
+            # Numba parallel path:
+            _p_mode = {"bucket": 0, "normal": 1, "linear": 2, "uniform": 3}.get(phys["percolation"], -1)
+            if _p_mode < 0:
+                raise ValueError(f"_percolation_kernel: unknown percolation={phys['percolation']!r}")
+            _avail_W = np.maximum(
+                OUT["melt"] * 1e3 + IN["rain"] * 1e3 + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * 1e3,
+                0.0,
+            )
+            # Ensure persistent arrays are allocated
+            _rp_shape = OUT["subZ"].shape
+            if "_perc_RP" not in OUT or OUT["_perc_RP"].shape != _rp_shape:
+                OUT["_perc_RP"] = np.zeros(_rp_shape)
+            if "subS" not in OUT or OUT["subS"].shape != (gpsum, nl):
+                OUT["subS"] = np.zeros((gpsum, nl))
+            _runoff_surface = np.empty(gpsum)
+            _runoff_slush = np.empty(gpsum)
+            _refr_P = np.empty(gpsum)
+            _refr_S = np.empty(gpsum)
+            _refr_I = np.empty(gpsum)
+            _slushw = np.empty(gpsum)
+            _irrw = np.empty(gpsum)
+
+            _percolation_kernel(
+                OUT["subT"],
+                OUT["subD"],
+                OUT["subW"],
+                OUT["subS"],
+                OUT["subZ"],
+                subW_old,
+                _avail_W,
+                OUT["_perc_RP"],
+                _runoff_surface,
+                _runoff_slush,
+                _refr_P,
+                _refr_S,
+                _refr_I,
+                _slushw,
+                _irrw,
+                C["T0"],
+                C["Dice"],
+                C["Dwater"],
+                C["Lm"],
+                C["Trunoff"],
+                C["perc_depth"],
+                _p_mode,
+                dt,
+            )
+            OUT["runoff_surface"] = _runoff_surface
+            OUT["runoff_slush"] = _runoff_slush
+            OUT["refr_P"] = _refr_P
+            OUT["refr_S"] = _refr_S
+            OUT["refr_I"] = _refr_I
+            OUT["refr"] = _refr_P + _refr_S + _refr_I
+            OUT["slushw"] = _slushw
+            OUT["irrw"] = _irrw
+            OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
+            return True
+
+        # Original NumPy path:
         # ------ Water Input ------
         avail_W = (
             OUT["melt"] * 1e3  # Meltwater
@@ -433,10 +1018,10 @@ def main(C, OUT, IN, dt, grid, phys):
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]  # Specific heat capacity
         c1 = OUT["cpi"] * OUT["subD"] * OUT["subZ"] * (C["T0"] - OUT["subT"]) / C["Lm"]
         c2 = OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dice"]
-        cond1 = c1 >= c2  # No need for separate cond2 as it's just the negation
 
         # Compute refreezing potential (`Wlim`) per layer
-        Wlim = np.maximum(np.where(cond1, c2, c1), 0)
+        # np.minimum(c1, c2) is equivalent to np.where(c1 >= c2, c2, c1)
+        Wlim = np.maximum(np.minimum(c1, c2), 0)
 
         # Maximum irreducible water storage (`mliqmax`)
         mliqmax = np.zeros_like(OUT["subD"])
@@ -474,26 +1059,29 @@ def main(C, OUT, IN, dt, grid, phys):
         carrot *= avail_W[:, np.newaxis]  # Distribute water input among layers
 
         # ------ Refreezing and Irreducible Water Storage Iteration ------
-        RP = np.zeros_like(OUT["subZ"])  # Refreezing potential
-        leftW = np.zeros(grid["gpsum"])  # Remaining water
+        # RP reused across calls: same check-and-fill pattern as Dens_* in compaction
+        _rp_shape = OUT["subZ"].shape
+        if "_perc_RP" not in OUT or OUT["_perc_RP"].shape != _rp_shape:
+            OUT["_perc_RP"] = np.zeros(_rp_shape)
+        else:
+            OUT["_perc_RP"].fill(0.0)
+        RP = OUT["_perc_RP"]
+
         avail_W_loc = np.zeros(grid["gpsum"])  # Available water per layer
 
         for n in range(nl):
             # Compute available water per layer
             avail_W_loc += carrot[:, n]
 
-            # Condition: water > refreezing limit
-            cond1 = avail_W_loc > Wlim[:, n]
+            # RP = min(available water, refreezing capacity), correct for both cond1 and ~cond1
+            # No branching: when avail <= Wlim the full amount refreezes; when avail > Wlim
+            # only Wlim refreezes and the excess goes into irreducible storage.
+            np.minimum(avail_W_loc, Wlim[:, n], out=RP[:, n])
+            # Excess water after refreezing, clamped to zero when there is none
+            excess = np.maximum(avail_W_loc - Wlim[:, n], 0.0)
+            OUT["subW"][:, n] = subW_old[:, n] + np.minimum(excess, Wirr[:, n])
 
-            RP[cond1, n] = Wlim[cond1, n]  # Refreezing limited by Wlim
-            leftW[cond1] = avail_W_loc[cond1] - Wlim[cond1, n]
-            OUT["subW"][cond1, n] = subW_old[cond1, n] + np.minimum(leftW[cond1], Wirr[cond1, n])
-
-            # Condition: water <= refreezing limit
-            RP[~cond1, n] = avail_W_loc[~cond1]
-            OUT["subW"][~cond1, n] = subW_old[~cond1, n]
-
-            # Update available water after refreezing
+            # Deduct water consumed (refrozen + stored) from the running total
             avail_W_loc -= RP[:, n] + (OUT["subW"][:, n] - subW_old[:, n])
 
             # Update temperature and density after refreezing
@@ -528,15 +1116,17 @@ def main(C, OUT, IN, dt, grid, phys):
         avail_S = 1.0 / (1.0 + dt / C["Trunoff"]) * avail_S
         avail_S[avail_S < 1e-25] = 0.0  # Set near-zero available slush to zero
 
-        # Initialize slush water in all layers
-        OUT["subS"] = np.zeros((grid["gpsum"], nl))
+        # Initialize slush water in all layers (reusing arrays)
+        if "subS" not in OUT or OUT["subS"].shape != (gpsum, nl):
+            OUT["subS"] = np.zeros((gpsum, nl))
+        else:
+            OUT["subS"].fill(0.0)
 
         # Bottom-up filling of pore space with slush water
+        # Each layer takes min(available, pore space), no branching needed
         for n in range(nl - 1, -1, -1):  # Loop from bottom (nl) to top (1)
-            cond1 = avail_S > slushspace[:, n]  # Mask for layers where more water is available than the slush space
-            OUT["subS"][cond1, n] = slushspace[cond1, n]  # Fill slush space in those layers
-            OUT["subS"][~cond1, n] = avail_S[~cond1]  # Fill remaining water in other layers
-            avail_S -= OUT["subS"][:, n]  # Reduce available slush water by the amount stored
+            np.minimum(avail_S, slushspace[:, n], out=OUT["subS"][:, n])
+            avail_S -= OUT["subS"][:, n]
 
         #####################################
         # Refreezing of slush water
@@ -547,14 +1137,12 @@ def main(C, OUT, IN, dt, grid, phys):
         c2 = OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dice"]
         Wlim = np.minimum(c1, c2)
 
-        # Available slush water
-        slush_W = OUT["subS"].copy()  # Make a copy to avoid overwriting inputs (vectorized across all layers)
-
-        # Determine refreezing amounts
+        # Refreezing of slush:
+        # RS = min(subS, Wlim) where layer is cold and wet, else 0
+        # No temporaries needed, min() handles both branches; mask zeroes inactive elements
         layer_cond = (OUT["subS"] > 0) & (OUT["subT"] < C["T0"])
-        Wlim_effective = Wlim * layer_cond
-        slush_W_effective = slush_W * layer_cond
-        RS = np.where(slush_W_effective > Wlim_effective, Wlim_effective, slush_W_effective)
+        RS = np.minimum(OUT["subS"], Wlim)
+        RS[~layer_cond] = 0.0
 
         # Update slush water content
         OUT["subS"] -= RS
@@ -572,11 +1160,12 @@ def main(C, OUT, IN, dt, grid, phys):
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
         c1 = OUT["cpi"] * OUT["subD"] * OUT["subZ"] * (C["T0"] - OUT["subT"]) / C["Lm"]
         c2 = OUT["subZ"] * (1 - OUT["subD"] / C["Dice"]) * C["Dice"]
-        Wlim = np.where(c1 >= c2, c2, c1)
+        Wlim = np.minimum(c1, c2)
 
         # Calculate refreezing amounts
         valid_mask = (OUT["subW"] > 0) & (OUT["subT"] < C["T0"])
-        RI = np.minimum(OUT["subW"], Wlim) * valid_mask
+        RI = np.minimum(OUT["subW"], Wlim)
+        RI[~valid_mask] = 0.0
 
         # Update water content (subW), temperature (subT), and density (subD)
         OUT["subW"] -= RI
@@ -597,71 +1186,102 @@ def main(C, OUT, IN, dt, grid, phys):
         """
         Layer merging and splitting
         """
-        if grid["doubledepth"]:
-            subZ_old = OUT["subZ"].copy()
-            subD_old = OUT["subD"].copy()
-            subW_old = OUT["subW"].copy()
-            subT_old = OUT["subT"].copy()
-            subS_old = OUT["subS"].copy()
-            for n in range(len(grid["split"])):  # Iterate through split points
-                split = grid["split"][n] - 1
+        if not grid["doubledepth"]:
+            return True
 
-                # Merge Layers (Accumulation Case)
-                cond_merge = (OUT["subZ"][:, split] <= (2.0**n) * grid["max_subZ"]) & (grid["mask"] == 1)
+        # Precompute constants / reuse lookups
+        max_subZ = grid["max_subZ"]
+        mask1 = grid["mask"] == 1
+        nsplit = len(grid["split"])
+        top_thickness = (2.0**nsplit) * max_subZ
 
+        # Reuse persistent buffers instead of allocating new .copy() arrays
+        shp = OUT["subZ"].shape
+        if "_lm_old_subZ" not in OUT or OUT["_lm_old_subZ"].shape != shp:
+            OUT["_lm_old_subZ"] = np.empty_like(OUT["subZ"])
+            OUT["_lm_old_subD"] = np.empty_like(OUT["subD"])
+            OUT["_lm_old_subW"] = np.empty_like(OUT["subW"])
+            OUT["_lm_old_subT"] = np.empty_like(OUT["subT"])
+            OUT["_lm_old_subS"] = np.empty_like(OUT["subS"])
+
+        # Fill workspace arrays with current values
+        np.copyto(OUT["_lm_old_subZ"], OUT["subZ"])
+        np.copyto(OUT["_lm_old_subD"], OUT["subD"])
+        np.copyto(OUT["_lm_old_subW"], OUT["subW"])
+        np.copyto(OUT["_lm_old_subT"], OUT["subT"])
+        np.copyto(OUT["_lm_old_subS"], OUT["subS"])
+
+        subZ_old = OUT["_lm_old_subZ"]
+        subD_old = OUT["_lm_old_subD"]
+        subW_old = OUT["_lm_old_subW"]
+        subT_old = OUT["_lm_old_subT"]
+        subS_old = OUT["_lm_old_subS"]
+
+        for n in range(nsplit):  # Iterate through split points
+            split = grid["split"][n] - 1
+            threshold = (2.0**n) * max_subZ
+
+            # Merge Layers (Accumulation Case)
+            idx_merge = np.flatnonzero((OUT["subZ"][:, split] <= threshold) & mask1)
+
+            if idx_merge.size:
                 # Update merged layers
-                OUT["subZ"][cond_merge, split - 1] = subZ_old[cond_merge, split - 1] + subZ_old[cond_merge, split]
-                OUT["subW"][cond_merge, split - 1] = subW_old[cond_merge, split - 1] + subW_old[cond_merge, split]
-                OUT["subS"][cond_merge, split - 1] = subS_old[cond_merge, split - 1] + subS_old[cond_merge, split]
-                OUT["subD"][cond_merge, split - 1] = (
-                    subZ_old[cond_merge, split - 1] * subD_old[cond_merge, split - 1]
-                    + subZ_old[cond_merge, split] * subD_old[cond_merge, split]
-                ) / (subZ_old[cond_merge, split - 1] + subZ_old[cond_merge, split])
-                OUT["subT"][cond_merge, split - 1] = (
-                    subZ_old[cond_merge, split - 1] * subT_old[cond_merge, split - 1]
-                    + subZ_old[cond_merge, split] * subT_old[cond_merge, split]
-                ) / (subZ_old[cond_merge, split - 1] + subZ_old[cond_merge, split])
+                OUT["subZ"][idx_merge, split - 1] = subZ_old[idx_merge, split - 1] + subZ_old[idx_merge, split]
+                OUT["subW"][idx_merge, split - 1] = subW_old[idx_merge, split - 1] + subW_old[idx_merge, split]
+                OUT["subS"][idx_merge, split - 1] = subS_old[idx_merge, split - 1] + subS_old[idx_merge, split]
+
+                # Compute denominator once and reuse
+                den = subZ_old[idx_merge, split - 1] + subZ_old[idx_merge, split]
+                OUT["subD"][idx_merge, split - 1] = (
+                    subZ_old[idx_merge, split - 1] * subD_old[idx_merge, split - 1]
+                    + subZ_old[idx_merge, split] * subD_old[idx_merge, split]
+                ) / den
+                OUT["subT"][idx_merge, split - 1] = (
+                    subZ_old[idx_merge, split - 1] * subT_old[idx_merge, split - 1]
+                    + subZ_old[idx_merge, split] * subT_old[idx_merge, split]
+                ) / den
 
                 # Shift properties up for merged layers
-                OUT["subZ"][cond_merge, split:-1] = subZ_old[cond_merge, split + 1 :]
-                OUT["subW"][cond_merge, split:-1] = subW_old[cond_merge, split + 1 :]
-                OUT["subS"][cond_merge, split:-1] = subS_old[cond_merge, split + 1 :]
-                OUT["subD"][cond_merge, split:-1] = subD_old[cond_merge, split + 1 :]
-                OUT["subT"][cond_merge, split:-1] = subT_old[cond_merge, split + 1 :]
+                OUT["subZ"][idx_merge, split:-1] = subZ_old[idx_merge, split + 1 :]
+                OUT["subW"][idx_merge, split:-1] = subW_old[idx_merge, split + 1 :]
+                OUT["subS"][idx_merge, split:-1] = subS_old[idx_merge, split + 1 :]
+                OUT["subD"][idx_merge, split:-1] = subD_old[idx_merge, split + 1 :]
+                OUT["subT"][idx_merge, split:-1] = subT_old[idx_merge, split + 1 :]
 
                 # Adjust the newly added layer at the top
-                OUT["subZ"][cond_merge, -1] = 2.0 ** len(grid["split"]) * grid["max_subZ"]
-                OUT["subT"][cond_merge, -1] = 2.0 * subT_old[cond_merge, -1] - subT_old[cond_merge, -2]
-                OUT["subD"][cond_merge, -1] = subD_old[cond_merge, -1]
-                OUT["subW"][cond_merge, -1] = 0.0
-                OUT["subS"][cond_merge, -1] = 0.0
+                OUT["subZ"][idx_merge, -1] = top_thickness
+                OUT["subT"][idx_merge, -1] = 2.0 * subT_old[idx_merge, -1] - subT_old[idx_merge, -2]
+                OUT["subD"][idx_merge, -1] = subD_old[idx_merge, -1]
+                OUT["subW"][idx_merge, -1] = 0.0
+                OUT["subS"][idx_merge, -1] = 0.0
 
-                # Split Layers (Ablation Case)
-                cond_split = (OUT["subZ"][:, split - 2] > (2.0**n) * grid["max_subZ"]) & (grid["mask"] == 1)
+            # Split Layers (Ablation Case)
+            idx_split = np.flatnonzero((OUT["subZ"][:, split - 2] > threshold) & mask1)
 
+            if idx_split.size:
                 # Update split layers
-                OUT["subZ"][cond_split, split - 2] *= 0.5
-                OUT["subW"][cond_split, split - 2] *= 0.5
-                OUT["subS"][cond_split, split - 2] *= 0.5
-                OUT["subT"][cond_split, split - 2] = subT_old[cond_split, split - 2]
-                OUT["subD"][cond_split, split - 2] = subD_old[cond_split, split - 2]
+                OUT["subZ"][idx_split, split - 2] *= 0.5
+                OUT["subW"][idx_split, split - 2] *= 0.5
+                OUT["subS"][idx_split, split - 2] *= 0.5
+                OUT["subT"][idx_split, split - 2] = subT_old[idx_split, split - 2]
+                OUT["subD"][idx_split, split - 2] = subD_old[idx_split, split - 2]
 
-                OUT["subZ"][cond_split, split - 1] = OUT["subZ"][cond_split, split - 2]
-                OUT["subW"][cond_split, split - 1] = OUT["subW"][cond_split, split - 2]
-                OUT["subS"][cond_split, split - 1] = OUT["subS"][cond_split, split - 2]
-                OUT["subT"][cond_split, split - 1] = OUT["subT"][cond_split, split - 2]
-                OUT["subD"][cond_split, split - 1] = OUT["subD"][cond_split, split - 2]
+                OUT["subZ"][idx_split, split - 1] = OUT["subZ"][idx_split, split - 2]
+                OUT["subW"][idx_split, split - 1] = OUT["subW"][idx_split, split - 2]
+                OUT["subS"][idx_split, split - 1] = OUT["subS"][idx_split, split - 2]
+                OUT["subT"][idx_split, split - 1] = OUT["subT"][idx_split, split - 2]
+                OUT["subD"][idx_split, split - 1] = OUT["subD"][idx_split, split - 2]
 
                 # Shift properties down for split layers
-                OUT["subZ"][cond_split, split:-1] = subZ_old[cond_split, split - 1 : -2]
-                OUT["subW"][cond_split, split:-1] = subW_old[cond_split, split - 1 : -2]
-                OUT["subS"][cond_split, split:-1] = subS_old[cond_split, split - 1 : -2]
-                OUT["subT"][cond_split, split:-1] = subT_old[cond_split, split - 1 : -2]
-                OUT["subD"][cond_split, split:-1] = subD_old[cond_split, split - 1 : -2]
+                OUT["subZ"][idx_split, split:-1] = subZ_old[idx_split, split - 1 : -2]
+                OUT["subW"][idx_split, split:-1] = subW_old[idx_split, split - 1 : -2]
+                OUT["subS"][idx_split, split:-1] = subS_old[idx_split, split - 1 : -2]
+                OUT["subT"][idx_split, split:-1] = subT_old[idx_split, split - 1 : -2]
+                OUT["subD"][idx_split, split:-1] = subD_old[idx_split, split - 1 : -2]
 
                 # Update runoff contributions
-                OUT["runoff_irr_deep"][cond_split] += subW_old[cond_split, -1]
-                OUT["runoff_slush"][cond_split] += subS_old[cond_split, -1]
+                OUT["runoff_irr_deep"][idx_split] += subW_old[idx_split, -1]
+                OUT["runoff_slush"][idx_split] += subS_old[idx_split, -1]
 
         return True
 
