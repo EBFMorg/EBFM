@@ -5,6 +5,7 @@
 from typing import TYPE_CHECKING
 from collections.abc import Mapping
 import numpy as np
+from ebfm.core.constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
@@ -122,8 +123,10 @@ class IconAtmo(Component):
         # Get data from IconAtmo
         pr = self._get_if_coupled("pr")
         if pr is not None:
-            received_data["pr"] = pr
+            # convert precipitation from kg m-2 s-1 to m w.e.
+            received_data["pr"] = pr * self._coupler.get_seconds_per_year() * 1e-3
 
+        # TO DO: check what units are needed for pr_snow in EBFM
         pr_snow = self._get_if_coupled("pr_snow")
         if pr_snow is not None:
             received_data["pr_snow"] = pr_snow

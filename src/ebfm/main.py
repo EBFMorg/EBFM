@@ -335,9 +335,7 @@ def main():
             logger.debug("Done.")
             logger.debug("Received the following data from ICON:", data_from_icon)
 
-            # convert precipitation from kg m-2 s-1 to m w.e.
-            # TODO: unit conversion to EBFM local units should happen inside the coupler
-            IN["P"] = data_from_icon["pr"] * time_config.time_step.total_seconds() * 1e-3
+            IN["P"] = data_from_icon["pr"]
             IN["snow"] = data_from_icon["pr_snow"]
             IN["SWin"] = data_from_icon["rsds"]
             IN["LWin"] = data_from_icon["rlds"]
