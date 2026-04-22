@@ -122,13 +122,17 @@ class FakeCoupler(Coupler):
         return exchange_type
 
     # TODO: Try to improve this
-    def _infer_n_points(self, grid: dict) -> int:
+    def _infer_n_points(self, grid: GridDict) -> int:
         """
         Infer the number of horizontal points represented by ``grid``.
 
         Supports both:
         - Elmer mesh-like objects (e.g. ``vertex_ids``, ``lon``, ``lat``)
         - MATLAB/full EBFM grid dictionaries (e.g. ``x``, ``lon``, ``lat``, ``gpsum``)
+
+        @param[in] grid GridDict used by Coupler
+
+        @returns inferred number of grid points
         """
         if grid is None:
             return 0
