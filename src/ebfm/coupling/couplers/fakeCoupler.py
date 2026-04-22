@@ -158,7 +158,7 @@ class FakeCoupler(Coupler):
             "n_points, x, lon, lat, mask (for MATLAB/full EBFM grids)."
         )
 
-    def setup(self, grid: GridDict, time: dict[str, float]):
+    def _setup(self, grid: GridDict, field_definitions: FieldSet):
         """
         Store grid size so fake arrays can be sized correctly in :meth:`get`.
 
@@ -168,11 +168,6 @@ class FakeCoupler(Coupler):
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
         self._n_points = self._infer_n_points(grid)
-
-        field_definitions = FieldSet()
-
-        for component in self._coupled_components.values():
-            field_definitions |= component.get_field_definitions(time)
 
         self._add_couples(field_definitions)
 

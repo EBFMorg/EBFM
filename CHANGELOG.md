@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Add functionality for (optional) unit conversion of data received from/sent to other components. https://github.com/EBFMorg/EBFM/pull/106
 * Introduce option `--component-name` to allow configuration of the name this component used to identify to the coupler. https://github.com/EBFMorg/EBFM/pull/101
 
 # v0.3.0

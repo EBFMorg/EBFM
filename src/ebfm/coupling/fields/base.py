@@ -47,19 +47,6 @@ class Field:
     metadata: str | None = None  # optional metadata
 
 
-def days_to_iso(days: float) -> Timestep:
-    """
-    Convert a time step in days to ISO 8601 format.
-
-    @param[in] days time step in days
-    @returns Generic Timestep with ISO 8601 duration string
-    """
-    import pandas as pd
-
-    dt = pd.Timedelta(days=days)
-    return Timestep(value=dt.isoformat())
-
-
 class FieldSet:
     """
     Set of fields.

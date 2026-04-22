@@ -9,6 +9,7 @@ from ebfm.core import logging
 
 from .base import Coupler, Grid, GridDict, CouplingConfig, CouplerErrorCode
 
+
 # from coupling import Field  # TODO: rather use generic Field from coupling
 from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
 from ebfm.coupling.fields import YACField
@@ -41,18 +42,15 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         self.grid: yac.UnstructuredGrid = None
         self.cell_centers: yac.Points = None
 
-    def setup(self, grid: GridDict, time: dict[str, float]):
+    def _setup(self, grid: GridDict, field_definitions: FieldSet):
         """
-        Setup the coupling interface
-
-        Performs initialization operations after init and before entering the
-        time loop
+        Register grid and coupling definitions with YAC.
 
         @note This is a collective operation for all components involved in the coupling. It may take some time as it
               involves significant communication and computes remapping weights.
 
         @param[in] grid Grid used by EBFM where coupling happens
-        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
+        @param[in] field_definitions set of field definitions collected from all coupled components
         """
 
         grid_object: Grid = grid["mesh"]
@@ -60,11 +58,6 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         grid_name = "ebfm_grid"  # TODO: get from ebfm_coupling_config?
 
         self._add_grid(grid_name, grid_object)
-
-        field_definitions = FieldSet()
-
-        for component in self._coupled_components.values():
-            field_definitions |= component.get_field_definitions(time)
 
         self._add_couples(field_definitions)
 

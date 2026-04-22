@@ -6,7 +6,7 @@ import numpy as np
 
 from . import Coupler
 from .base import GridDict, CouplingConfig, CouplerErrorCode
-from ebfm.coupling.fields import GenericExchangeType
+from ebfm.coupling.fields import GenericExchangeType, FieldSet
 
 import logging
 
@@ -26,14 +26,11 @@ class DummyCoupler(Coupler):
         self._coupled_components = dict()
         logger.debug(f"DummyCoupler created for component '{coupling_config.component_name}'.")
 
-    def setup(self, grid: GridDict, time: dict[str, float]):
-        """Setup the coupling interface (does nothing for DummyCoupler)
-
-        Performs initialization operations after init and before entering the
-        time loop
+    def _setup(self, grid: GridDict, field_definitions: FieldSet):
+        """DummyCoupler has no specific setup operations.
 
         @param[in] grid Grid used by EBFM where coupling happens
-        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
+        @param[in] field_definitions set of field definitions collected from all coupled components
         """
         logger.debug("Setup coupling...")
         logger.debug("Do nothing for DummyCoupler.")

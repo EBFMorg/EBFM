@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from typing import TYPE_CHECKING
+from collections.abc import Mapping
 import numpy as np
 
 if TYPE_CHECKING:
@@ -10,7 +11,9 @@ if TYPE_CHECKING:
 
 from .base import Component
 
-from ebfm.coupling.fields import FieldSet, Field, ExchangeType, days_to_iso
+from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
+from ebfm.core.config import TimeConfig
+from ebfm.core.constants import DAYS_PER_YEAR
 
 
 class ElmerIce(Component):
@@ -23,11 +26,11 @@ class ElmerIce(Component):
     def __init__(self, coupler: "Coupler"):
         super().__init__(coupler)
 
-    def get_field_definitions(self, time: dict[str, float]) -> FieldSet:
+    def get_field_definitions(self, time: TimeConfig) -> FieldSet:
         """
         Get generic field definitions for EBFM coupling to Elmer/Ice.
         """
-        timestep = days_to_iso(time["dt"])
+        timestep = Timestep(value=time.time_step_iso8601())
 
         return FieldSet(
             {
@@ -75,20 +78,27 @@ class ElmerIce(Component):
             }
         )
 
-    def exchange(self, data_to_exchange: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Exchange data with Elmer/Ice.
 
-        @param[in] data_to_exchange dictionary of field names and their data to be sent
+        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
 
         @returns dictionary of received field data
         """
         received_data: dict[str, np.ndarray] = {}
 
+        # For fields representing rates (e.g. SMB, runoff), we need to convert them from per timestep to per year
+        # before sending to Elmer/Ice, which expects annual values.
+        def map_per_timestep_to_per_year(x_per_timestep: np.ndarray) -> np.ndarray:
+            x_per_day = x_per_timestep / self._coupler.get_time_step_in_days()
+            x_per_year = x_per_day * DAYS_PER_YEAR
+            return x_per_year
+
         # Put data to Elmer/Ice
         self._put_if_coupled("T_ice", data_to_exchange)
-        self._put_if_coupled("smb", data_to_exchange)
-        self._put_if_coupled("runoff", data_to_exchange)
+        self._put_if_coupled("smb", data_to_exchange, transform=map_per_timestep_to_per_year)
+        self._put_if_coupled("runoff", data_to_exchange, transform=map_per_timestep_to_per_year)
 
         # Get data from Elmer/Ice
         h = self._get_if_coupled("h")

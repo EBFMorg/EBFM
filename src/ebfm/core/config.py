@@ -226,6 +226,23 @@ class TimeConfig:
         assert total_seconds % step_seconds == 0, "Time interval must be divisible by time step."
         return int(round(total_seconds / step_seconds))
 
+    def time_step_in_days(self) -> float:
+        """Get the time step size in days.
+
+        @returns Time step size in days
+        """
+        return self.time_step.total_seconds() / SECONDS_PER_DAY
+
+    def time_step_iso8601(self) -> str:
+        """Get the time step size in ISO 8601 duration format (e.g., "P0DT3H0M0S" for a 3-hour time step).
+
+        @returns Time step size in ISO 8601 duration format
+        """
+        import pandas as pd
+
+        dt = pd.Timedelta(days=self.time_step_in_days())
+        return dt.isoformat()
+
     def to_dict(self) -> dict:
         """Convert time configuration to a dictionary.
 
@@ -234,7 +251,7 @@ class TimeConfig:
         return {
             "ts": self.start_time,
             "te": self.end_time,
-            "dt": self.time_step.total_seconds() / SECONDS_PER_DAY,  # Convert to days
+            "dt": self.time_step_in_days(),
             "tn": self.tn(),
             "dT_UTC": self.dT_UTC,
         }

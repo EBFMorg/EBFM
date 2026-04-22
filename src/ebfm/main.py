@@ -310,7 +310,7 @@ def main():
     coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
     coupler = coupler_cls(coupling_config=coupling_config)
 
-    coupler.setup(grid, time)
+    coupler.setup(grid, time_config)
 
     # Time-loop
     logger.info("Entering time loop...")
@@ -335,9 +335,7 @@ def main():
             logger.debug("Done.")
             logger.debug("Received the following data from ICON:", data_from_icon)
 
-            IN["P"] = (
-                data_from_icon["pr"] * time["dt"] * C["dayseconds"] * 1e-3
-            )  # convert units from kg m-2 s-1 to m w.e.
+            IN["P"] = data_from_icon["pr"]
             IN["snow"] = data_from_icon["pr_snow"]
             IN["SWin"] = data_from_icon["rsds"]
             IN["LWin"] = data_from_icon["rlds"]

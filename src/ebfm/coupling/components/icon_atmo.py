@@ -3,14 +3,17 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from typing import TYPE_CHECKING
+from collections.abc import Mapping
 import numpy as np
+from ebfm.core.constants import SECONDS_PER_DAY
 
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
 
 from .base import Component
 
-from ebfm.coupling.fields import FieldSet, Field, ExchangeType, days_to_iso
+from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
+from ebfm.core.config import TimeConfig
 
 
 class IconAtmo(Component):
@@ -23,11 +26,11 @@ class IconAtmo(Component):
     def __init__(self, coupler: "Coupler"):
         super().__init__(coupler)
 
-    def get_field_definitions(self, time: dict[str, float]) -> FieldSet:
+    def get_field_definitions(self, time: TimeConfig) -> FieldSet:
         """
         Get generic field definitions for EBFM coupling to IconAtmo.
         """
-        timestep = days_to_iso(time["dt"])
+        timestep = Timestep(value=time.time_step_iso8601())
 
         return FieldSet(
             {
@@ -104,24 +107,33 @@ class IconAtmo(Component):
             }
         )
 
-    def exchange(self, data_to_exchange: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Exchange data with IconAtmo.
 
-        @param[in] data_to_exchange dictionary of field names and their data to be sent
+        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
 
         @returns dictionary of received field data
         """
         received_data: dict[str, np.ndarray] = {}
 
+        # We need to convert precipitation received from ICON from kg / m^2 / s
+        # to m w.e. (per EBFM timestep)
+        def map_pr_to_ebfm(precipitation: np.ndarray) -> np.ndarray:
+            mwe_per_second = precipitation * 1e-3
+            mwe_per_day = mwe_per_second * SECONDS_PER_DAY
+            mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
+            return mwe_per_timestep
+
         # Put data to IconAtmo
         self._put_if_coupled("albedo", data_to_exchange)
 
         # Get data from IconAtmo
-        pr = self._get_if_coupled("pr")
+        pr = self._get_if_coupled("pr", transform=map_pr_to_ebfm)
         if pr is not None:
             received_data["pr"] = pr
 
+        # TODO: check what units are needed for pr_snow in EBFM
         pr_snow = self._get_if_coupled("pr_snow")
         if pr_snow is not None:
             received_data["pr_snow"] = pr_snow
