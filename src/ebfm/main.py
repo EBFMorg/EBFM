@@ -8,6 +8,8 @@ import argparse
 from enum import Enum
 
 import ebfm.core
+import ebfm.core.comm
+
 from ebfm.core import (
     INIT,
     LOOP_general_functions,
@@ -17,7 +19,6 @@ from ebfm.core import (
     LOOP_mass_balance,
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
-from ebfm.core.comm import do_comm_splitting
 from ebfm.core.grid import GridInputType
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
@@ -119,7 +120,7 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
     return active_coupling_args
 
 
-def main():
+def _main_impl():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument(
@@ -286,7 +287,7 @@ def main():
 
     coupler_cls: type[ebfm.coupling.Coupler] = None
 
-    ebfm_comm, coupler_cls = do_comm_splitting(args.local_group_label, coupling_config)
+    ebfm_comm, coupler_cls = ebfm.core.comm.do_comm_splitting(args.local_group_label, coupling_config)
     # Reconfigure logging for (now available) EBFM communicator.
     setup_logging(
         stdout_log_level=log_levels_map[args.log_level_console],
@@ -450,6 +451,19 @@ def main():
     coupler.finalize()
 
     logger.info("Closing down EBFM.")
+
+
+def main():
+    try:
+        _main_impl()
+    except Exception as e:
+        logger = getLogger(__name__)
+        logger.exception("Fatal Error in EBFM")
+
+        if ebfm.core.comm.is_initialized():
+            ebfm.core.comm.abort()
+
+        raise e
 
 
 # Entry point for script execution
