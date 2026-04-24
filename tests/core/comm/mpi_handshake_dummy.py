@@ -8,7 +8,7 @@ Joins two MPI groups (dummy and coupler) via mpi handshake, checks ranks and siz
 correct group membership and ordering based on invocation order.
 """
 
-from ebfm.core.mpi_handshake import mpi_handshake
+from ebfm.core.comm.mpi_handshake import mpi_handshake
 import sys
 
 # local communicator for dummy this executable
