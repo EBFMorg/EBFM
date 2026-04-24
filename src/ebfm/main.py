@@ -17,14 +17,12 @@ from ebfm.core import (
     LOOP_mass_balance,
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
+from ebfm.core.comm import do_comm_splitting
 from ebfm.core.grid import GridInputType
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel
-from ebfm.core.mpi_handshake import mpi_handshake
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
-
-from mpi4py import MPI
 
 # logger for this module
 logger: Logger
@@ -119,32 +117,6 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
         active_coupling_args.append("--coupler-config")
 
     return active_coupling_args
-
-
-def do_comm_splitting(comp_name: str, coupling_config: CouplingConfig) -> tuple[MPI.Comm, type[ebfm.coupling.Coupler]]:
-    """
-    Perform MPI communicator splitting.
-
-    The MPI communicator splitting will be performed using the mpi-handshake algorithm and it will create a
-    communication infrastructure that is compatible with the provided coupling configuration. The returned
-    coupler class must be used later to construct the coupling.
-
-    @param[in] comp_name local component name for which communicator is returned.
-    @param[in] coupling_config coupling configuration where group communicators are stored.
-
-    @return local communicator for EBFM and selected coupler class.
-    """
-    coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
-
-    groupnames = set()
-    groupnames.add(comp_name)
-    groupnames.add(coupler_cls.get_mpi_handshake_group_name())
-    groupcomms = mpi_handshake(groupnames=list(groupnames), comm=MPI.COMM_WORLD)
-
-    coupling_config.set_group_communicators(groupcomms)
-    ebfm_comm = groupcomms[comp_name]
-
-    return ebfm_comm, coupler_cls
 
 
 def main():
@@ -299,7 +271,6 @@ def main():
     setup_logging(
         stdout_log_level=log_levels_map[args.log_level_console],
         file=args.log_file,
-        comm=MPI.COMM_WORLD,
         reset_handlers=True,
     )
     logger = getLogger(__name__)
@@ -313,7 +284,6 @@ def main():
     coupling_config = CouplingConfig(args)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
-    ebfm_comm: MPI.Comm = None
     coupler_cls: type[ebfm.coupling.Coupler] = None
 
     ebfm_comm, coupler_cls = do_comm_splitting(args.local_group_label, coupling_config)
