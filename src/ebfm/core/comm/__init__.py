@@ -6,7 +6,7 @@ from ebfm.core.logger import Logger
 from ebfm.core.config import CouplingConfig
 from ebfm.coupling import Coupler, select_coupler_class
 
-import mpi_handshake
+from .mpi_handshake import mpi_handshake
 
 from mpi4py import MPI
 
