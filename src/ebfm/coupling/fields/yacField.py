@@ -125,11 +125,6 @@ class YACField:
             not self.field_handle
         ), f"Field '{self.name}' for component '{self.name}' has already been created in YAC."
 
-        # TODO: work-around since some components assume that metadata is always set, components should actually check
-        #       for existence of metadata and only call yac_cget_field_metadata or yac_fget_field_metadata if metadata
-        #       exists.
-        metadata = self.metadata or "N/A"
-
         logger.debug(
             f"Defining YAC field '{self.name}' for component EBFM with collection size {collection_size} and "
             f"timestep {self.timestep.value} ({self.timestep.format})."
@@ -145,12 +140,12 @@ class YACField:
         )
 
         # add optional metadata
-        if metadata:
+        if self.metadata:
             yac_interface.def_field_metadata(
                 yac_field.component_name,
                 yac_field.grid_name,
                 yac_field.name,
-                metadata.encode("utf-8"),
+                self.metadata.encode("utf-8"),
             )
 
         return replace(self, field_handle=yac_field)
@@ -206,20 +201,32 @@ class YACField:
         """
 
         assert self.field_handle, f"YAC field is not defined for field {self}."
+        field_role = yac_interface.get_field_role(
+            self.field_handle.component_name, self.field_handle.grid_name, self.field_handle.name
+        )
+        assert field_role in (yac.ExchangeType.SOURCE, yac.ExchangeType.TARGET), (
+            f"Field '{self.name}' has invalid YAC exchange type '{field_role}'. Must be either SOURCE or TARGET."
+        )
 
         src_comp, src_grid, src_field = yac_interface.get_field_source(
             self.field_handle.component_name, self.field_handle.grid_name, self.field_handle.name
         )
+
+        src_field_role = yac_interface.get_field_role(src_comp, src_grid, src_field)
+        assert src_field_role is yac.ExchangeType.SOURCE, (
+            f"Field '{self.name}' has invalid YAC exchange type '{field_role}'. Must be SOURCE."
+        )
+
         src_field_timestep = yac_interface.get_field_timestep(src_comp, src_grid, src_field)
 
-        if self.metadata:  # metadata is optional
-            src_field_metadata = yac_interface.get_field_metadata(src_comp, src_grid, src_field)
-        else:
+        src_field_metadata = yac_interface.get_field_metadata(src_comp, src_grid, src_field)
+        if not src_field_metadata:  # metadata is optional, returns None if not set
             src_field_metadata = "N/A"
 
         assert (
             self.field_handle.name == self.name
         ), f"Field name mismatch: expected '{self.name}', got '{self.field_handle.name}'."
+        assert src_field == self.name, f"Field name mismatch: expected '{self.name}', got '{src_field}'."
         return field_template.format(
             name=self.name, comp=src_comp, grid=src_grid, timestep=src_field_timestep, metadata=src_field_metadata
         )
