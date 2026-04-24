@@ -76,6 +76,11 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         self.fields: FieldSet = FieldSet()
         self._time: TimeConfig | None = None  # will be set in setup()
 
+    @staticmethod
+    @abstractmethod
+    def get_mpi_handshake_group_name() -> str:
+        raise NotImplementedError("get_mpi_handshake_group_name must be implemented in subclasses.")
+
     def has_coupling_to(self, component_name: str) -> bool:
         """
         Check if coupling to a specific component is enabled

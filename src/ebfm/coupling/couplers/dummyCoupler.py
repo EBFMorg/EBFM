@@ -26,6 +26,10 @@ class DummyCoupler(Coupler):
         self._coupled_components = dict()
         logger.debug(f"DummyCoupler created for component '{coupling_config.component_name}'.")
 
+    @staticmethod
+    def get_mpi_handshake_group_name() -> str:
+        return "ebfmDummyCoupler"
+
     def _setup(self, grid: GridDict, field_definitions: FieldSet):
         """DummyCoupler has no specific setup operations.
 

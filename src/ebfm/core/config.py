@@ -9,6 +9,7 @@ This file exposes a some configuration dataclasses for EBFM components.
 from argparse import Namespace
 from pathlib import Path
 from enum import Enum
+from mpi4py import MPI
 
 from .grid import GridInputType
 
@@ -39,6 +40,7 @@ class CouplingConfig:
     coupler_config: Path | None  # Path to the coupler configuration file
     field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
     use_fake_coupling: bool  # Whether to use FakeCoupler instead of production backend
+    comms: dict[str, MPI.Comm] | None  # Dict with MPI communicators used by this model
 
     def __init__(
         self,
@@ -55,11 +57,15 @@ class CouplingConfig:
         self.couple_to_elmer_ice = args.couple_to_elmer_ice
         self.use_fake_coupling = args.fake_coupling
 
+        # will be defined later because we already need some members of CouplingConfig to create the communicators
+        self.comms = None
+
         # Set field validation level from args (command-line argument with default 'FATAL')
         self.field_validation_level = FieldValidationLevel(args.field_validation_level)
 
         if args.coupler_config:
-            assert Path(args.coupler_config).is_file(), f"Coupler configuration file {args.coupler_config} not found."
+            if not Path(args.coupler_config).is_file():
+                raise FileNotFoundError(f"Coupler configuration file {args.coupler_config} not found.")
             self.coupler_config = args.coupler_config
         else:
             self.coupler_config = None
@@ -67,6 +73,43 @@ class CouplingConfig:
                 "No coupler configuration file provided. "
                 "This is fine if configuration is provided by other components or through the API."
             )
+
+    def set_group_communicators(self, group_comms: dict[str, MPI.Comm]):
+        """Store group communicators in the coupling configuration.
+
+        @param[in] group_comms dict with MPI communicators for different groups
+        """
+        if self.has_group_communicators():
+            raise RuntimeError(
+                "Group communicators have already been set. Overwriting them is not allowed since "
+                "mpi-handshake should only be performed once and this hints at a programming error in your code."
+            )
+        self.comms = group_comms
+
+    def has_group_communicators(self) -> bool:
+        """Check if group communicators have been set.
+
+        @returns True if group communicators are set, False otherwise
+        """
+        return self.comms is not None
+
+    def has_group_communicator(self, group_label: str) -> bool:
+        """Check if a communicator for the given group label is available.
+
+        @param[in] group_label label of the group
+        @returns True if a communicator for the group label is available, False otherwise
+        """
+        return self.has_group_communicators() and group_label in self.comms
+
+    def get_group_communicator(self, group_label: str) -> MPI.Comm:
+        """Get the communicator for the given group label.
+
+        @param[in] group_label label of the group
+        @returns MPI communicator for the group label
+        """
+        if not self.has_group_communicator(group_label):
+            raise KeyError(f"Communicator for group label '{group_label}' not found.")
+        return self.comms[group_label]
 
     def defines_coupling(self) -> bool:
         """Check if any coupling is defined in this configuration.
