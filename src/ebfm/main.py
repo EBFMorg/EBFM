@@ -313,29 +313,17 @@ def main():
     coupling_config = CouplingConfig(args)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
-    do_mpi_handshake = True
     ebfm_comm: MPI.Comm = None
     coupler_cls: type[ebfm.coupling.Coupler] = None
 
-    if do_mpi_handshake:
-        ebfm_comm, coupler_cls = do_comm_splitting(args.local_group_label, coupling_config)
-        # Reconfigure logging for (now available) EBFM communicator.
-        setup_logging(
-            stdout_log_level=log_levels_map[args.log_level_console],
-            file=args.log_file,
-            comm=ebfm_comm,
-            reset_handlers=True,
-        )
-    else:
-        raise NotImplementedError(
-            "Currently, MPI handshake and communicator splitting is always performed. If you want to disable it, "
-            "please implement the necessary logic here."
-        )
-        # TODO: using MPI.COMM_WORLD below is a work around; better let coupler provide the local communicator;
-        #       but this is only possible at a relatively late point in time, currently not needed and would require
-        #       additional logic.
-        ebfm_comm = MPI.COMM_WORLD
-        coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
+    ebfm_comm, coupler_cls = do_comm_splitting(args.local_group_label, coupling_config)
+    # Reconfigure logging for (now available) EBFM communicator.
+    setup_logging(
+        stdout_log_level=log_levels_map[args.log_level_console],
+        file=args.log_file,
+        comm=ebfm_comm,
+        reset_handlers=True,
+    )
 
     if not hasattr(args, "use_part"):
         # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
