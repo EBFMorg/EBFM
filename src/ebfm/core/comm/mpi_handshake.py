@@ -6,14 +6,35 @@
 
 from mpi4py import MPI
 import numpy as np
+import sys
+
+
+__version__ = "1.0.0"
+
+
+def _version_major() -> int:
+    """
+    Get the major version number of the mpi-handshake library.
+
+    Returns:
+        int: The major version number.
+    """
+    major, _, _ = map(int, __version__.split("."))
+    return major
 
 
 def mpi_handshake(groupnames: list[str], comm: MPI.Comm = MPI.COMM_WORLD) -> dict[str, MPI.Comm]:
     comms = {}
-    version = np.array(1, dtype=np.int32)
+    version = np.array(_version_major(), dtype=np.int32)
     comm.Allreduce(MPI.IN_PLACE, (version, 1, MPI.INT), op=MPI.MIN)
-    if version != 1:
-        MPI.Abort()
+    if version != _version_major():
+        print(
+            "Error: MPI handshake version mismatch: "
+            f"Expecting major version {_version_major()} but at least one "
+            f"other component uses version {version}.",
+            file=sys.stderr,
+        )
+        comm.Abort()
     while True:
         broadcaster = np.array(comm.size, dtype=np.int32)
         if len(groupnames) > 0:
