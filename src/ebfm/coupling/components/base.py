@@ -7,6 +7,10 @@ from typing import TYPE_CHECKING
 from collections.abc import Mapping, Callable
 import numpy as np
 
+from ebfm.core import logging
+
+logger = logging.getLogger(__name__)
+
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
     from ebfm.coupling.fields.base import FieldSet
@@ -66,7 +70,10 @@ class Component(ABC):
             assert (
                 field_name in data_to_exchange
             ), f"Field '{field_name}' is missing in data_to_exchange for component '{self.name}'."
-            self._coupler.put(self.name, field_name, transform(data_to_exchange[field_name]))
+            logger.debug(f"Putting field {field_name=}")
+            err = self._coupler.put(self.name, field_name, transform(data_to_exchange[field_name]))
+            if err:
+                logger.warning(f"Error code {err=} after put of {field_name=}")
 
     def _get_if_coupled(self, field_name: str, transform: Callable = identity) -> np.ndarray | None:
         """
@@ -79,7 +86,10 @@ class Component(ABC):
         from ebfm.coupling.fields.base import ExchangeType
 
         if self._coupler.has_field(self.name, field_name, ExchangeType.TARGET):
+            logger.debug(f"Getting field {field_name=}")
             data, err = self._coupler.get(self.name, field_name)
+            if err:
+                logger.warning(f"Error code {err=} after get of {field_name=}")
             assert data is not None, f"Received data for field '{field_name}' is None. {err}"
             return transform(data)
         return None
