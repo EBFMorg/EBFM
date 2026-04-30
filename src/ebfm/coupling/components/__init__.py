@@ -7,9 +7,11 @@ from ...core.config import ComponentId
 from .base import Component  # noqa: F401
 from .icon_atmo import IconAtmo
 from .elmer_ice import ElmerIce
+from .dummy import Dummy
 
 # maps a given ID to the component implementation to be used
 id2class = {
     ComponentId.ELMER_ICE: ElmerIce,
     ComponentId.ICON_ATMO: IconAtmo,
+    ComponentId.DUMMY: Dummy,
 }
