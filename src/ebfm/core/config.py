@@ -38,6 +38,7 @@ class ComponentId(Enum):
 
     ICON_ATMO = "icon_atmo"
     ELMER_ICE = "elmer_ice"
+    DUMMY = "dummy"
 
 
 class CouplingConfig:
@@ -65,6 +66,7 @@ class CouplingConfig:
         self._coupled_components = {
             ComponentId.ICON_ATMO: args.couple_to_icon_atmo,
             ComponentId.ELMER_ICE: args.couple_to_elmer_ice,
+            ComponentId.DUMMY: args.couple_to_dummy,
         }
 
         self.use_fake_coupling = args.fake_coupling
@@ -107,6 +109,11 @@ class CouplingConfig:
     def couple_to_elmer_ice(self):
         """Whether to couple this component to Elmer/Ice."""
         return self._active_coupling_to(ComponentId.ELMER_ICE)
+
+    @property
+    def couple_to_dummy(self):
+        """Whether to couple this component to the Dummy component."""
+        return self._active_coupling_to(ComponentId.DUMMY)
 
     def active_coupled_components(self) -> list[ComponentId]:
         """Get a list of actively coupled components based on the configuration.

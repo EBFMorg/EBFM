@@ -66,6 +66,12 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
     )
 
     coupling_group.add_argument(
+        "--couple-to-dummy",
+        action="store_true",
+        help="Enable coupling with dummy component via YAC",
+    )
+
+    coupling_group.add_argument(
         "--coupler-config",
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
@@ -113,6 +119,9 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
 
     if args.couple_to_icon_atmo:
         active_coupling_args.append("--couple-to-icon-atmo")
+
+    if args.couple_to_dummy:
+        active_coupling_args.append("--couple-to-dummy")
 
     if args.coupler_config:
         active_coupling_args.append("--coupler-config")
@@ -319,6 +328,15 @@ def main():
         time["TCUR"] = LOOP_general_functions.print_time(t, time["ts"], time["dt"])
 
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
+
+        if coupler.has_coupling_to("dummy"):
+            dummy = coupler.get_component("dummy")
+            logger.info("Data exchange with Dummy component")
+            logger.debug("Started...")
+            data_to_dummy = {}
+            data_from_dummy = dummy.exchange(data_to_dummy)
+            logger.debug("Done.")
+            logger.debug(f"Received the following data from Dummy component: {data_from_dummy}")
 
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
