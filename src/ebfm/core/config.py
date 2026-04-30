@@ -82,13 +82,6 @@ class CouplingConfig:
                 "This is fine if configuration is provided by other components or through the API."
             )
 
-    def defines_coupling(self) -> bool:
-        """Check if any coupling is defined in this configuration.
-
-        @returns True if coupling to any component is enabled, False otherwise
-        """
-        return any(self._coupled_components.values())
-
     def _active_coupling_to(self, component_id: ComponentId) -> bool:
         """Check if coupling to a specific component is enabled.
 
@@ -121,6 +114,13 @@ class CouplingConfig:
         @returns List of ComponentId for which coupling is enabled
         """
         return [c for c in ComponentId if self._active_coupling_to(c)]
+
+    def defines_coupling(self) -> bool:
+        """Check if any coupling is defined in this configuration.
+
+        @returns True if coupling to any component is enabled, False otherwise
+        """
+        return len(self.active_coupled_components()) > 0
 
 
 class GridConfig:
