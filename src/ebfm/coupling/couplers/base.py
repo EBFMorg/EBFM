@@ -66,12 +66,16 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         self._coupled_components: dict[str, Component] = {}
 
         if coupling_config.couple_to_elmer_ice:
+            logger.debug("Coupling to Elmer/Ice enabled.")
             elmer_comp = ElmerIce(self)
             self._coupled_components[elmer_comp.name] = elmer_comp
 
         if coupling_config.couple_to_icon_atmo:
+            logger.debug("Coupling to ICON atmosphere enabled.")
             icon_comp = IconAtmo(self)
             self._coupled_components[icon_comp.name] = icon_comp
+
+        logger.debug(f"Active coupled components: {list(self._coupled_components.keys())}")
 
         self.fields: FieldSet = FieldSet()
         self._time: TimeConfig | None = None  # will be set in setup()
@@ -84,7 +88,10 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         @returns True if coupling to the specified component is enabled, False otherwise
         """
-        return component_name in self._coupled_components
+        logger.debug(f"Checking coupling to component '{component_name}'...")
+        has_coupling_to_comp = component_name in self._coupled_components
+        logger.debug(f"has_coupling_to({component_name}) = {has_coupling_to_comp}")
+        return has_coupling_to_comp
 
     def get_component(self, component_name: str) -> Component:
         """

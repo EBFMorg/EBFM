@@ -51,8 +51,13 @@ class CouplingConfig:
         """
 
         self.component_name = args.component_name
-        self.couple_to_icon_atmo = args.couple_to_icon_atmo
-        self.couple_to_elmer_ice = args.couple_to_elmer_ice
+
+        self._coupled_components = set()
+        if args.couple_to_icon_atmo:
+            self._coupled_components.add("icon_atmo")
+        if args.couple_to_elmer_ice:
+            self._coupled_components.add("elmer_ice")
+
         self.use_fake_coupling = args.fake_coupling
 
         # Set field validation level from args (command-line argument with default 'FATAL')
@@ -73,7 +78,17 @@ class CouplingConfig:
 
         @returns True if coupling to any component is enabled, False otherwise
         """
-        return self.couple_to_icon_atmo or self.couple_to_elmer_ice
+        return len(self._coupled_components) > 0
+
+    @property
+    def couple_to_icon_atmo(self):
+        """Whether to couple this component to ICON atmosphere."""
+        return "icon_atmo" in self._coupled_components
+
+    @property
+    def couple_to_elmer_ice(self):
+        """Whether to couple this component to Elmer/Ice."""
+        return "elmer_ice" in self._coupled_components
 
 
 class GridConfig:
