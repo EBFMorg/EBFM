@@ -11,7 +11,7 @@ from ebfm.core.grid import GridDict
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
 # from ebfm.core.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
-from ebfm.core.config import CouplingConfig, TimeConfig
+from ebfm.core.config import CouplingConfig, TimeConfig, ComponentId
 
 import logging
 
@@ -67,13 +67,13 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         if coupling_config.couple_to_elmer_ice:
             logger.debug("Coupling to Elmer/Ice enabled.")
-            elmer_comp = ElmerIce(self)
-            self._coupled_components[elmer_comp.name] = elmer_comp
+            elmer_comp = ElmerIce(coupler=self, name=ComponentId.ELMER_ICE.value)
+            self._coupled_components[ComponentId.ELMER_ICE.value] = elmer_comp
 
         if coupling_config.couple_to_icon_atmo:
             logger.debug("Coupling to ICON atmosphere enabled.")
-            icon_comp = IconAtmo(self)
-            self._coupled_components[icon_comp.name] = icon_comp
+            icon_comp = IconAtmo(coupler=self, name=ComponentId.ICON_ATMO.value)
+            self._coupled_components[ComponentId.ICON_ATMO.value] = icon_comp
 
         logger.debug(f"Active coupled components: {list(self._coupled_components.keys())}")
 

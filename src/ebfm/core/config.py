@@ -28,14 +28,24 @@ class FieldValidationLevel(Enum):
     SILENT = "SILENT"  # Only log at debug level on mismatch
 
 
+class ComponentId(Enum):
+    """
+    Enumeration of component identifiers for EBFM coupling.
+
+    Lists identifiers for available components without having to import the component classes directly which would lead
+    to a circular import.
+    """
+
+    ICON_ATMO = "icon_atmo"
+    ELMER_ICE = "elmer_ice"
+
+
 class CouplingConfig:
     """
     Coupling configuration.
     """
 
     component_name: str  # Name of this component
-    couple_to_icon_atmo: bool  # Whether to couple this component to ICON atmosphere
-    couple_to_elmer_ice: bool  # Whether to couple this component to Elmer/Ice
     coupler_config: Path | None  # Path to the coupler configuration file
     field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
     use_fake_coupling: bool  # Whether to use FakeCoupler instead of production backend
@@ -52,11 +62,10 @@ class CouplingConfig:
 
         self.component_name = args.component_name
 
-        self._coupled_components = set()
-        if args.couple_to_icon_atmo:
-            self._coupled_components.add("icon_atmo")
-        if args.couple_to_elmer_ice:
-            self._coupled_components.add("elmer_ice")
+        self._coupled_components = {
+            ComponentId.ICON_ATMO: args.couple_to_icon_atmo,
+            ComponentId.ELMER_ICE: args.couple_to_elmer_ice,
+        }
 
         self.use_fake_coupling = args.fake_coupling
 
@@ -80,15 +89,31 @@ class CouplingConfig:
         """
         return len(self._coupled_components) > 0
 
+    def _active_coupling_to(self, component_id: ComponentId) -> bool:
+        """Check if coupling to a specific component is enabled.
+
+        @note Asserts that the component name exists in self._coupled_components. This prevents forgetting to register
+              a component during initialization.
+
+        @param[in] component_name name of the component to check coupling for
+
+        @returns True if coupling to the specified component is enabled, False if disabled
+        """
+        assert (
+            component_id in self._coupled_components
+        ), f"Coupling configuration is missing {component_id} entry. Make sure to explicitly set True/False for the "
+        "given key in the __init__ method of CouplingConfig."
+        return self._coupled_components.get(component_id)
+
     @property
     def couple_to_icon_atmo(self):
         """Whether to couple this component to ICON atmosphere."""
-        return "icon_atmo" in self._coupled_components
+        return self._active_coupling_to(ComponentId.ICON_ATMO)
 
     @property
     def couple_to_elmer_ice(self):
         """Whether to couple this component to Elmer/Ice."""
-        return "elmer_ice" in self._coupled_components
+        return self._active_coupling_to(ComponentId.ELMER_ICE)
 
 
 class GridConfig:
