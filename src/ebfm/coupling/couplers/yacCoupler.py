@@ -268,8 +268,9 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             ), f"Cannot add field '{field.name}' for uncoupled component '{field.coupled_component.name}'."
 
             # TODO: make this configurable in Field base class
-            # dof_location = self.cell_centers
-            dof_location = self.cell_corners
+            # dof_location = self.cell_corners  # breaking existing code
+            
+            dof_location = self.cell_centers  # original setting
 
             yac_field = YACField.from_field(field).construct_yac_field(
                 self.interface, self.component, collection_size, dof_location
