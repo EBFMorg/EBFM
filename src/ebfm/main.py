@@ -333,7 +333,7 @@ def main():
             data_from_icon = icon_atmo.exchange(data_to_icon)
 
             logger.debug("Done.")
-            logger.debug("Received the following data from ICON:", data_from_icon)
+            logger.debug(f"Received the following data from ICON: {data_from_icon}")
 
             IN["P"] = data_from_icon["pr"]
             IN["snow"] = data_from_icon["pr_snow"]
@@ -382,7 +382,7 @@ def main():
             }
             data_from_elmer = elmer_ice.exchange(data_to_elmer)
             logger.debug("Done.")
-            logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
+            logger.debug(f"Received the following data from Elmer/Ice: {data_from_elmer}")
 
             IN["h"] = data_from_elmer["h"]
             OUT["h"] = IN["h"]
