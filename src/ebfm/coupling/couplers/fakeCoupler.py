@@ -98,6 +98,7 @@ class FakeCoupler(Coupler):
                                    which fields are available and what scalar value they
                                    return.  Defaults to :data:`_DEFAULT_FAKE_FIELDS`.
         """
+        logger.debug("Creating FakeCoupler...")
         super().__init__(coupling_config)
 
         self.field_validation_level = coupling_config.field_validation_level

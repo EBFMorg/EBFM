@@ -10,6 +10,10 @@ from datetime import datetime, timedelta
 
 from .LOOP_general_functions import is_first_time_step
 
+from ebfm.core import logging
+
+logger = logging.getLogger(__name__)
+
 
 def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     """
@@ -36,6 +40,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
         OUT contains a copy of these fields (required in
         LOOP_write_to_file)
     """
+    logger.debug("Starting LOOP_climate_forcing...")
     ###########################################################
     # SPECIFY/READ METEO FORCING
     ###########################################################

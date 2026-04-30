@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 from .base import Component
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
-from ebfm.core.config import TimeConfig
+from ebfm.core.config import ComponentId, TimeConfig
 
 
 class IconAtmo(Component):
@@ -21,10 +21,8 @@ class IconAtmo(Component):
     Component class for ICON atmosphere model coupling.
     """
 
-    name = "icon_atmo"
-
-    def __init__(self, coupler: "Coupler"):
-        super().__init__(coupler)
+    def __init__(self, coupler: "Coupler", name: str = ComponentId.ICON_ATMO.value):
+        super().__init__(coupler, name)
 
     def get_field_definitions(self, time: TimeConfig) -> FieldSet:
         """

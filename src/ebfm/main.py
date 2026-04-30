@@ -66,6 +66,12 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
     )
 
     coupling_group.add_argument(
+        "--couple-to-dummy",
+        action="store_true",
+        help="Enable coupling with dummy component via YAC",
+    )
+
+    coupling_group.add_argument(
         "--coupler-config",
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
@@ -113,6 +119,9 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
 
     if args.couple_to_icon_atmo:
         active_coupling_args.append("--couple-to-icon-atmo")
+
+    if args.couple_to_dummy:
+        active_coupling_args.append("--couple-to-dummy")
 
     if args.coupler_config:
         active_coupling_args.append("--coupler-config")
@@ -320,6 +329,15 @@ def main():
 
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
+        if coupler.has_coupling_to("dummy"):
+            dummy = coupler.get_component("dummy")
+            logger.info("Data exchange with Dummy component")
+            logger.debug("Started...")
+            data_to_dummy = {}
+            data_from_dummy = dummy.exchange(data_to_dummy)
+            logger.debug("Done.")
+            logger.debug(f"Received the following data from Dummy component: {data_from_dummy}")
+
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
             # Exchange data with ICON
@@ -333,7 +351,7 @@ def main():
             data_from_icon = icon_atmo.exchange(data_to_icon)
 
             logger.debug("Done.")
-            logger.debug("Received the following data from ICON:", data_from_icon)
+            logger.debug(f"Received the following data from ICON: {data_from_icon}")
 
             IN["P"] = data_from_icon["pr"]
             IN["snow"] = data_from_icon["pr_snow"]
@@ -382,7 +400,7 @@ def main():
             }
             data_from_elmer = elmer_ice.exchange(data_to_elmer)
             logger.debug("Done.")
-            logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
+            logger.debug(f"Received the following data from Elmer/Ice: {data_from_elmer}")
 
             IN["h"] = data_from_elmer["h"]
             OUT["h"] = IN["h"]

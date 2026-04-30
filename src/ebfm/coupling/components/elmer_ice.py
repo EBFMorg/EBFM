@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 from .base import Component
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
-from ebfm.core.config import TimeConfig
+from ebfm.core.config import ComponentId, TimeConfig
 from ebfm.core.constants import DAYS_PER_YEAR
 
 
@@ -21,10 +21,8 @@ class ElmerIce(Component):
     Component class for Elmer/Ice model coupling.
     """
 
-    name = "elmer_ice"
-
-    def __init__(self, coupler: "Coupler"):
-        super().__init__(coupler)
+    def __init__(self, coupler: "Coupler", name: str = ComponentId.ELMER_ICE.value):
+        super().__init__(coupler, name)
 
     def get_field_definitions(self, time: TimeConfig) -> FieldSet:
         """

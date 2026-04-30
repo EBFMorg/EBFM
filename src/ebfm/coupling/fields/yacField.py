@@ -109,7 +109,7 @@ class YACField:
         )
 
     def construct_yac_field(
-        self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, cell_centers: yac.Points
+        self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, dof_location: yac.Points
     ) -> "YACField":
         """
         Create a new Field instance with the provided YAC field.
@@ -117,7 +117,7 @@ class YACField:
         @param[in] yac_interface handle to YAC interface
         @param[in] yac_component handle to YAC component object
         @param[in] collection_size size of the collection for this field
-        @param[in] cell_centers yac.Points of the grid for this field
+        @param[in] dof_location yac.Points of DoFs for this field
 
         @returns New Field instance with the provided YAC field
         """
@@ -133,7 +133,7 @@ class YACField:
         yac_field = yac.Field.create(
             self.name,
             yac_component,
-            cell_centers,
+            dof_location,
             collection_size,
             self.timestep.value,
             self.timestep.format,
@@ -204,18 +204,19 @@ class YACField:
         field_role = yac_interface.get_field_role(
             self.field_handle.component_name, self.field_handle.grid_name, self.field_handle.name
         )
-        assert field_role in (yac.ExchangeType.SOURCE, yac.ExchangeType.TARGET), (
-            f"Field '{self.name}' has invalid YAC exchange type '{field_role}'. Must be either SOURCE or TARGET."
-        )
+        assert field_role in (
+            yac.ExchangeType.SOURCE,
+            yac.ExchangeType.TARGET,
+        ), f"Field '{self.name}' has invalid YAC exchange type '{field_role}'. Must be either SOURCE or TARGET."
 
         src_comp, src_grid, src_field = yac_interface.get_field_source(
             self.field_handle.component_name, self.field_handle.grid_name, self.field_handle.name
         )
 
         src_field_role = yac_interface.get_field_role(src_comp, src_grid, src_field)
-        assert src_field_role is yac.ExchangeType.SOURCE, (
-            f"Field '{self.name}' has invalid YAC exchange type '{field_role}'. Must be SOURCE."
-        )
+        assert (
+            src_field_role is yac.ExchangeType.SOURCE
+        ), f"Field '{self.name}' has invalid YAC exchange type '{field_role}'. Must be SOURCE."
 
         src_field_timestep = yac_interface.get_field_timestep(src_comp, src_grid, src_field)
 
