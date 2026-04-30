@@ -29,10 +29,15 @@ class Component(ABC):
     Each component owns its fields as an instance attribute.
     """
 
-    name: str  # name of this component
+    def __init__(self, coupler: "Coupler", name: str):
+        """
+        Initialize the component.
 
-    def __init__(self, coupler: "Coupler"):
+        @param[in] coupler Coupler instance to use for coupling
+        @param[in] name unique name of the component
+        """
         self._coupler = coupler
+        self.name = name
         pass
 
     def _uses_coupler(self, coupler_class_type) -> bool:
