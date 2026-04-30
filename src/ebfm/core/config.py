@@ -115,6 +115,13 @@ class CouplingConfig:
         """Whether to couple this component to Elmer/Ice."""
         return self._active_coupling_to(ComponentId.ELMER_ICE)
 
+    def active_coupled_components(self) -> list[ComponentId]:
+        """Get a list of actively coupled components based on the configuration.
+
+        @returns List of ComponentId for which coupling is enabled
+        """
+        return [c for c in ComponentId if self._active_coupling_to(c)]
+
 
 class GridConfig:
     """

@@ -11,13 +11,13 @@ from ebfm.core.grid import GridDict
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
 # from ebfm.core.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
-from ebfm.core.config import CouplingConfig, TimeConfig, ComponentId
+from ebfm.core.config import CouplingConfig, TimeConfig
 
 import logging
 
 from abc import ABC, abstractmethod
 
-from ebfm.coupling.components import Component, ElmerIce, IconAtmo
+from ebfm.coupling.components import Component, id2class
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
 
 logger = logging.getLogger(__name__)
@@ -65,15 +65,11 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         """
         self._coupled_components: dict[str, Component] = {}
 
-        if coupling_config.couple_to_elmer_ice:
-            logger.debug("Coupling to Elmer/Ice enabled.")
-            elmer_comp = ElmerIce(coupler=self, name=ComponentId.ELMER_ICE.value)
-            self._coupled_components[ComponentId.ELMER_ICE.value] = elmer_comp
-
-        if coupling_config.couple_to_icon_atmo:
-            logger.debug("Coupling to ICON atmosphere enabled.")
-            icon_comp = IconAtmo(coupler=self, name=ComponentId.ICON_ATMO.value)
-            self._coupled_components[ComponentId.ICON_ATMO.value] = icon_comp
+        for id in coupling_config.active_coupled_components():
+            logger.debug(f"Coupling to {id.value} enabled.")
+            comp_class = id2class[id]
+            comp = comp_class(coupler=self, name=id.value)
+            self._coupled_components[id.value] = comp
 
         logger.debug(f"Active coupled components: {list(self._coupled_components.keys())}")
 
