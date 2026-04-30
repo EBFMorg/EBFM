@@ -87,7 +87,7 @@ class CouplingConfig:
 
         @returns True if coupling to any component is enabled, False otherwise
         """
-        return len(self._coupled_components) > 0
+        return any(self._coupled_components.values())
 
     def _active_coupling_to(self, component_id: ComponentId) -> bool:
         """Check if coupling to a specific component is enabled.
@@ -103,7 +103,7 @@ class CouplingConfig:
             component_id in self._coupled_components
         ), f"Coupling configuration is missing {component_id} entry. Make sure to explicitly set True/False for the "
         "given key in the __init__ method of CouplingConfig."
-        return self._coupled_components.get(component_id)
+        return self._coupled_components[component_id]
 
     @property
     def couple_to_icon_atmo(self):
