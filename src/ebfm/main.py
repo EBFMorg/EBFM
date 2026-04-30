@@ -337,6 +337,49 @@ def main():
             data_from_dummy = dummy.exchange(data_to_dummy)
             logger.debug("Done.")
             logger.debug(f"Received the following data from Dummy component: {data_from_dummy}")
+            import matplotlib.pyplot as plt
+            from mpl_toolkits.basemap import Basemap
+            import numpy as np
+
+            map = Basemap(
+                projection="stere",
+                lat_0=67,
+                lon_0=-12,  # center of Greenland
+                llcrnrlat=48,
+                urcrnrlat=85,
+                llcrnrlon=-55,
+                urcrnrlon=30,
+                resolution="l",
+            )
+            map.drawcoastlines()
+            map.drawcountries()
+            map.drawmapboundary(fill_color="#99ffff")
+            map.drawparallels(np.arange(10, 60, 20), labels=[1, 1, 0, 0])
+            map.drawmeridians(np.arange(-80, 20, 20), labels=[0, 0, 0, 1])
+            map.fillcontinents(color="#cc9966", lake_color="#99ffff")
+            # contour data over the map.
+            import numpy as np
+
+            logger.debug("Plotting dummy field...")
+            logger.debug(f"Grid lon vertices: {grid['mesh'].lon_vertices}")
+            logger.debug(f"Grid lat vertices: {grid['mesh'].lat_vertices}")
+            logger.debug(f"Data from dummy: {data_from_dummy['dummy_field']}")
+            logger.debug(
+                f"Data from dummy: {np.min(data_from_dummy['dummy_field'])}, {np.max(data_from_dummy['dummy_field'])}"
+            )
+            sc = map.scatter(
+                grid["mesh"].lon_vertices / np.pi * 180,
+                grid["mesh"].lat_vertices / np.pi * 180,
+                vmin=-0.005,
+                vmax=0.013,  # use same color range like in the dummy component providing data
+                c=data_from_dummy["dummy_field"],
+                latlon=True,
+            )
+            map.colorbar(sc, location="bottom", pad="5%")
+            plt.title(f"Dummy Field at time step {t + 1}")
+            plt.savefig(Path("out") / f"dummy_field_t{t + 1}.png")
+        else:
+            logger.debug("No coupling to Dummy component, skipping data exchange.")
 
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
