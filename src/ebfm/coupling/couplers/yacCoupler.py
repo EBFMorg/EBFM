@@ -240,7 +240,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         self.cell_centers = self.grid.def_points(yac.Location.CELL, grid.lon_cells, grid.lat_cells)
 
         # For DOFs at cell corners, use the same coordinates as for vertices
-        self.cell_corners = self.grid.def_points(yac.Location.CORNER, grid.lon_vertices, grid.lon_vertices)
+        self.cell_corners = self.grid.def_points(yac.Location.CORNER, grid.lon_vertices, grid.lat_vertices)
 
     def _add_couples(self, field_definitions: FieldSet):
         """
@@ -263,8 +263,6 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         assert self.fields.is_empty(), "Coupling fields have already been constructed."
 
-        collection_size = 1  # TODO: Dummy value for now; make configurable if needed
-
         for field in field_definitions:
             assert isinstance(field, Field), f"Expected Field, got {type(field)}"
             assert self.has_coupling_to(
@@ -276,7 +274,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             dof_location = self.cell_corners
 
             yac_field = YACField.from_field(field).construct_yac_field(
-                self.interface, self.component, collection_size, dof_location
+                self.interface, self.component, _COLLECTION_SIZE, dof_location
             )
 
             self.fields.add(yac_field)
