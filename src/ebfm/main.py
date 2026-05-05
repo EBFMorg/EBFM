@@ -25,6 +25,11 @@ import ebfm.coupling
 
 from mpi4py import MPI
 
+# contour data over the map.
+import matplotlib.pyplot as plt
+from mpl_toolkits.basemap import Basemap
+import numpy as np
+
 # logger for this module
 logger: Logger
 
@@ -337,9 +342,6 @@ def main():
             data_from_dummy = dummy.exchange(data_to_dummy)
             logger.debug("Done.")
             logger.debug(f"Received the following data from Dummy component: {data_from_dummy}")
-            import matplotlib.pyplot as plt
-            from mpl_toolkits.basemap import Basemap
-            import numpy as np
 
             map = Basemap(
                 projection="stere",
@@ -357,8 +359,6 @@ def main():
             map.drawparallels(np.arange(10, 60, 20), labels=[1, 1, 0, 0])
             map.drawmeridians(np.arange(-80, 20, 20), labels=[0, 0, 0, 1])
             map.fillcontinents(color="#cc9966", lake_color="#99ffff")
-            # contour data over the map.
-            import numpy as np
 
             logger.debug("Plotting dummy field...")
             logger.debug(f"Grid lon vertices: {grid['mesh'].lon_vertices}")
