@@ -433,7 +433,7 @@ def init_grid(grid, io, config: GridConfig):
 
 def calculate_step_sizes(az):
     # calculate horizontal step sizes from grid cell to Sun
-    # (ddx<0 is eastward, ddx>0 is westward, ddy<0 is northward, ddy>0 is southward)
+    # (ddx<0 is westward, ddx>0 is eastward, ddy<0 is northward, ddy>0 is southward)
 
     ddx = np.empty_like(az, dtype=float)
     ddy = np.empty_like(az, dtype=float)
