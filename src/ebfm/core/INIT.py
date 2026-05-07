@@ -390,28 +390,7 @@ def init_grid(grid, io, config: GridConfig):
             az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
 
             # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
-            ddx = np.empty_like(az, dtype=float)
-            ddy = np.empty_like(az, dtype=float)
-            m = az <= -0.75 * np.pi
-            ddx[m] = -np.tan(np.pi + az[m])
-            m = (az <= -0.25 * np.pi) & (az > -0.75 * np.pi)
-            ddx[m] = -1.0
-            m = (az <= 0.25 * np.pi) & (az > -0.25 * np.pi)
-            ddx[m] = np.tan(az[m])
-            m = (az <= 0.75 * np.pi) & (az > 0.25 * np.pi)
-            ddx[m] = 1.0
-            m = az > 0.75 * np.pi
-            ddx[m] = np.tan(np.pi - az[m])
-            m = az <= -0.75 * np.pi
-            ddy[m] = 1.0
-            m = (az <= -0.25 * np.pi) & (az > -0.75 * np.pi)
-            ddy[m] = -np.tan(0.5 * np.pi + az[m])
-            m = (az <= 0.25 * np.pi) & (az > -0.25 * np.pi)
-            ddy[m] = -1.0
-            m = (az <= 0.75 * np.pi) & (az > 0.25 * np.pi)
-            ddy[m] = -np.tan(0.5 * np.pi - az[m])
-            m = az > 0.75 * np.pi
-            ddy[m] = 1.0
+            ddx, ddy = calculate_step_sizes(az)
 
             # from every grid cell step in the direction of the azimuth until the grid end is reached
             # and detect maximum grid angle along the path
@@ -450,6 +429,36 @@ def init_grid(grid, io, config: GridConfig):
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
     return grid
+
+
+def calculate_step_sizes(az):
+    # calculate horizontal step sizes from grid cell to Sun
+    # (ddx<0 is eastward, ddx>0 is westward, ddy<0 is northward, ddy>0 is southward)
+
+    ddx = np.empty_like(az, dtype=float)
+    ddy = np.empty_like(az, dtype=float)
+
+    is_walk_to_SSW = az <= -0.75 * np.pi
+    ddx[is_walk_to_SSW] = -np.tan(np.pi + az[is_walk_to_SSW])
+    ddy[is_walk_to_SSW] = 1.0
+
+    is_walk_to_W = (az <= -0.25 * np.pi) & (az > -0.75 * np.pi)
+    ddx[is_walk_to_W] = -1.0
+    ddy[is_walk_to_W] = -np.tan(0.5 * np.pi + az[is_walk_to_W])
+
+    is_walk_to_N = (az <= 0.25 * np.pi) & (az > -0.25 * np.pi)
+    ddx[is_walk_to_N] = np.tan(az[is_walk_to_N])
+    ddy[is_walk_to_N] = -1.0
+
+    is_walk_to_E = (az <= 0.75 * np.pi) & (az > 0.25 * np.pi)
+    ddx[is_walk_to_E] = 1.0
+    ddy[is_walk_to_E] = -np.tan(0.5 * np.pi - az[is_walk_to_E])
+
+    is_walk_to_SSE = az > 0.75 * np.pi
+    ddx[is_walk_to_SSE] = np.tan(np.pi - az[is_walk_to_SSE])
+    ddy[is_walk_to_SSE] = 1.0
+
+    return ddx, ddy
 
 
 def read_MATLAB_grid(gridfile: Path):
