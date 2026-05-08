@@ -399,22 +399,14 @@ def init_grid(grid, io, config: GridConfig):
             count = 1
             active = np.ones(grid["gpsum"], dtype=bool)
             while active.any():
-                j = np.round(j0 + ddx * count).astype(np.int64)
-                i = np.round(i0 + ddy * count).astype(np.int64)
+                j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
+                i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
 
                 inbound = (j >= 0) & (j < yl) & (i >= 0) & (i < xl) & active
                 if not inbound.any():  # stop when all walks have reached the domain edge
                     break
 
-                iv = i[inbound]
-                jv = j[inbound]
-
-                dx = grid["x_2D"][iv, jv] - grid["x"][inbound]
-                dy = grid["y_2D"][iv, jv] - grid["y"][inbound]
-                distance = np.hypot(dx, dy)  # walk distance from start to target
-
-                dz = grid["z_2D"][iv, jv] - grid["z"][inbound]
-                grid_angle = np.arctan(dz / distance)  # grid angle from start to target
+                grid_angle = compute_grid_angle(grid, i, j, inbound)  # calculate grid angle from start to target
 
                 max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle when needed
 
@@ -429,6 +421,20 @@ def init_grid(grid, io, config: GridConfig):
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
     return grid
+
+
+def compute_grid_angle(grid, i, j, inbound):
+    # calculate the grid angle between a starting cell (x,y,z) and a target cell (x_2D, y_2D and z_2D at [iv, jv])
+
+    iv = i[inbound]
+    jv = j[inbound]
+
+    dx = grid["x_2D"][iv, jv] - grid["x"][inbound]
+    dy = grid["y_2D"][iv, jv] - grid["y"][inbound]
+    distance = np.hypot(dx, dy)
+
+    dz = grid["z_2D"][iv, jv] - grid["z"][inbound]
+    return np.arctan(dz / distance)
 
 
 def calculate_step_sizes(az):
