@@ -23,9 +23,15 @@ def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
         tuple: SWin (numpy array of incoming shortwave radiation) and updated OUT dictionary.
     """
 
+    # Fraction of incoming shortwave treated as direct beam (cloud-dependent)
+    direct_beam_fraction = 0.2 + 0.65 * (1 - IN["C"])
+    # Fraction treated as diffuse beam (complement of direct_beam_fraction)
+    diffuse_beam_fraction = 1.0 - direct_beam_fraction
+    is_sunlit = np.logical_not(OUT["is_shaded"])
+
     if cpl.has_coupling_to("icon_atmo"):
-        SWin_diff = (0.8 - 0.65 * (1 - IN["C"])) * IN["SWin"]
-        SWin_dir = (0.2 + 0.65 * (1 - IN["C"])) * (1 - OUT["shade"]) * IN["SWin"]
+        SWin_diff = diffuse_beam_fraction * IN["SWin"]
+        SWin_dir = direct_beam_fraction * is_sunlit * IN["SWin"]
         SWin = SWin_dir + SWin_diff
 
     else:
@@ -58,8 +64,8 @@ def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
         ###########################################################
 
         # Calculation of direct and diffuse radiation after shading
-        OUT["TOAdir"] = (0.2 + 0.65 * (1 - IN["C"])) * (1 - OUT["shade"]) * OUT["TOA"]  # SOURCE: Oerlemans (1992)
-        OUT["TOAdiff"] = (0.8 - 0.65 * (1 - IN["C"])) * OUT["TOA"]
+        OUT["TOAdir"] = direct_beam_fraction * is_sunlit * OUT["TOA"]  # SOURCE: Oerlemans (1992)
+        OUT["TOAdiff"] = diffuse_beam_fraction * OUT["TOA"]
         OUT["TOAshade"] = OUT["TOAdir"] + OUT["TOAdiff"]
 
         ###########################################################

@@ -17,7 +17,7 @@ from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
 from .config import TimeConfig, GridConfig
-from .grid import GridInputType, GridDict
+from .grid import GridInputType, GridDict, ShadingMethod
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
@@ -193,7 +193,7 @@ def compute_number_of_glacier_cells(grid: GridDict) -> int:
     Computes the number of glacier cells in the grid based on the mask.
 
     Parameters:
-        grid (dict): Dictionary containing grid-related parameters
+        grid (GridDict): containing grid-related parameters
 
     Returns:
         int: Number of glacier cells (gpsum)
@@ -202,10 +202,21 @@ def compute_number_of_glacier_cells(grid: GridDict) -> int:
 
 
 def init_grid(grid: GridDict, io, config: GridConfig):
+    """
+    Initializes the GridDict based on the given GridConfig.
+
+    * Depending on provided grid file in GridConfig parses the grid and stores it in GridDict.
+    * Adds elevation to the grid if a DEM file is provided in GridConfig.
+    * Calculates grid slopes and aspects for shading when grid type is MATLAB.
+
+    Parameters:
+        grid (GridDict): Dictionary to store grid-related parameters.
+        io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
+        config (GridConfig): Grid configuration object containing settings for grid initialization.
+    """
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
     grid["has_shading"] = config.use_shading
-    grid["mesh"] = None  # placeholder, added for compatibility reasons
 
     # Read grid from Elmer, elevations from BedMachine
     if config.dem_file:
@@ -374,11 +385,100 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
 
+        # -----------------------------------------------------------------------------------------------------
+        # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
+        # -----------------------------------------------------------------------------------------------------
+        grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
+        grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
+
+        # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
+        grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
+
+        xl, yl = grid["x_2D"].shape
+
+        # loop over the azimuth angles to determine gridded maximum grid angles per angle
+        grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
+        for n in range(grid["nr_az_steps"]):
+            az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
+
+            # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
+            ddx, ddy = calculate_step_sizes(az)
+
+            # from every grid cell step in the direction of the azimuth until the grid end is reached
+            # and detect maximum grid angle along the path
+            i0, j0 = np.where(mask_2D == 1)
+            max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
+            count = 1
+            active = np.ones(grid["gpsum"], dtype=bool)
+            while active.any():
+                j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
+                i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
+
+                inbound = (j >= 0) & (j < yl) & (i >= 0) & (i < xl) & active
+                if not inbound.any():  # stop when all walks have reached the domain edge
+                    break
+
+                grid_angle = compute_grid_angle(grid, i, j, inbound)  # calculate grid angle from start to target
+
+                max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle when needed
+
+                active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
+
+                count += 1
+
+            # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
+            grid["maxgridangle"][:, n] = max_angle
+
         # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
     return grid
+
+
+def compute_grid_angle(grid: GridDict, i, j, inbound) -> float:
+    """
+    Calculate the grid angle between a starting cell (x,y,z) and a target cell (x_2D, y_2D and z_2D at [iv, jv])
+    """
+
+    iv = i[inbound]
+    jv = j[inbound]
+
+    dx = grid["x_2D"][iv, jv] - grid["x"][inbound]
+    dy = grid["y_2D"][iv, jv] - grid["y"][inbound]
+    distance = np.hypot(dx, dy)
+
+    dz = grid["z_2D"][iv, jv] - grid["z"][inbound]
+    return np.arctan(dz / distance)
+
+
+def calculate_step_sizes(az):
+    """
+    Calculates horizontal step sizes from grid cell to Sun, used for calculating maximum grid elevation
+
+    Note: ddx<0 is westward, ddx>0 is eastward, ddy<0 is northward, ddy>0 is southward
+    """
+
+    ddx = np.empty_like(az, dtype=float)
+    ddy = np.empty_like(az, dtype=float)
+
+    is_walk_to_W = (az <= -0.25 * np.pi) & (az > -0.75 * np.pi)
+    ddx[is_walk_to_W] = -1.0
+    ddy[is_walk_to_W] = -np.tan(0.5 * np.pi + az[is_walk_to_W])
+
+    is_walk_to_N = (az <= 0.25 * np.pi) & (az > -0.25 * np.pi)
+    ddx[is_walk_to_N] = np.tan(az[is_walk_to_N])
+    ddy[is_walk_to_N] = -1.0
+
+    is_walk_to_E = (az <= 0.75 * np.pi) & (az > 0.25 * np.pi)
+    ddx[is_walk_to_E] = 1.0
+    ddy[is_walk_to_E] = -np.tan(0.5 * np.pi - az[is_walk_to_E])
+
+    is_walk_to_S = (az > 0.75 * np.pi) | (az <= -0.75 * np.pi)
+    ddx[is_walk_to_S] = np.tan(np.pi - az[is_walk_to_S])
+    ddy[is_walk_to_S] = 1.0
+
+    return ddx, ddy
 
 
 def read_MATLAB_grid(gridfile: Path):

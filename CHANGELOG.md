@@ -23,6 +23,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * Dropped Python 3.9 support in favor of Python >= 3.10 (required for PEP 604 union type annotations). https://github.com/EBFMorg/EBFM/pull/82
 * Added tox testing infrastructure with multi-version Python support (3.9-3.13) and separate unit/example test environments. https://github.com/EBFMorg/EBFM/pull/78.
 * Introduce `--elmer-mesh-crs-epsg` to let user define the projection used in the Elmer mesh. Mandatory when using `--elmer-mesh`. https://github.com/EBFMorg/EBFM/pull/86.
+* Implement a faster shading calculation method based on look-up tables generated before the time-loop. https://github.com/EBFMorg/EBFM/pull/60
 
 # v0.2.0
 

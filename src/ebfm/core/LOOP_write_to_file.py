@@ -54,7 +54,9 @@ def main(OUTFILE, io, OUT, grid, t, time):
     # Update OUTFILE.TEMP with variables to be stored
     for entry in OUTFILE["varsout"]:
         varname, var_type = entry[0], entry[2]
-        temp_long = np.float64(OUT[varname])
+        # "shade" is written as a fraction but sourced from the boolean OUT["is_shaded"]
+        source_key = "is_shaded" if varname == "shade" else varname
+        temp_long = np.float64(OUT[source_key])
 
         # Initialize TEMP storage
         if t % io["freqout"] == 0:
