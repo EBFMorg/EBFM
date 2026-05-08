@@ -17,7 +17,7 @@ from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
 from .config import TimeConfig, GridConfig
-from .grid import GridInputType, ShadingMethod
+from .grid import GridInputType, GridDict, ShadingMethod
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
@@ -417,6 +417,7 @@ def init_grid(grid, io, config: GridConfig):
             # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
             grid["maxgridangle"][:, n] = max_angle
 
+        # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
@@ -505,7 +506,7 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def init_initial_conditions(C, grid, io, time, init_with_restart_file: bool):
+def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file: bool):
     """
     Sets the model's initial conditions at the start of the simulation.
 

@@ -28,28 +28,46 @@ class FieldValidationLevel(Enum):
     SILENT = "SILENT"  # Only log at debug level on mismatch
 
 
+class ComponentId(Enum):
+    """
+    Enumeration of component identifiers for EBFM coupling.
+
+    Lists identifiers for available components without having to import the component classes directly which would lead
+    to a circular import.
+    """
+
+    ICON_ATMO = "icon_atmo"
+    ELMER_ICE = "elmer_ice"
+
+
 class CouplingConfig:
     """
     Coupling configuration.
     """
 
     component_name: str  # Name of this component
-    couple_to_icon_atmo: bool  # Whether to couple this component to ICON atmosphere
-    couple_to_elmer_ice: bool  # Whether to couple this component to Elmer/Ice
     coupler_config: Path | None  # Path to the coupler configuration file
     field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
+    use_fake_coupling: bool  # Whether to use FakeCoupler instead of production backend
 
-    def __init__(self, args: Namespace, component_name: str):
+    def __init__(
+        self,
+        args: Namespace,
+    ):
         """
         Initialize coupling configuration from command line arguments.
 
         @param[in] args command line arguments
-        @param[in] component_name name of this component
         """
 
-        self.component_name = component_name
-        self.couple_to_icon_atmo = args.couple_to_icon_atmo
-        self.couple_to_elmer_ice = args.couple_to_elmer_ice
+        self.component_name = args.component_name
+
+        self._coupled_components = {
+            ComponentId.ICON_ATMO: args.couple_to_icon_atmo,
+            ComponentId.ELMER_ICE: args.couple_to_elmer_ice,
+        }
+
+        self.use_fake_coupling = args.fake_coupling
 
         # Set field validation level from args (command-line argument with default 'FATAL')
         self.field_validation_level = FieldValidationLevel(args.field_validation_level)
@@ -64,12 +82,45 @@ class CouplingConfig:
                 "This is fine if configuration is provided by other components or through the API."
             )
 
+    def _active_coupling_to(self, component_id: ComponentId) -> bool:
+        """Check if coupling to a specific component is enabled.
+
+        @note Asserts that the component name exists in self._coupled_components. This prevents forgetting to register
+              a component during initialization.
+
+        @param[in] component_name name of the component to check coupling for
+
+        @returns True if coupling to the specified component is enabled, False if disabled
+        """
+        assert (
+            component_id in self._coupled_components
+        ), f"Coupling configuration is missing {component_id} entry. Make sure to explicitly set True/False for the "
+        "given key in the __init__ method of CouplingConfig."
+        return self._coupled_components[component_id]
+
+    @property
+    def couple_to_icon_atmo(self):
+        """Whether to couple this component to ICON atmosphere."""
+        return self._active_coupling_to(ComponentId.ICON_ATMO)
+
+    @property
+    def couple_to_elmer_ice(self):
+        """Whether to couple this component to Elmer/Ice."""
+        return self._active_coupling_to(ComponentId.ELMER_ICE)
+
+    def active_coupled_components(self) -> list[ComponentId]:
+        """Get a list of actively coupled components based on the configuration.
+
+        @returns List of ComponentId for which coupling is enabled
+        """
+        return [c for c in ComponentId if self._active_coupling_to(c)]
+
     def defines_coupling(self) -> bool:
         """Check if any coupling is defined in this configuration.
 
         @returns True if coupling to any component is enabled, False otherwise
         """
-        return self.couple_to_icon_atmo or self.couple_to_elmer_ice
+        return len(self.active_coupled_components()) > 0
 
 
 class GridConfig:
@@ -79,10 +130,10 @@ class GridConfig:
 
     grid_type: GridInputType  # Name of the grid used in coupling
     mesh_file: Path  # Path to the grid file
-    dem_file: Path | None = None  # Path to the DEM file (only relevant for CUSTOM grid type)
+    dem_file: Path | None  # Path to the DEM file (only relevant for CUSTOM grid type)
     is_partitioned: bool  # Whether the grid is partitioned
-    is_unstructured: bool = False  # Whether the grid is unstructured
-    partition_id: int  # Partition ID (only relevant if is_partitioned is True)
+    is_unstructured: bool  # Whether the grid is unstructured
+    partition_id: int | None  # Partition ID (only relevant if is_partitioned is True)
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
 
@@ -107,6 +158,9 @@ class GridConfig:
         self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
 
         self.is_partitioned = args.is_partitioned_elmer_mesh
+        self.dem_file = None
+        self.partition_id = None
+
         if self.is_partitioned:
             assert args.netcdf_mesh, (
                 "--is-partitioned-elmer-mesh requires --netcdf-mesh. "
@@ -121,10 +175,12 @@ class GridConfig:
         if args.matlab_mesh:
             self.grid_type = GridInputType.MATLAB
             self.mesh_file = args.matlab_mesh
+            self.is_unstructured = False
         elif args.netcdf_mesh and args.elmer_mesh:
             self.grid_type = GridInputType.CUSTOM
             self.mesh_file = args.elmer_mesh
             self.dem_file = args.netcdf_mesh
+            self.is_unstructured = False
         elif args.netcdf_mesh_unstructured and args.elmer_mesh:
             self.grid_type = GridInputType.ELMERXIOS
             self.mesh_file = args.elmer_mesh
@@ -133,6 +189,7 @@ class GridConfig:
         elif args.elmer_mesh:
             self.grid_type = GridInputType.ELMER
             self.mesh_file = args.elmer_mesh
+            self.is_unstructured = False
         else:
             logger.error(
                 f"Invalid grid configuration. EBFM supports the grid types {[t.name for t in GridInputType]}. "
@@ -216,6 +273,23 @@ class TimeConfig:
         assert total_seconds % step_seconds == 0, "Time interval must be divisible by time step."
         return int(round(total_seconds / step_seconds))
 
+    def time_step_in_days(self) -> float:
+        """Get the time step size in days.
+
+        @returns Time step size in days
+        """
+        return self.time_step.total_seconds() / SECONDS_PER_DAY
+
+    def time_step_iso8601(self) -> str:
+        """Get the time step size in ISO 8601 duration format (e.g., "P0DT3H0M0S" for a 3-hour time step).
+
+        @returns Time step size in ISO 8601 duration format
+        """
+        import pandas as pd
+
+        dt = pd.Timedelta(days=self.time_step_in_days())
+        return dt.isoformat()
+
     def to_dict(self) -> dict:
         """Convert time configuration to a dictionary.
 
@@ -224,7 +298,7 @@ class TimeConfig:
         return {
             "ts": self.start_time,
             "te": self.end_time,
-            "dt": self.time_step.total_seconds() / SECONDS_PER_DAY,  # Convert to days
+            "dt": self.time_step_in_days(),
             "tn": self.tn(),
             "dT_UTC": self.dT_UTC,
         }

@@ -10,9 +10,8 @@ import numpy as np
 from ebfm.core import logging
 from ebfm.core.config import CouplingConfig
 
-from .base import Coupler, CouplerErrorCode, Grid
+from .base import Coupler, CouplerErrorCode, Grid, GridDict
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
-
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +97,7 @@ class FakeCoupler(Coupler):
                                    which fields are available and what scalar value they
                                    return.  Defaults to :data:`_DEFAULT_FAKE_FIELDS`.
         """
+        logger.debug("Creating FakeCoupler...")
         super().__init__(coupling_config)
 
         self.field_validation_level = coupling_config.field_validation_level
@@ -122,18 +122,31 @@ class FakeCoupler(Coupler):
         return exchange_type
 
     # TODO: Try to improve this
-    def _infer_n_points(self, grid: dict | Grid | None) -> int:
+    def _infer_n_points(self, grid: GridDict) -> int:
         """
         Infer the number of horizontal points represented by ``grid``.
 
         Supports both:
         - Elmer mesh-like objects (e.g. ``vertex_ids``, ``lon``, ``lat``)
         - MATLAB/full EBFM grid dictionaries (e.g. ``x``, ``lon``, ``lat``, ``gpsum``)
+
+        @param[in] grid GridDict used by Coupler
+
+        @returns inferred number of grid points
         """
         if grid is None:
             return 0
 
-        if isinstance(grid, dict):
+        grid_object: Grid = grid.get("mesh")
+        if grid_object:  # grid wraps an Elmer mesh-like object
+            for attr in ("vertex_ids", "lon", "lat", "x_vertices", "y_vertices"):
+                value = getattr(grid, attr, None)
+                if value is not None:
+                    try:
+                        return int(len(value))
+                    except TypeError:
+                        pass
+        else:  # grid["mesh"] not provided or None
             for key in ("n_points", "x", "lon", "lat", "mask"):
                 value = grid.get(key)
                 if value is not None:
@@ -142,37 +155,23 @@ class FakeCoupler(Coupler):
                     except TypeError:
                         pass
 
-            gpsum = grid.get("gpsum")
-            if gpsum is not None:
-                return int(gpsum)
+        raise ValueError(
+            "Could not infer number of grid points from the provided grid. "
+            "Please ensure that the grid contains one of the following attributes or keys: "
+            "vertex_ids, lon, lat, x_vertices, y_vertices (for Elmer-like grids) or "
+            "n_points, x, lon, lat, mask (for MATLAB/full EBFM grids)."
+        )
 
-            return 0
-
-        for attr in ("vertex_ids", "lon", "lat", "x_vertices", "y_vertices"):
-            value = getattr(grid, attr, None)
-            if value is not None:
-                try:
-                    return int(len(value))
-                except TypeError:
-                    pass
-
-        return 0
-
-    def setup(self, grid: dict | Grid, time: dict[str, float]):
+    def _setup(self, grid: GridDict, field_definitions: FieldSet):
         """
         Store grid size so fake arrays can be sized correctly in :meth:`get`.
 
         No synchronization with external models is performed.
 
-        @param[in] grid Grid used by EBFM where coupling happens
+        @param[in] grid grid used by EBFM where coupling happens
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
         self._n_points = self._infer_n_points(grid)
-
-        field_definitions = FieldSet()
-
-        for component in self._coupled_components.values():
-            field_definitions |= component.get_field_definitions(time)
 
         self._add_couples(field_definitions)
 

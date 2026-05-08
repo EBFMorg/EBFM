@@ -7,16 +7,17 @@ import numpy as np
 
 from ebfm.core import logging
 
-from .base import Coupler, Grid, CouplingConfig, CouplerErrorCode
+from .base import Coupler, Grid, GridDict, CouplingConfig, CouplerErrorCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
 from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
 from ebfm.coupling.fields import YACField
 
-
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
 logger = logging.getLogger(__name__)
+
+_COLLECTION_SIZE = 1  # TODO: Dummy value for now; make configurable if needed
 
 
 class YACCoupler(Coupler[yac.ExchangeType]):
@@ -33,35 +34,31 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         if coupling_config.coupler_config:
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
 
-        self.component: yac.Component = self.interface.def_comp(coupling_config.component_name)
+        self.component_name = coupling_config.component_name
+        self.component: yac.Component = self.interface.def_comp(self.component_name)
         self.field_validation_level = coupling_config.field_validation_level
 
         # will be initialized in self._add_grid()
         self.grid: yac.UnstructuredGrid = None
         self.cell_centers: yac.Points = None
+        self.cell_corners: yac.Points = None
 
-    def setup(self, grid: dict | Grid, time: dict[str, float]):
+    def _setup(self, grid: GridDict, field_definitions: FieldSet):
         """
-        Setup the coupling interface
-
-        Performs initialization operations after init and before entering the
-        time loop
+        Register grid and coupling definitions with YAC.
 
         @note This is a collective operation for all components involved in the coupling. It may take some time as it
               involves significant communication and computes remapping weights.
 
         @param[in] grid Grid used by EBFM where coupling happens
-        @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
+        @param[in] field_definitions set of field definitions collected from all coupled components
         """
+
+        grid_object: Grid = grid["mesh"]
 
         grid_name = "ebfm_grid"  # TODO: get from ebfm_coupling_config?
 
-        self._add_grid(grid_name, grid)
-
-        field_definitions = FieldSet()
-
-        for component in self._coupled_components.values():
-            field_definitions |= component.get_field_definitions(time)
+        self._add_grid(grid_name, grid_object)
 
         self._add_couples(field_definitions)
 
@@ -70,7 +67,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         for field in self.fields.all():
             assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
             logger.debug(f"Performing consistency checks for field '{field.name}'...")
-            field.perform_consistency_checks(self.interface, self.field_validation_level)
+            field.perform_consistency_checks(self.interface, self.component_name, self.field_validation_level)
 
     def _map_exchange_type(self, exchange_type: GenericExchangeType) -> yac.ExchangeType:
         """
@@ -180,9 +177,13 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             error = CouplerErrorCode.WRONG_ROLE
 
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name}...")
-        data, _ = field.field_handle.get()
+        data, action = field.field_handle.get()
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
-        return data[0], error
+        assert data.shape[0] == _COLLECTION_SIZE, (
+            f"Expected data shape ({_COLLECTION_SIZE}, ...), got {data.shape} for field '{field.name}' "
+            f"from component '{field.coupled_component.name}'."
+        )
+        return data[_COLLECTION_SIZE - 1], error
 
     def _handle_field_validation_error(self, error_msg: str):
         """

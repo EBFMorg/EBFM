@@ -4,6 +4,10 @@
 
 import numpy as np
 
+from ebfm.core import logging
+
+logger = logging.getLogger(__name__)
+
 
 def main(OUT, IN, C):
     """
@@ -17,6 +21,8 @@ def main(OUT, IN, C):
     Returns:
     - Updated `OUT` dictionary.
     """
+
+    logger.debug("Starting LOOP_mass_balance...")
 
     # Climatic mass balance
     OUT["smb"] = (
