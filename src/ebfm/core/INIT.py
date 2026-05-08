@@ -188,12 +188,12 @@ def init_constants():
     return C
 
 
-def compute_number_of_glacier_cells(grid):
+def compute_number_of_glacier_cells(grid: GridDict) -> int:
     """
     Computes the number of glacier cells in the grid based on the mask.
 
     Parameters:
-        grid (dict): Dictionary containing grid-related parameters
+        grid (GridDict): containing grid-related parameters
 
     Returns:
         int: Number of glacier cells (gpsum)
@@ -201,7 +201,19 @@ def compute_number_of_glacier_cells(grid):
     return np.sum(grid["mask"] == 1)
 
 
-def init_grid(grid, io, config: GridConfig):
+def init_grid(grid: GridDict, io, config: GridConfig):
+    """
+    Initializes the GridDict based on the given GridConfig.
+
+    * Depending on provided grid file in GridConfig parses the grid and stores it in GridDict.
+    * Adds elevation to the grid if a DEM file is provided in GridConfig.
+    * Calculates grid slopes and aspects for shading when grid type is MATLAB.
+
+    Parameters:
+        grid (GridDict): Dictionary to store grid-related parameters.
+        io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
+        config (GridConfig): Grid configuration object containing settings for grid initialization.
+    """
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
     grid["has_shading"] = config.use_shading
@@ -424,8 +436,10 @@ def init_grid(grid, io, config: GridConfig):
     return grid
 
 
-def compute_grid_angle(grid, i, j, inbound):
-    # calculate the grid angle between a starting cell (x,y,z) and a target cell (x_2D, y_2D and z_2D at [iv, jv])
+def compute_grid_angle(grid: GridDict, i, j, inbound) -> float:
+    """
+    Calculate the grid angle between a starting cell (x,y,z) and a target cell (x_2D, y_2D and z_2D at [iv, jv])
+    """
 
     iv = i[inbound]
     jv = j[inbound]
@@ -439,8 +453,11 @@ def compute_grid_angle(grid, i, j, inbound):
 
 
 def calculate_step_sizes(az):
-    # calculate horizontal step sizes from grid cell to Sun, used for calculating maximum grid elevation
-    # (ddx<0 is westward, ddx>0 is eastward, ddy<0 is northward, ddy>0 is southward)
+    """
+    Calculates horizontal step sizes from grid cell to Sun, used for calculating maximum grid elevation
+
+    Note: ddx<0 is westward, ddx>0 is eastward, ddy<0 is northward, ddy>0 is southward
+    """
 
     ddx = np.empty_like(az, dtype=float)
     ddy = np.empty_like(az, dtype=float)
