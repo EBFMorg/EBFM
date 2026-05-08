@@ -87,6 +87,8 @@ def main(grid, time2, OUT):
             ),
         )
 
+        # TODO: CLASSICAL shading could potentially be removed since Matlab meshes now use LUT-based shading and other
+        #       meshes don't support shading. See https://github.com/EBFMorg/EBFM/issues/11.
         if grid["shading_method"] == ShadingMethod.CLASSICAL:
             yl = grid["Ly"]
             xl = grid["Lx"]
