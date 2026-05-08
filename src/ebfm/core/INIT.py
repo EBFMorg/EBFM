@@ -432,15 +432,11 @@ def init_grid(grid, io, config: GridConfig):
 
 
 def calculate_step_sizes(az):
-    # calculate horizontal step sizes from grid cell to Sun
+    # calculate horizontal step sizes from grid cell to Sun, used for calculating maximum grid elevation
     # (ddx<0 is westward, ddx>0 is eastward, ddy<0 is northward, ddy>0 is southward)
 
     ddx = np.empty_like(az, dtype=float)
     ddy = np.empty_like(az, dtype=float)
-
-    is_walk_to_SSW = az <= -0.75 * np.pi
-    ddx[is_walk_to_SSW] = -np.tan(np.pi + az[is_walk_to_SSW])
-    ddy[is_walk_to_SSW] = 1.0
 
     is_walk_to_W = (az <= -0.25 * np.pi) & (az > -0.75 * np.pi)
     ddx[is_walk_to_W] = -1.0
@@ -454,9 +450,9 @@ def calculate_step_sizes(az):
     ddx[is_walk_to_E] = 1.0
     ddy[is_walk_to_E] = -np.tan(0.5 * np.pi - az[is_walk_to_E])
 
-    is_walk_to_SSE = az > 0.75 * np.pi
-    ddx[is_walk_to_SSE] = np.tan(np.pi - az[is_walk_to_SSE])
-    ddy[is_walk_to_SSE] = 1.0
+    is_walk_to_S = (az > 0.75 * np.pi) | (az <= -0.75 * np.pi)
+    ddx[is_walk_to_S] = np.tan(np.pi - az[is_walk_to_S])
+    ddy[is_walk_to_S] = 1.0
 
     return ddx, ddy
 
