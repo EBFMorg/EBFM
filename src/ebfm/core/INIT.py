@@ -60,7 +60,7 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     # ---------------------------------------------------------------------
     # Grid parameters
     # ---------------------------------------------------------------------
-    grid = {}
+    grid: GridDict = {}
     grid["utmzone"] = 33  # UTM zone
     grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
     grid["nl"] = 50  # Number of vertical layers
