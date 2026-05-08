@@ -380,7 +380,7 @@ def init_grid(grid, io, config: GridConfig):
         grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
 
         # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
-        grid["az_array"] = np.arange(-np.pi, np.pi, 2*np.pi / grid["nr_az_steps"])[::-1]
+        grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
 
         xl, yl = grid["x_2D"].shape
 
