@@ -487,9 +487,9 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
 
         if grid.get("doubledepth", False):  # Sets layer thicknesses when 'double depth' is active
             mask_indices = np.where(grid["mask"] == 1)
-            split = grid["split"]
+            split = grid["split"] - 1
             for n, split_start in enumerate(split[:-1]):
-                depth_value = (2.0**n) * grid["max_subZ"]
+                depth_value = (2.0 ** (n + 1)) * grid["max_subZ"]
                 OUT["subZ"][mask_indices[0], split_start : split[n + 1]] = depth_value
 
             final_depth_value = (2.0 ** len(split)) * grid["max_subZ"]

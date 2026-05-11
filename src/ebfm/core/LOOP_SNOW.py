@@ -1204,25 +1204,24 @@ def main(C, OUT, IN, dt, grid, phys):
             OUT["_lm_old_subT"] = np.empty_like(OUT["subT"])
             OUT["_lm_old_subS"] = np.empty_like(OUT["subS"])
 
-        # Fill workspace arrays with current values
-        np.copyto(OUT["_lm_old_subZ"], OUT["subZ"])
-        np.copyto(OUT["_lm_old_subD"], OUT["subD"])
-        np.copyto(OUT["_lm_old_subW"], OUT["subW"])
-        np.copyto(OUT["_lm_old_subT"], OUT["subT"])
-        np.copyto(OUT["_lm_old_subS"], OUT["subS"])
-
-        subZ_old = OUT["_lm_old_subZ"]
-        subD_old = OUT["_lm_old_subD"]
-        subW_old = OUT["_lm_old_subW"]
-        subT_old = OUT["_lm_old_subT"]
-        subS_old = OUT["_lm_old_subS"]
-
         for n in range(nsplit):  # Iterate through split points
-            split = grid["split"][n] - 1
+            split = grid["split"][n]
             threshold = (2.0**n) * max_subZ
 
             # Merge Layers (Accumulation Case)
             idx_merge = np.flatnonzero((OUT["subZ"][:, split] <= threshold) & mask1)
+
+            np.copyto(OUT["_lm_old_subZ"], OUT["subZ"])
+            np.copyto(OUT["_lm_old_subD"], OUT["subD"])
+            np.copyto(OUT["_lm_old_subW"], OUT["subW"])
+            np.copyto(OUT["_lm_old_subT"], OUT["subT"])
+            np.copyto(OUT["_lm_old_subS"], OUT["subS"])
+
+            subZ_old = OUT["_lm_old_subZ"]
+            subD_old = OUT["_lm_old_subD"]
+            subW_old = OUT["_lm_old_subW"]
+            subT_old = OUT["_lm_old_subT"]
+            subS_old = OUT["_lm_old_subS"]
 
             if idx_merge.size:
                 # Update merged layers
@@ -1257,6 +1256,18 @@ def main(C, OUT, IN, dt, grid, phys):
 
             # Split Layers (Ablation Case)
             idx_split = np.flatnonzero((OUT["subZ"][:, split - 2] > threshold) & mask1)
+
+            np.copyto(OUT["_lm_old_subZ"], OUT["subZ"])
+            np.copyto(OUT["_lm_old_subD"], OUT["subD"])
+            np.copyto(OUT["_lm_old_subW"], OUT["subW"])
+            np.copyto(OUT["_lm_old_subT"], OUT["subT"])
+            np.copyto(OUT["_lm_old_subS"], OUT["subS"])
+
+            subZ_old = OUT["_lm_old_subZ"]
+            subD_old = OUT["_lm_old_subD"]
+            subW_old = OUT["_lm_old_subW"]
+            subT_old = OUT["_lm_old_subT"]
+            subS_old = OUT["_lm_old_subS"]
 
             if idx_split.size:
                 # Update split layers
