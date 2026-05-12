@@ -117,7 +117,7 @@ def set_random_weather_data(IN, C, time, grid):
 
     # Air temperature (K)
     T_amplitude = 10.0  # Seasonal temperature amplitude (K)
-    T_mean_sea_level = 268.0  # Mean sea level temperature (K)
+    T_mean_sea_level = 269.0  # Mean sea level temperature (K)
     T_lapse_rate = -0.005  # Temperature lapse rate (K m-1)
     IN["T"] = T_mean_sea_level + T_amplitude * np.sin(2 * np.pi * yearfrac - 0.65 * np.pi)
     IN["T"] += T_lapse_rate * grid["z"]
@@ -142,7 +142,7 @@ def set_random_weather_data(IN, C, time, grid):
 
     # Wind speed (m s-1)
     max_WS = 10.0  # Max wind speed
-    IN["WS"][:] = np.random.uniform(0.0, max_WS, size=grid["gpsum"])
+    IN["WS"][:] = np.random.uniform(0.0, max_WS)
 
     # Air pressure (Pa)
     Pres_sea_level = 1015e2  # Sea level pressure (Pa)
