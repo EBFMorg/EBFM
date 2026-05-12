@@ -16,6 +16,7 @@ SPDX-License-Identifier: CC-BY-4.0
 ** Improvements in LOOP_SNOW.py (compaction, heat_conduction, percolation_refreezing_and_storage and layer_merging_and_splitting)
 ** Added numba kernels for compaction, heat_conduction and percolation_refreezing_and_storage, addresses: https://github.com/EBFMorg/EBFM/issues/55
 * Introduce option `--component-name` to allow configuration of the name this component used to identify to the coupler. https://github.com/EBFMorg/EBFM/pull/101
+* Bug fixes in double depth method in INIT.py and LOOP_SNOW.py
 
 # v0.3.0
 
