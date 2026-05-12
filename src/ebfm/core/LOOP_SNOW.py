@@ -1247,9 +1247,9 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subD"][idx_merge, split:-1] = subD_old[idx_merge, split + 1 :]
                 OUT["subT"][idx_merge, split:-1] = subT_old[idx_merge, split + 1 :]
 
-                # Adjust the newly added layer at the top
+                # Adjust the newly added layer at the base
                 OUT["subZ"][idx_merge, -1] = top_thickness
-                OUT["subT"][idx_merge, -1] = 2.0 * subT_old[idx_merge, -1] - subT_old[idx_merge, -2]
+                OUT["subT"][idx_merge, -1] = subT_old[idx_merge, -1]
                 OUT["subD"][idx_merge, -1] = subD_old[idx_merge, -1]
                 OUT["subW"][idx_merge, -1] = 0.0
                 OUT["subS"][idx_merge, -1] = 0.0
@@ -1284,11 +1284,11 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subD"][idx_split, split - 1] = OUT["subD"][idx_split, split - 2]
 
                 # Shift properties down for split layers
-                OUT["subZ"][idx_split, split:-1] = subZ_old[idx_split, split - 1 : -2]
-                OUT["subW"][idx_split, split:-1] = subW_old[idx_split, split - 1 : -2]
-                OUT["subS"][idx_split, split:-1] = subS_old[idx_split, split - 1 : -2]
-                OUT["subT"][idx_split, split:-1] = subT_old[idx_split, split - 1 : -2]
-                OUT["subD"][idx_split, split:-1] = subD_old[idx_split, split - 1 : -2]
+                OUT["subZ"][idx_split, split:] = subZ_old[idx_split, split - 1 : -1]
+                OUT["subW"][idx_split, split:] = subW_old[idx_split, split - 1 : -1]
+                OUT["subS"][idx_split, split:] = subS_old[idx_split, split - 1 : -1]
+                OUT["subT"][idx_split, split:] = subT_old[idx_split, split - 1 : -1]
+                OUT["subD"][idx_split, split:] = subD_old[idx_split, split - 1 : -1]
 
                 # Update runoff contributions
                 OUT["runoff_irr_deep"][idx_split] += subW_old[idx_split, -1]
