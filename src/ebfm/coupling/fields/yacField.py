@@ -109,7 +109,7 @@ class YACField:
         )
 
     def construct_yac_field(
-        self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, cell_centers: yac.Points
+        self, yac_interface: yac.YAC, yac_component: yac.Component, collection_size: int, dof_location: yac.Points
     ) -> "YACField":
         """
         Create a new Field instance with the provided YAC field.
@@ -117,7 +117,7 @@ class YACField:
         @param[in] yac_interface handle to YAC interface
         @param[in] yac_component handle to YAC component object
         @param[in] collection_size size of the collection for this field
-        @param[in] cell_centers yac.Points of the grid for this field
+        @param[in] dof_location yac.Points of DoFs for this field
 
         @returns New Field instance with the provided YAC field
         """
@@ -133,7 +133,7 @@ class YACField:
         yac_field = yac.Field.create(
             self.name,
             yac_component,
-            cell_centers,
+            dof_location,
             collection_size,
             self.timestep.value,
             self.timestep.format,
