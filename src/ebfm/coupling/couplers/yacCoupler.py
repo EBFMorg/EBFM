@@ -236,9 +236,11 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         # Set global vertex indices at corner locations
         self.grid.set_global_index(grid.vertex_ids, yac.Location.CORNER)
 
-        # Define DOF locations at cell centers (where data is exchanged)
-        # Uses spherical averaging from mesh._compute_cell_centers()
+        # For DOFs at cell centers uses spherical averaging from mesh._compute_cell_centers()
         self.cell_centers = self.grid.def_points(yac.Location.CELL, grid.lon_cells, grid.lat_cells)
+
+        # For DOFs at cell corners, use the same coordinates as for vertices
+        self.cell_corners = self.grid.def_points(yac.Location.CORNER, grid.lon_vertices, grid.lon_vertices)
 
     def _add_couples(self, field_definitions: FieldSet):
         """
@@ -269,9 +271,15 @@ class YACCoupler(Coupler[yac.ExchangeType]):
                 field.coupled_component.name
             ), f"Cannot add field '{field.name}' for uncoupled component '{field.coupled_component.name}'."
 
+            # TODO: make this configurable in Field base class
+            # dof_location = self.cell_corners  # breaking existing code
+            
+            dof_location = self.cell_centers  # original setting
+
             yac_field = YACField.from_field(field).construct_yac_field(
-                self.interface, self.component, collection_size, self.cell_centers
+                self.interface, self.component, collection_size, dof_location
             )
+
             self.fields.add(yac_field)
 
     def _construct_coupling_post_sync(self):
