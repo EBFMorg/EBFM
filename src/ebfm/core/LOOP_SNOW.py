@@ -604,16 +604,17 @@ def main(C, OUT, IN, dt, grid, phys):
         Layer merging and splitting
         """
         if grid["doubledepth"]:
-            subZ_old = OUT["subZ"].copy()
-            subD_old = OUT["subD"].copy()
-            subW_old = OUT["subW"].copy()
-            subT_old = OUT["subT"].copy()
-            subS_old = OUT["subS"].copy()
             for n in range(len(grid["split"])):  # Iterate through split points
-                split = grid["split"][n] - 1
+                split = grid["split"][n]
 
                 # Merge Layers (Accumulation Case)
                 cond_merge = (OUT["subZ"][:, split] <= (2.0**n) * grid["max_subZ"]) & (grid["mask"] == 1)
+
+                subZ_old = OUT["subZ"].copy()
+                subD_old = OUT["subD"].copy()
+                subW_old = OUT["subW"].copy()
+                subT_old = OUT["subT"].copy()
+                subS_old = OUT["subS"].copy()
 
                 # Update merged layers
                 OUT["subZ"][cond_merge, split - 1] = subZ_old[cond_merge, split - 1] + subZ_old[cond_merge, split]
@@ -635,15 +636,21 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subD"][cond_merge, split:-1] = subD_old[cond_merge, split + 1 :]
                 OUT["subT"][cond_merge, split:-1] = subT_old[cond_merge, split + 1 :]
 
-                # Adjust the newly added layer at the top
+                # Adjust the newly added layer at the base
                 OUT["subZ"][cond_merge, -1] = 2.0 ** len(grid["split"]) * grid["max_subZ"]
-                OUT["subT"][cond_merge, -1] = 2.0 * subT_old[cond_merge, -1] - subT_old[cond_merge, -2]
+                OUT["subT"][cond_merge, -1] = subT_old[cond_merge, -1]
                 OUT["subD"][cond_merge, -1] = subD_old[cond_merge, -1]
                 OUT["subW"][cond_merge, -1] = 0.0
                 OUT["subS"][cond_merge, -1] = 0.0
 
                 # Split Layers (Ablation Case)
                 cond_split = (OUT["subZ"][:, split - 2] > (2.0**n) * grid["max_subZ"]) & (grid["mask"] == 1)
+
+                subZ_old = OUT["subZ"].copy()
+                subD_old = OUT["subD"].copy()
+                subW_old = OUT["subW"].copy()
+                subT_old = OUT["subT"].copy()
+                subS_old = OUT["subS"].copy()
 
                 # Update split layers
                 OUT["subZ"][cond_split, split - 2] *= 0.5
@@ -659,11 +666,11 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subD"][cond_split, split - 1] = OUT["subD"][cond_split, split - 2]
 
                 # Shift properties down for split layers
-                OUT["subZ"][cond_split, split:-1] = subZ_old[cond_split, split - 1 : -2]
-                OUT["subW"][cond_split, split:-1] = subW_old[cond_split, split - 1 : -2]
-                OUT["subS"][cond_split, split:-1] = subS_old[cond_split, split - 1 : -2]
-                OUT["subT"][cond_split, split:-1] = subT_old[cond_split, split - 1 : -2]
-                OUT["subD"][cond_split, split:-1] = subD_old[cond_split, split - 1 : -2]
+                OUT["subZ"][cond_split, split:] = subZ_old[cond_split, split - 1 : -1]
+                OUT["subW"][cond_split, split:] = subW_old[cond_split, split - 1 : -1]
+                OUT["subS"][cond_split, split:] = subS_old[cond_split, split - 1 : -1]
+                OUT["subT"][cond_split, split:] = subT_old[cond_split, split - 1 : -1]
+                OUT["subD"][cond_split, split:] = subD_old[cond_split, split - 1 : -1]
 
                 # Update runoff contributions
                 OUT["runoff_irr_deep"][cond_split] += subW_old[cond_split, -1]
