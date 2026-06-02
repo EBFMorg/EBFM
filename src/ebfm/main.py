@@ -8,6 +8,8 @@ import argparse
 from enum import Enum
 
 import ebfm.core
+import ebfm.core.comm
+
 from ebfm.core import (
     INIT,
     LOOP_general_functions,
@@ -22,8 +24,6 @@ from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValida
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
-
-from mpi4py import MPI
 
 # logger for this module
 logger: Logger
@@ -120,7 +120,7 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
     return active_coupling_args
 
 
-def main():
+def _main_impl():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument(
@@ -221,6 +221,13 @@ def main():
     parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
 
     parallel_group.add_argument(
+        "--local-group-label",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="MPI group label for the local EBFM communicator. Defaults to --component-name.",
+    )
+
+    parallel_group.add_argument(
         "--is-partitioned-elmer-mesh",
         action="store_true",
         help="Indicate if the provided Elmer mesh is partitioned for parallel runs.",
@@ -229,7 +236,7 @@ def main():
     parallel_group.add_argument(
         "--use-part",
         type=int,
-        default=MPI.COMM_WORLD.rank + 1,
+        default=argparse.SUPPRESS,  # To not print (default: ...) in --help
         help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. "
         "If not provided, the MPI rank + 1 will be used as partition ID.",
     )
@@ -255,8 +262,20 @@ def main():
 
     args = parser.parse_args()
 
+    if not hasattr(args, "local_group_label"):
+        args.local_group_label = args.component_name
+
     if args.version:
         ebfm.core.print_version_and_exit()
+
+    # Bootstrap logging before communicator splitting so early diagnostics are available.
+    setup_logging(
+        stdout_log_level=log_levels_map[args.log_level_console],
+        file=args.log_file,
+        reset_handlers=True,
+    )
+    logger = getLogger(__name__)
+    logger.debug("Bootstrap logging initialized with MPI.COMM_WORLD.")
 
     # Validate that --elmer-mesh-crs-epsg is provided when using --elmer-mesh
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
@@ -266,12 +285,20 @@ def main():
     coupling_config = CouplingConfig(args)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
-    # TODO: replace MPI.COMM_WORLD with communicator from ebfm; either from couplers comm splitting or default comm
+    coupler_cls: type[ebfm.coupling.Coupler] = None
+
+    ebfm_comm, coupler_cls = ebfm.core.comm.do_comm_splitting(args.local_group_label, coupling_config)
+    # Reconfigure logging for (now available) EBFM communicator.
     setup_logging(
         stdout_log_level=log_levels_map[args.log_level_console],
         file=args.log_file,
-        comm=MPI.COMM_WORLD,
+        comm=ebfm_comm,
+        reset_handlers=True,
     )
+
+    if not hasattr(args, "use_part"):
+        # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
+        args.use_part = ebfm_comm.rank + 1
 
     logger = getLogger(__name__)
     logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
@@ -424,6 +451,19 @@ def main():
     coupler.finalize()
 
     logger.info("Closing down EBFM.")
+
+
+def main():
+    try:
+        _main_impl()
+    except Exception as e:
+        logger = getLogger(__name__)
+        logger.exception("Fatal Error in EBFM")
+
+        if ebfm.core.comm.is_initialized():
+            ebfm.core.comm.abort()
+
+        raise e
 
 
 # Entry point for script execution

@@ -33,6 +33,7 @@ def setup_logging(
     comm=MPI.COMM_WORLD,
     file: Path = None,
     file_log_level=default_file_log_level,
+    reset_handlers: bool = False,
 ):
     """
     Setup logging for EBFM with MPI support.
@@ -43,10 +44,16 @@ def setup_logging(
     @param file: Optional path of log file. If None, no file logging is set up. If parallel run with multiple ranks,
                  rank number is appended to filename.
     @param file_log_level: Log level for file logging.
+    @param reset_handlers: If True, remove and close existing root handlers before adding new ones.
     """
 
     root_logger: Logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
+
+    if reset_handlers:
+        for handler in list(root_logger.handlers):
+            root_logger.removeHandler(handler)
+            handler.close()
 
     is_parallel = comm.size > 1
     always_include_rank_info = False
