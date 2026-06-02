@@ -47,12 +47,10 @@ class CouplingConfig:
     """
 
     component_name: str  # Name of this component
-    couple_to_icon_atmo: bool  # Whether to couple this component to ICON atmosphere
-    couple_to_elmer_ice: bool  # Whether to couple this component to Elmer/Ice
     coupler_config: Path | None  # Path to the coupler configuration file
     field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
     use_fake_coupling: bool  # Whether to use FakeCoupler instead of production backend
-    comms: dict[str, MPI.Comm] | None  # Dict with MPI communicators used by this model
+    comms: dict[str, MPI.Comm]  # Dict with MPI communicators used by this model
 
     def __init__(
         self,
@@ -74,7 +72,7 @@ class CouplingConfig:
         self.use_fake_coupling = args.fake_coupling
 
         # will be defined later because we already need some members of CouplingConfig to create the communicators
-        self.comms = None
+        self.comms = {}
 
         # Set field validation level from args (command-line argument with default 'FATAL')
         self.field_validation_level = FieldValidationLevel(args.field_validation_level)
