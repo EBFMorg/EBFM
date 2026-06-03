@@ -13,7 +13,6 @@ from ebfm.core.config import CouplingConfig
 from .base import Coupler, CouplerErrorCode, Grid, GridDict
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -98,6 +97,7 @@ class FakeCoupler(Coupler):
                                    which fields are available and what scalar value they
                                    return.  Defaults to :data:`_DEFAULT_FAKE_FIELDS`.
         """
+        logger.debug("Creating FakeCoupler...")
         super().__init__(coupling_config)
 
         self.field_validation_level = coupling_config.field_validation_level
@@ -122,13 +122,17 @@ class FakeCoupler(Coupler):
         return exchange_type
 
     # TODO: Try to improve this
-    def _infer_n_points(self, grid: dict) -> int:
+    def _infer_n_points(self, grid: GridDict) -> int:
         """
         Infer the number of horizontal points represented by ``grid``.
 
         Supports both:
         - Elmer mesh-like objects (e.g. ``vertex_ids``, ``lon``, ``lat``)
         - MATLAB/full EBFM grid dictionaries (e.g. ``x``, ``lon``, ``lat``, ``gpsum``)
+
+        @param[in] grid GridDict used by Coupler
+
+        @returns inferred number of grid points
         """
         if grid is None:
             return 0
@@ -158,7 +162,11 @@ class FakeCoupler(Coupler):
             "n_points, x, lon, lat, mask (for MATLAB/full EBFM grids)."
         )
 
-    def setup(self, grid: GridDict, time: dict[str, float]):
+    @staticmethod
+    def get_mpi_handshake_group_name() -> str:
+        return "ebfmFakeCoupler"
+
+    def _setup(self, grid: GridDict, field_definitions: FieldSet):
         """
         Store grid size so fake arrays can be sized correctly in :meth:`get`.
 
@@ -168,11 +176,6 @@ class FakeCoupler(Coupler):
         @param[in] time dictionary with time parameters, e.g. {'tn': 12, 'dt': 0.125}
         """
         self._n_points = self._infer_n_points(grid)
-
-        field_definitions = FieldSet()
-
-        for component in self._coupled_components.values():
-            field_definitions |= component.get_field_definitions(time)
 
         self._add_couples(field_definitions)
 

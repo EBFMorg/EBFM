@@ -7,16 +7,17 @@ import numpy as np
 from enum import Enum
 
 from ebfm.core.grid import GridDict
+
 from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
 
 # from ebfm.core.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
-from ebfm.core.config import CouplingConfig
+from ebfm.core.config import CouplingConfig, TimeConfig
 
 import logging
 
 from abc import ABC, abstractmethod
 
-from ebfm.coupling.components import Component, ElmerIce, IconAtmo
+from ebfm.coupling.components import Component, id2class
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
 
 logger = logging.getLogger(__name__)
@@ -64,15 +65,21 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         """
         self._coupled_components: dict[str, Component] = {}
 
-        if coupling_config.couple_to_elmer_ice:
-            elmer_comp = ElmerIce(self)
-            self._coupled_components[elmer_comp.name] = elmer_comp
+        for id in coupling_config.active_coupled_components():
+            logger.debug(f"Coupling to {id.value} enabled.")
+            comp_class = id2class[id]
+            comp = comp_class(coupler=self, name=id.value)
+            self._coupled_components[id.value] = comp
 
-        if coupling_config.couple_to_icon_atmo:
-            icon_comp = IconAtmo(self)
-            self._coupled_components[icon_comp.name] = icon_comp
+        logger.debug(f"Active coupled components: {list(self._coupled_components.keys())}")
 
         self.fields: FieldSet = FieldSet()
+        self._time: TimeConfig | None = None  # will be set in setup()
+
+    @staticmethod
+    @abstractmethod
+    def get_mpi_handshake_group_name() -> str:
+        raise NotImplementedError("get_mpi_handshake_group_name must be implemented in subclasses.")
 
     def has_coupling_to(self, component_name: str) -> bool:
         """
@@ -82,7 +89,10 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         @returns True if coupling to the specified component is enabled, False otherwise
         """
-        return component_name in self._coupled_components
+        logger.debug(f"Checking coupling to component '{component_name}'...")
+        has_coupling_to_comp = component_name in self._coupled_components
+        logger.debug(f"has_coupling_to({component_name}) = {has_coupling_to_comp}")
+        return has_coupling_to_comp
 
     def get_component(self, component_name: str) -> Component:
         """
@@ -98,9 +108,47 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
             raise KeyError(f"Coupling to component '{component_name}' is not enabled.")
         return self._coupled_components[component_name]
 
+    def setup(self, grid: GridDict, time: TimeConfig):
+        """
+        Setup the coupling interface.
+
+        Performs initialization operations after init and before entering the
+        time loop
+
+        @param[in] grid Grid used by EBFM where coupling happens
+        @param[in] time TimeConfig with time parameters
+        """
+        self._time = time
+
+        field_definitions = FieldSet()
+
+        for component in self._coupled_components.values():
+            field_definitions |= component.get_field_definitions(self._time)
+
+        self._setup(grid, field_definitions)
+
     @abstractmethod
-    def setup(self, grid: GridDict, time: dict[str, float]):
-        raise NotImplementedError("setup method must be implemented in subclasses.")
+    def _setup(self, grid: GridDict, field_definitions: FieldSet):
+        """
+        Perform coupler-specific setup tasks such as:
+        - Adding the grid to the coupler interface
+        - Adding coupled fields to the coupler interface based on component definitions
+
+        @param[in] grid grid information dictionary
+        @param[in] field_definitions set of field definitions collected from all coupled components
+        """
+        raise NotImplementedError("_setup method must be implemented in subclasses.")
+
+    def get_time_step_in_days(self) -> float:
+        """
+        Get the current time step size of the model in days.
+
+        @note This method assumes that self._time has been set (i.e. self.setup() has been called).
+
+        @returns time step size in days
+        """
+        assert self._time is not None, "self._time must be set before calling get_time_step."
+        return self._time.time_step_in_days()
 
     def _add_grid(self, grid_name: str, grid: Grid):
         """

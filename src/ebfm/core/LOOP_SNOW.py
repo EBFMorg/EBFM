@@ -15,6 +15,10 @@ try:
 except NameError:
     profile = lambda f: f  # noqa: E731
 
+from ebfm.core import logging
+
+logger = logging.getLogger(__name__)
+
 
 def main(C, OUT, IN, dt, grid, phys):
     """
@@ -30,6 +34,8 @@ def main(C, OUT, IN, dt, grid, phys):
     Returns:
         dict: Updated OUT dictionary.
     """
+
+    logger.debug("Starting LOOP_SNOW...")
 
     def snowfall_and_deposition():
         """

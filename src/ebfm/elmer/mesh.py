@@ -22,9 +22,11 @@ def compute_cell_centers_spherical(lon_vertices, lat_vertices, cell_to_vertex):
         lon_centers, lat_centers, x_centers, y_centers: arrays of cell center coordinates
     """
     # Convert lon/lat vertices to 3D unit sphere coordinates (Cartesian)
+    assert len(lon_vertices) == len(lat_vertices), f"({len(lon_vertices)=} {len(lat_vertices)=})"
     cart_x = np.cos(lat_vertices) * np.cos(lon_vertices)
     cart_y = np.cos(lat_vertices) * np.sin(lon_vertices)
     cart_z = np.sin(lat_vertices)
+    assert len(cart_x) == len(cart_y) == len(cart_z), f"({len(cart_x)=} {len(cart_y)=} {len(cart_z)=})"
 
     n_cells = cell_to_vertex.shape[0]
     cart_x_centers = np.zeros(n_cells)

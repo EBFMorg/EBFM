@@ -6,6 +6,10 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Implement MPI handshake for comm splitting. https://github.com/EBFMorg/EBFM/pull/88.
+* EBFM now only adds metadata to fields where this is explicitly specified. Note: This can lead to failures in components that do not properly guard `get_metadata` calls with `has_metadata` checks. https://github.com/EBFMorg/EBFM/pull/102
+* Add functionality for (optional) unit conversion of data received from/sent to other components. https://github.com/EBFMorg/EBFM/pull/106
+* Introduce option `--component-name` to allow configuration of the name this component used to identify to the coupler. https://github.com/EBFMorg/EBFM/pull/101
 * Introduced options:
 ** `--diagnostics` to show diagnostics for every timestep
 ** `--dump-reference` to create file at the end of the run for comparison
@@ -14,11 +18,9 @@ SPDX-License-Identifier: CC-BY-4.0
 * Added `tools/compare_snapshots.py` to compare two runs using dumped `.npz` files
 * Performance improvements:
 ** Improvements in LOOP_SNOW.py (compaction, heat_conduction, percolation_refreezing_and_storage and layer_merging_and_splitting)
-** Added numba kernels for compaction, heat_conduction and percolation_refreezing_and_storage, addresses: https://github.com/EBFMorg/EBFM/issues/55
-* Introduce option `--component-name` to allow configuration of the name this component used to identify to the coupler. https://github.com/EBFMorg/EBFM/pull/101
-* Numba kernels moved into `LOOP_SNOW_kernels.py` and introduced `compute_backend.py` to manage compute-backend dispatch to separate kernel code from logic. Explicit `if/else` dispatch with a single return per function. Prepares codebase for adding, e.g., GPU offload backends without structural changes.
+** Added numba kernels for compaction, heat_conduction and percolation_refreezing_and_storage (in `LOOP_SNOW_kernels.py`) , addresses: https://github.com/EBFMorg/EBFM/issues/55
+** Introduced `compute_backend.py` to manage compute-backend dispatch to separate kernel code from logic. Explicit `if/else` dispatch with a single return per function. Prepares codebase for adding, e.g., GPU offload backends without structural changes.
 * Bug fixes in double depth method in INIT.py and LOOP_SNOW.py (by Ward)
-
 # v0.3.0
 
 * Add `FakeCoupler` for easier testing of coupled workflow. Activated with option `--fake-coupling`. https://github.com/EBFMorg/EBFM/pull/96
@@ -32,6 +34,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * Dropped Python 3.9 support in favor of Python >= 3.10 (required for PEP 604 union type annotations). https://github.com/EBFMorg/EBFM/pull/82
 * Added tox testing infrastructure with multi-version Python support (3.9-3.13) and separate unit/example test environments. https://github.com/EBFMorg/EBFM/pull/78.
 * Introduce `--elmer-mesh-crs-epsg` to let user define the projection used in the Elmer mesh. Mandatory when using `--elmer-mesh`. https://github.com/EBFMorg/EBFM/pull/86.
+* Implement a faster shading calculation method based on look-up tables generated before the time-loop. https://github.com/EBFMorg/EBFM/pull/60
 
 # v0.2.0
 
