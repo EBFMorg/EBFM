@@ -105,8 +105,12 @@ Important: For some larger files we are using Git LFS. Please make sure to [inst
   Usage example:
 
   ```sh
-  ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --elmer-mesh-crs-epsg 3413
+  ebfm --elmer-mesh examples/greenland_mesh_v0_with_DEM/MESH --elmer-mesh-crs-epsg 3413
   ```
+
+  Note: You can also use `--elmer-mesh examples/greenland_mesh_v0/MESH` here, but this will lead to a very unphysical
+  setup with zero elevation in the whole domain. To generate `examples/greenland_mesh_v0_with_DEM/MESH` please refer
+  to the section **Amend elevation data to 2D Elmer mesh** below.
 
 * Elmer Mesh with Elevation data from NetCDF: The Elmer mesh file provides x-y
   coordinate. An additioal NetCDF file is given to provide elevation data for
