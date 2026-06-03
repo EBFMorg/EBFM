@@ -456,7 +456,7 @@ def _main_impl():
         if not is_numba_available():
             parser.error("--with-numba: numba is not installed. " "Run: pip install 'ebfm[performance]'")
 
-        n_threads = _compute_numba_threads(args, MPI.COMM_WORLD, parser, logger)
+        n_threads = _compute_numba_threads(args, ebfm_comm, parser, logger)
         init_numba(n_threads)
     else:
         logger.info(
