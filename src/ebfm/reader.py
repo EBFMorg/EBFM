@@ -160,7 +160,14 @@ def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
         """Return nearest-neighbor indices for query values on a monotonic axis."""
         assert axis_values.size > 0, "Axis array is empty."
 
-        is_ascending = axis_values[0] <= axis_values[-1]
+        diffs = np.diff(axis_values)
+        is_ascending = np.all(diffs > 0)
+        is_descending = np.all(diffs < 0)
+        is_monotonic = is_ascending or is_descending
+
+        if not is_monotonic:
+            raise ValueError("Axis values must be strictly monotonic (strictly increasing or strictly decreasing).")
+
         axis_for_search = axis_values if is_ascending else axis_values[::-1]
 
         insert_pos = np.searchsorted(axis_for_search, query_values)
