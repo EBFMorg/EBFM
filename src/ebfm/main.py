@@ -26,8 +26,6 @@ from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
 
-from mpi4py import MPI
-
 # logger for this module
 logger: Logger
 
@@ -122,6 +120,7 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
 
     return active_coupling_args
 
+
 # Arrays saved by --dump-reference
 _REFERENCE_KEYS = [
     "smb",
@@ -209,6 +208,7 @@ def _compute_numba_threads(args, comm, parser, logger) -> int:
         )
 
     return n_threads
+
 
 def _main_impl():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)

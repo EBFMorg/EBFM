@@ -8,7 +8,6 @@ from mpi4py import MPI
 import numpy as np
 import sys
 
-
 __version__ = "1.0.0"
 
 
