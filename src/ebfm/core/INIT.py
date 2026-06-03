@@ -242,7 +242,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
             logger.debug("... for grid type CUSTOM.")
-            mesh.z_cells = read_dem(config.dem_file, mesh)
+            mesh.z_cells = read_dem(config.dem_file, mesh.x_cells, mesh.y_cells)
             grid["z"] = mesh.z_cells
         if config.grid_type is GridInputType.ELMERXIOS:
             logger.debug("... for grid type ELMERXIOS.")
