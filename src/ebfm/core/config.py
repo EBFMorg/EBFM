@@ -50,7 +50,7 @@ class CouplingConfig:
     coupler_config: Path | None  # Path to the coupler configuration file
     field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
     use_fake_coupling: bool  # Whether to use FakeCoupler instead of production backend
-    comms: dict[str, MPI.Comm]  # Dict with MPI communicators used by this model
+    comms: dict[str, MPI.Comm] | None  # Dict with MPI communicators used by this model
 
     def __init__(
         self,
@@ -113,7 +113,7 @@ class CouplingConfig:
         @param[in] group_label label of the group
         @returns True if a communicator for the group label is available, False otherwise
         """
-        return self.has_group_communicators() and group_label in self.comms
+        return self.has_group_communicators() and group_label in self.comms  # type: ignore[operator]
 
     def get_group_communicator(self, group_label: str) -> MPI.Comm:
         """Get the communicator for the given group label.
@@ -123,7 +123,7 @@ class CouplingConfig:
         """
         if not self.has_group_communicator(group_label):
             raise KeyError(f"Communicator for group label '{group_label}' not found.")
-        return self.comms[group_label]
+        return self.comms[group_label]  # type: ignore[index]
 
     def _active_coupling_to(self, component_id: ComponentId) -> bool:
         """Check if coupling to a specific component is enabled.
