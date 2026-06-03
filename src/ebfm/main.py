@@ -177,6 +177,39 @@ def print_diagnostics(logger, grid, OUT, t):
         )
 
 
+def _compute_numba_threads(args, comm, parser, logger) -> int:
+    """Determine the number of Numba threads per MPI rank based on CLI args and system resources."""
+    import multiprocessing as _mp
+
+    cpu_count = _mp.cpu_count()
+    mpi_size = comm.size
+    suggested_max_threads = max(1, cpu_count // mpi_size)
+
+    n_threads = args.numba_threads if args.numba_threads is not None else 1
+
+    if args.numba_threads is None:
+        logger.info(
+            f"[NUMBA] --with-numba enabled. Using default threads per rank: {n_threads}. "
+            f"To increase, pass --numba-threads N (suggested max: {suggested_max_threads}; "
+            f"cpu_count={cpu_count}, MPI world size={mpi_size})."
+        )
+    else:
+        if n_threads < 1:
+            parser.error("--numba-threads must be >= 1")
+        if n_threads > suggested_max_threads:
+            parser.error(
+                f"[NUMBA] --numba-threads={n_threads} exceeds suggested max {suggested_max_threads} "
+                f"(cpu_count={cpu_count}, MPI world size={mpi_size}). "
+                f"--numba-threads must be between 1 and {suggested_max_threads} on this system. "
+            )
+        logger.info(
+            f"[NUMBA] --with-numba enabled. Threads per rank: {n_threads} "
+            f"(suggested max {suggested_max_threads}; cpu_count={cpu_count}, MPI world size={mpi_size})."
+        )
+
+    return n_threads
+
+
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -390,45 +423,14 @@ def main():
     logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
 
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
-    # set_num_threads() must be called before any kernel runs.
     if args.with_numba:
-        if not LOOP_SNOW._NUMBA_AVAILABLE:
+        from ebfm.core.compute_backend import is_numba_available, init_numba
+
+        if not is_numba_available():
             parser.error("--with-numba: numba is not installed. " "Run: pip install 'ebfm[performance]'")
 
-        import multiprocessing as _mp
-        import numba as _numba_mod
-
-        cpu_count = _mp.cpu_count()
-        mpi_size = MPI.COMM_WORLD.size
-        suggested_max_threads = max(1, cpu_count // mpi_size)
-
-        # Default: 1 thread unless user explicitly sets --numba-threads
-        n_threads = args.numba_threads if args.numba_threads is not None else 1
-
-        if args.numba_threads is None:
-            logger.info(
-                f"[NUMBA] --with-numba enabled. Using default threads per rank: {n_threads}. "
-                f"To increase, pass --numba-threads N (suggested max: {suggested_max_threads}; "
-                f"cpu_count={cpu_count}, MPI world size={mpi_size})."
-            )
-        else:
-            if n_threads < 1:
-                parser.error("--numba-threads must be a >= 1")
-            if n_threads > suggested_max_threads:
-                parser.error(
-                    f"[NUMBA] --numba-threads={n_threads} exceeds suggested max {suggested_max_threads} "
-                    f"(cpu_count={cpu_count}, MPI world size={mpi_size}). "
-                    f"--numba-threads must be between 1 and {suggested_max_threads} on this system. "
-                )
-
-            logger.info(
-                f"[NUMBA] --with-numba enabled. Threads per rank: {n_threads} "
-                f"(suggested max {suggested_max_threads}; cpu_count={cpu_count}, MPI world size={mpi_size})."
-            )
-
-        _numba_mod.set_num_threads(n_threads)
-        LOOP_SNOW._USE_NUMBA = True
-
+        n_threads = _compute_numba_threads(args, MPI.COMM_WORLD, parser, logger)
+        init_numba(n_threads)
     else:
         logger.info(
             "Pass --with-numba to enable the parallel Numba kernels " "(requires: pip install 'ebfm[performance]')."
