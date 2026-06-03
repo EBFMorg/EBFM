@@ -72,7 +72,7 @@ class CouplingConfig:
         self.use_fake_coupling = args.fake_coupling
 
         # will be defined later because we already need some members of CouplingConfig to create the communicators
-        self.comms = {}
+        self.comms = None
 
         # Set field validation level from args (command-line argument with default 'FATAL')
         self.field_validation_level = FieldValidationLevel(args.field_validation_level)
