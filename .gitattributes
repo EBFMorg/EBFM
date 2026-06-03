@@ -7,3 +7,4 @@
 
 # Files tracked with git LFS
 examples/BedMachineGreenland-v5_lo.nc filter=lfs diff=lfs merge=lfs -text
+examples/greenland_mesh_v0/** filter=lfs diff=lfs merge=lfs -text
