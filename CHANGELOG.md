@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Bug fixes in double depth method in INIT.py and LOOP_SNOW.py
 * Implement MPI handshake for comm splitting. https://github.com/EBFMorg/EBFM/pull/88.
 * EBFM now only adds metadata to fields where this is explicitly specified. Note: This can lead to failures in components that do not properly guard `get_metadata` calls with `has_metadata` checks. https://github.com/EBFMorg/EBFM/pull/102
 * Add functionality for (optional) unit conversion of data received from/sent to other components. https://github.com/EBFMorg/EBFM/pull/106
@@ -20,7 +21,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * Introduce type checking with mypy for `ebfm.coupling` module. https://github.com/EBFMorg/EBFM/pull/92
 * Generalize restart by providing additional options `--restart-dir` and `--restart-init`. https://github.com/EBFMorg/EBFM/pull/90
 * Introduce `--field-validation-level` to let user specify how EBFM should treat fields that are defined by EBFM but not provided/accepted by the coupled component. https://github.com/EBFMorg/EBFM/pull/87.
-* Fix put/get signatures of couplers and return types to match the Coupler base class, 
+* Fix put/get signatures of couplers and return types to match the Coupler base class,
 * Dropped Python 3.9 support in favor of Python >= 3.10 (required for PEP 604 union type annotations). https://github.com/EBFMorg/EBFM/pull/82
 * Added tox testing infrastructure with multi-version Python support (3.9-3.13) and separate unit/example test environments. https://github.com/EBFMorg/EBFM/pull/78.
 * Introduce `--elmer-mesh-crs-epsg` to let user define the projection used in the Elmer mesh. Mandatory when using `--elmer-mesh`. https://github.com/EBFMorg/EBFM/pull/86.
