@@ -170,17 +170,26 @@ def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
 
         axis_for_search = axis_values if is_ascending else axis_values[::-1]
 
+        n_axis = len(axis_for_search)
         insert_pos = np.searchsorted(axis_for_search, query_values)
-        insert_pos = np.clip(insert_pos, 0, len(axis_for_search) - 1)
 
-        left_pos = np.clip(insert_pos - 1, 0, len(axis_for_search) - 1)
+        # Candidate neighbors around each insertion position.
+        left_pos = insert_pos - 1
         right_pos = insert_pos
-        choose_right = np.abs(axis_for_search[right_pos] - query_values) <= np.abs(
-            axis_for_search[left_pos] - query_values
-        )
-        nearest_pos = np.where(choose_right, right_pos, left_pos)
+        left_valid = left_pos >= 0
+        right_valid = right_pos < n_axis
 
-        if not is_ascending:
+        # Create safe indices for array access, then invalidate out-of-range side via inf distance.
+        left_pos_safe = np.where(left_valid, left_pos, 0)
+        right_pos_safe = np.where(right_valid, right_pos, n_axis - 1)
+        left_dist = np.where(left_valid, np.abs(axis_for_search[left_pos_safe] - query_values), np.inf)
+        right_dist = np.where(right_valid, np.abs(axis_for_search[right_pos_safe] - query_values), np.inf)
+
+        choose_right = right_dist <= left_dist
+        nearest_pos = np.where(choose_right, right_pos_safe, left_pos_safe)
+
+        if is_descending:  # if axis is descending, we reversed it for search, so we need to flip the indices back
+            assert not is_ascending
             nearest_pos = len(axis_values) - 1 - nearest_pos
 
         return nearest_pos.astype(np.int64)
