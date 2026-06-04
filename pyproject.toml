@@ -33,6 +33,10 @@ cpl = [
     "yac >= 3.8",
 ]
 
+performance = [
+    "numba >= 0.59",
+]
+
 [project.scripts]
 ebfm = "ebfm.main:main"
 

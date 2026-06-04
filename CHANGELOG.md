@@ -11,7 +11,17 @@ SPDX-License-Identifier: CC-BY-4.0
 * EBFM now only adds metadata to fields where this is explicitly specified. Note: This can lead to failures in components that do not properly guard `get_metadata` calls with `has_metadata` checks. https://github.com/EBFMorg/EBFM/pull/102
 * Add functionality for (optional) unit conversion of data received from/sent to other components. https://github.com/EBFMorg/EBFM/pull/106
 * Introduce option `--component-name` to allow configuration of the name this component used to identify to the coupler. https://github.com/EBFMorg/EBFM/pull/101
-
+* Introduced options:
+** `--diagnostics` to show diagnostics for every timestep
+** `--dump-reference` to create file at the end of the run for comparison
+** `--random-seed` to fix the random seed for reproducible results
+** `--with-numba` and `--numba-threads` to run numba kernels with N threads
+* Added `tools/compare_snapshots.py` to compare two runs using dumped `.npz` files
+* Performance improvements:
+** Improvements in LOOP_SNOW.py (compaction, heat_conduction, percolation_refreezing_and_storage and layer_merging_and_splitting)
+** Added numba kernels for compaction, heat_conduction and percolation_refreezing_and_storage (in `LOOP_SNOW_kernels.py`) , addresses: https://github.com/EBFMorg/EBFM/issues/55
+** Introduced `compute_backend.py` to manage compute-backend dispatch to separate kernel code from logic. Explicit `if/else` dispatch with a single return per function. Prepares codebase for adding, e.g., GPU offload backends without structural changes.
+* Bug fixes in double depth method in INIT.py and LOOP_SNOW.py (by Ward)
 # v0.3.0
 
 * Add `FakeCoupler` for easier testing of coupled workflow. Activated with option `--fake-coupling`. https://github.com/EBFMorg/EBFM/pull/96
