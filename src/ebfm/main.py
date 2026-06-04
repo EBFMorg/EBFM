@@ -67,6 +67,12 @@ def add_coupling_arguments(parser: argparse.ArgumentParser):
     )
 
     coupling_group.add_argument(
+        "--couple-to-dummy",
+        action="store_true",
+        help="Enable coupling with dummy component via YAC",
+    )
+
+    coupling_group.add_argument(
         "--coupler-config",
         type=Path,
         help="Path to the coupling configuration file (YAC coupler_config.yaml).",
@@ -114,6 +120,9 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
 
     if args.couple_to_icon_atmo:
         active_coupling_args.append("--couple-to-icon-atmo")
+
+    if args.couple_to_dummy:
+        active_coupling_args.append("--couple-to-dummy")
 
     if args.coupler_config:
         active_coupling_args.append("--coupler-config")
@@ -510,6 +519,21 @@ def _main_impl():
         time["TCUR"] = LOOP_general_functions.print_time(t, time["ts"], time["dt"])
 
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
+
+        if coupler.has_coupling_to("dummy"):
+            logger.debug("Coupling to Dummy component enabled, performing data exchange...")
+            dummy = coupler.get_component("dummy")
+            logger.info("Data exchange with Dummy component")
+            logger.debug("Started...")
+            data_to_dummy = {}
+            data_from_dummy = dummy.exchange(data_to_dummy)
+            logger.debug(
+                f"Received data from dummy: {data_from_dummy['dummy_field']} "
+                f"(min: {min(data_from_dummy['dummy_field'])}, "
+                f"max: {max(data_from_dummy['dummy_field'])})"
+            )
+        else:
+            logger.debug("No coupling to Dummy component, skipping data exchange.")
 
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
