@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Revise helper script `reader.py`. https://github.com/EBFMorg/EBFM/pull/119.
 * Bug fixes in double depth method in INIT.py and LOOP_SNOW.py
 * Implement MPI handshake for comm splitting. https://github.com/EBFMorg/EBFM/pull/88.
 * EBFM now only adds metadata to fields where this is explicitly specified. Note: This can lead to failures in components that do not properly guard `get_metadata` calls with `has_metadata` checks. https://github.com/EBFMorg/EBFM/pull/102
@@ -22,6 +23,7 @@ SPDX-License-Identifier: CC-BY-4.0
 ** Added numba kernels for compaction, heat_conduction and percolation_refreezing_and_storage (in `LOOP_SNOW_kernels.py`) , addresses: https://github.com/EBFMorg/EBFM/issues/55
 ** Introduced `compute_backend.py` to manage compute-backend dispatch to separate kernel code from logic. Explicit `if/else` dispatch with a single return per function. Prepares codebase for adding, e.g., GPU offload backends without structural changes.
 * Bug fixes in double depth method in INIT.py and LOOP_SNOW.py (by Ward)
+
 # v0.3.0
 
 * Add `FakeCoupler` for easier testing of coupled workflow. Activated with option `--fake-coupling`. https://github.com/EBFMorg/EBFM/pull/96

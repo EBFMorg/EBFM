@@ -171,7 +171,7 @@ The helper script `reader.py` can be used to combine an existing Elmer mesh with
 Assuming the example data has been copied into the `examples/` directory as described above, you can run the following command from the repository root:
 
 ```sh
-python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --outpath examples/MESH_with_DEM
+python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --outpath examples/MESH_with_DEM --elmer-mesh-crs-epsg 3413
 ```
 
 This will write the updated mesh to a new directory. The path `examples/MESH_with_DEM` should not already exist. The original `examples/MESH` directory is copied and left unchanged.
@@ -179,13 +179,13 @@ This will write the updated mesh to a new directory. The path `examples/MESH_wit
 Alternatively, you can modify the mesh directly in place, which overwrites `mesh.nodes`:
 
 ```sh
-python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --in-place
+python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --in-place --elmer-mesh-crs-epsg 3413
 ```
 
 The resulting mesh can then be used directly with EBFM similar to the example with the MATLAB file from above:
 
 ```sh
-ebfm --elmer-mesh examples/MESH_with_DEM
+ebfm --elmer-mesh examples/MESH_with_DEM --elmer-mesh-crs-epsg 3413
 ```
 
 ### Performance and Profiling Runs
