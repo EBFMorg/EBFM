@@ -168,7 +168,11 @@ def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
         if not is_monotonic:
             raise ValueError("Axis values must be strictly monotonic (strictly increasing or strictly decreasing).")
 
-        axis_for_search = axis_values if is_ascending else axis_values[::-1]
+        if is_descending:
+            # For searchsorted to work correctly, we need to reverse the axis values if they are descending.
+            axis_for_search = axis_values[::-1]
+        else:
+            axis_for_search = axis_values
 
         n_axis = len(axis_for_search)
         insert_pos = np.searchsorted(axis_for_search, query_values)
@@ -188,8 +192,8 @@ def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
         choose_right = right_dist <= left_dist
         nearest_pos = np.where(choose_right, right_pos_safe, left_pos_safe)
 
-        if is_descending:  # if axis is descending, we reversed it for search, so we need to flip the indices back
-            assert not is_ascending
+        if is_descending:
+            # we reversed it for search, so we need to flip the indices back
             nearest_pos = len(axis_values) - 1 - nearest_pos
 
         return nearest_pos.astype(np.int64)
@@ -212,62 +216,58 @@ def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
         mismatch_x = np.abs(xs - x_axis[idx_x]) / x_spacing
         mismatch_y = np.abs(ys - y_axis[idx_y]) / y_spacing
 
-        if np.any(mismatch_x > normalized_error_tol) or np.any(mismatch_y > normalized_error_tol):
+        def print_axis_diagnostics(
+            axis_name: str,
+            axis_values: NDArray[np.float64],
+            queries: NDArray[np.float64],
+            matched_indices: NDArray[np.int64],
+            normalized_mismatch: NDArray[np.float64],
+            axis_spacing: float,
+            max_examples: int = 5,
+        ) -> None:
+            n_low = np.sum(queries < np.min(axis_values))
+            n_high = np.sum(queries > np.max(axis_values))
 
-            def print_axis_diagnostics(
-                axis_name: str,
-                axis_values: NDArray[np.float64],
-                queries: NDArray[np.float64],
-                matched_indices: NDArray[np.int64],
-                normalized_mismatch: NDArray[np.float64],
-                axis_spacing: float,
-                max_examples: int = 5,
-            ) -> None:
-                diffs = np.diff(axis_values)
-                is_ascending = np.all(diffs >= 0)
-                is_descending = np.all(diffs <= 0)
-                is_monotonic = is_ascending or is_descending
+            logger.info(
+                f"{axis_name} axis diagnostics:, "
+                f"axis_range=[{np.min(axis_values)}, {np.max(axis_values)}], "
+                f"query_range=[{np.min(queries)}, {np.max(queries)}], "
+                f"out_of_range={n_low + n_high} (low={n_low}, high={n_high}), "
+                f"typical_spacing={axis_spacing}."
+            )
 
-                n_low = np.sum(queries < np.min(axis_values))
-                n_high = np.sum(queries > np.max(axis_values))
+            q50, q90, q99 = np.quantile(normalized_mismatch, [0.5, 0.9, 0.99])
+            logger.info(
+                f"{axis_name} spacing-normalized mismatch quantiles: q50={q50}, q90={q90}, q99={q99}, "
+                f"max={np.max(normalized_mismatch)}."
+            )
 
+            worst_local = np.argsort(normalized_mismatch)[-max_examples:][::-1]
+            for rank, i in enumerate(worst_local, start=1):
+                matched_value = axis_values[matched_indices[i]]
+                abs_error = np.abs(queries[i] - matched_value)
+                norm_error = normalized_mismatch[i]
                 logger.info(
-                    f"{axis_name} axis diagnostics: monotonic={is_monotonic}, ascending={is_ascending}, "
-                    f"axis_range=[{np.min(axis_values)}, {np.max(axis_values)}], "
-                    f"query_range=[{np.min(queries)}, {np.max(queries)}], "
-                    f"out_of_range={n_low + n_high} (low={n_low}, high={n_high}), "
-                    f"typical_spacing={axis_spacing}."
+                    f"{axis_name} worst#{rank}: query={queries[i]}, matched={matched_value}, "
+                    f"idx={matched_indices[i]}, "
+                    f"abs_err={abs_error}, norm_err={norm_error}."
                 )
 
-                q50, q90, q99 = np.quantile(normalized_mismatch, [0.5, 0.9, 0.99])
-                logger.info(
-                    f"{axis_name} spacing-normalized mismatch quantiles: q50={q50}, q90={q90}, q99={q99}, "
-                    f"max={np.max(normalized_mismatch)}."
-                )
-
-                worst_local = np.argsort(normalized_mismatch)[-max_examples:][::-1]
-                for rank, i in enumerate(worst_local, start=1):
-                    matched_value = axis_values[matched_indices[i]]
-                    abs_error = np.abs(queries[i] - matched_value)
-                    norm_error = normalized_mismatch[i]
-                    logger.info(
-                        f"{axis_name} worst#{rank}: query={queries[i]}, matched={matched_value}, "
-                        f"idx={matched_indices[i]}, "
-                        f"abs_err={abs_error}, norm_err={norm_error}."
-                    )
-
+        if np.any(mismatch_x > normalized_error_tol):
             logger.warning(
                 f"{np.sum(mismatch_x > normalized_error_tol)} of {len(idx_x)} x-coordinates do not match within "
                 "tolerance."
             )
+            logger.warning(f"Maximum spacing-normalized mismatch: {np.max(mismatch_x)} in x.")
+            print_axis_diagnostics("x", x_axis, xs, idx_x, mismatch_x, x_spacing)
+
+        if np.any(mismatch_y > normalized_error_tol):
             logger.warning(
                 f"{np.sum(mismatch_y > normalized_error_tol)} of {len(idx_y)} y-coordinates do not match within "
                 "tolerance."
             )
-            logger.warning(
-                f"Maximum spacing-normalized mismatch: {np.max(mismatch_x)} in x and {np.max(mismatch_y)} in y."
-            )
-            print_axis_diagnostics("x", x_axis, xs, idx_x, mismatch_x, x_spacing)
+            logger.warning(f"Maximum spacing-normalized mismatch: {np.max(mismatch_y)} in y.")
+            print_axis_diagnostics("y", y_axis, ys, idx_y, mismatch_y, y_spacing)
 
         surf = np.asarray(nc["surface"][:])
         result = surf[idx_y, idx_x]
