@@ -10,5 +10,3 @@ Output/*.nc
 Reboot/*.nc
 .coverage
 .tox
-.idea/workspace.xml
-new_run.npz
