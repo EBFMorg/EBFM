@@ -117,7 +117,7 @@ of the input x/y coordinates. EBFM uses this CRS to convert coordinates to lon/l
   Usage example:
 
   ```sh
-  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc --elmer-mesh-crs-epsg 3413
+  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5_lo.nc --elmer-mesh-crs-epsg 3413
   ```
 
 Note that an Elmer mesh must be provided in a directory following the structure:
@@ -154,14 +154,24 @@ path/to/your/elmer/MESH
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
 ### Getting the example data
 
-The example inputs and datasets referenced above (e.g. `BedMachineGreenland-v5.nc` or `MESH`) can be obtained from the [TerraDT testcase repository](https://gitlab.dkrz.de/TerraDT/testcase). Please note that access to this repository may need to be requested, and you must have access to the Levante supercomputer at DKRZ.
+A reduced-resolution NetCDF file (`examples/BedMachineGreenland-v5_lo.nc`) is
+included directly in this repository and can be used as a drop-in for quick
+testing. See [`examples/README.md`](examples/README.md) for details on how it
+was derived from the original dataset.
 
-Once available, you can either copy or symlink the required files into the `examples/` directory of this repository, or point EBFM to their locations using the CLI arguments shown above.
+For the full-resolution dataset and the example Elmer mesh (`MESH`), refer to
+the [TerraDT testcase repository](https://gitlab.dkrz.de/TerraDT/testcase).
+Note that access to that repository may need to be requested and requires
+access to the Levante supercomputer at DKRZ.
+
+Once available, you can either copy or symlink the required files into the
+`examples/` directory of this repository, or point EBFM to their locations
+using the CLI arguments shown above.
 
 
 ### Using `reader.py` to prepare an Elmer mesh with elevation data
@@ -171,7 +181,7 @@ The helper script `reader.py` can be used to combine an existing Elmer mesh with
 Assuming the example data has been copied into the `examples/` directory as described above, you can run the following command from the repository root:
 
 ```sh
-python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --outpath examples/MESH_with_DEM --elmer-mesh-crs-epsg 3413
+python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5_lo.nc --outpath examples/MESH_with_DEM --elmer-mesh-crs-epsg 3413
 ```
 
 This will write the updated mesh to a new directory. The path `examples/MESH_with_DEM` should not already exist. The original `examples/MESH` directory is copied and left unchanged.
@@ -179,7 +189,7 @@ This will write the updated mesh to a new directory. The path `examples/MESH_wit
 Alternatively, you can modify the mesh directly in place, which overwrites `mesh.nodes`:
 
 ```sh
-python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --in-place --elmer-mesh-crs-epsg 3413
+python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5_lo.nc --in-place --elmer-mesh-crs-epsg 3413
 ```
 
 The resulting mesh can then be used directly with EBFM similar to the example with the MATLAB file from above:
