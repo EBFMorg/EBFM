@@ -53,10 +53,10 @@ class ElmerIce(Component):
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 Field(
-                    name="h",
+                    name="surface_elevation",
                     coupled_component=self,
                     timestep=timestep,
-                    metadata="Surface height (in m)",
+                    metadata="Surface elevation (in m)",
                     exchange_type=ExchangeType.TARGET,
                 ),
                 # Field(
@@ -99,9 +99,9 @@ class ElmerIce(Component):
         self._put_if_coupled("runoff", data_to_exchange, transform=map_per_timestep_to_per_year)
 
         # Get data from Elmer/Ice
-        h = self._get_if_coupled("h")
-        if h is not None:
-            received_data["h"] = h
+        surface_elevation = self._get_if_coupled("surface_elevation")
+        if surface_elevation is not None:
+            received_data["surface_elevation"] = surface_elevation
 
         dhdx = self._get_if_coupled("dhdx")
         if dhdx is not None:
