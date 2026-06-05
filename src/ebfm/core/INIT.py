@@ -395,6 +395,10 @@ def init_grid(grid: GridDict, io, config: GridConfig):
 
     return grid
 
+        # loop over the azimuth angles to determine gridded maximum grid angles per angle
+        grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
+        for n in range(grid["nr_az_steps"]):
+            az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
 
 def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
     """Pre-compute the shading look-up table of a MATLAB grid.
@@ -533,6 +537,65 @@ def read_MATLAB_grid(gridfile: Path):
         raise
     except KeyError as e:
         logger.info(f"Missing field in .mat file: {e}")
+        raise
+
+    return input_data
+
+
+def read_GREENLAND_grid(gridfile: Path):
+    """
+    Provides grid information by reading from a NetCDF file.
+
+    Parameters:
+        gridfile: Path to the NetCDF file containing grid data.
+
+    Returns:
+        dict: A dictionary named `input_data` containing:
+            - 'x': 2D NumPy array of UTM zone 24N easting coordinates (m).
+            - 'y': 2D NumPy array of UTM zone 24N northing coordinates (m).
+            - 'z': 2D NumPy array of orography/elevation from the 'orog' field.
+            - 'mask': 2D NumPy array of glacier mask. Currently all finite `orog` cells are treated as glacier cells.
+            - 'lon': 2D NumPy array of longitude coordinates.
+            - 'lat': 2D NumPy array of latitude coordinates.
+    """
+
+    logger.info("EBFM: Reading grid data from NetCDF file...")
+    input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
+
+    try:
+        with Dataset(gridfile, "r") as ncfile:
+            orog = np.asarray(ncfile.variables["orog"][:])
+            latitude = np.asarray(ncfile.variables["latitude"][:])
+            longitude = np.asarray(ncfile.variables["longitude"][:])
+
+            orog = np.squeeze(orog)
+            latitude = np.squeeze(latitude)
+            longitude = np.squeeze(longitude)
+
+            if latitude.ndim == 1 and longitude.ndim == 1:
+                longitude, latitude = np.meshgrid(longitude, latitude)
+
+            if orog.shape != latitude.shape or orog.shape != longitude.shape:
+                raise ValueError(
+                    "`orog`, `latitude`, and `longitude` must have matching 2D shapes. "
+                    f"Got orog={orog.shape}, latitude={latitude.shape}, longitude={longitude.shape}."
+                )
+
+            lonlat_to_utm24n = Transformer.from_crs("EPSG:4326", "EPSG:32624", always_xy=True)
+            x, y = lonlat_to_utm24n.transform(longitude, latitude)
+
+            input_data["x"] = x
+            input_data["y"] = y
+            input_data["z"] = orog
+            input_data["lat"] = latitude
+            input_data["lon"] = longitude
+            input_data["mask"] = (orog >= 10).astype(int)
+
+    except FileNotFoundError:
+        logger.info(f"File not found: {gridfile}")
+        raise
+    except KeyError as e:
+        logger.info(f"Missing field in NetCDF file: {e}")
         raise
 
     return input_data
