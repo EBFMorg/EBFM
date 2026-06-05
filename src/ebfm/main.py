@@ -258,6 +258,12 @@ def _main_impl():
     )
 
     input_group.add_argument(
+        mesh_opts[GridInputType.GREENLAND],
+        type=Path,
+        help="Path to the mesh file and climate data for a test on Greenland. " + mesh_msg,
+    )
+
+    input_group.add_argument(
         "--netcdf-mesh",
         type=Path,
         help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. "

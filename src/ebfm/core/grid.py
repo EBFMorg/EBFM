@@ -10,6 +10,9 @@ class GridInputType(Enum):
     # .mat grid file with elevation
     MATLAB = "matlab"
 
+    # NetCDF grid file with elevation for Greenland test
+    GREENLAND = "greenland"
+
     # Elmer/Ice mesh file for xy-coordinates and separate NetCDF elevation file
     CUSTOM = "custom"
 
