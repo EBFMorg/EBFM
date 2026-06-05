@@ -186,12 +186,16 @@ class GridConfig:
 
         @param[in] args command line arguments
         """
-        if not (args.elmer_mesh or args.matlab_mesh):
-            logger.error("Grid needed. Please provide either --elmer-mesh or --matlab-mesh.")
+        if not (args.elmer_mesh or args.matlab_mesh or args.greenland_mesh):
+            logger.error("Grid needed. Please provide either --elmer-mesh or --matlab-mesh or --greenland-mesh.")
             raise Exception("Missing grid.")
 
-        if args.elmer_mesh and args.matlab_mesh:
-            logger.error("Please provide either --elmer-mesh or --matlab-mesh, not both.")
+        if args.elmer_mesh and (args.matlab_mesh or args.greenland_mesh):
+            logger.error("Please provide either --elmer-mesh or --matlab-mesh or --greenland-mesh, not several.")
+            raise Exception("Invalid grid configuration.")
+
+        if args.matlab_mesh and args.greenland_mesh:
+            logger.error("Please provide either --elmer-mesh or --matlab-mesh or --greenland-mesh, not several.")
             raise Exception("Invalid grid configuration.")
 
         if args.is_partitioned_elmer_mesh and not args.elmer_mesh:
@@ -219,6 +223,10 @@ class GridConfig:
             self.grid_type = GridInputType.MATLAB
             self.mesh_file = args.matlab_mesh
             self.is_unstructured = False
+        elif args.greenland_mesh:
+            self.grid_type = GridInputType.GREENLAND
+            self.mesh_file = args.greenland_mesh
+            self.is_unstructured = False
         elif args.netcdf_mesh and args.elmer_mesh:
             self.grid_type = GridInputType.CUSTOM
             self.mesh_file = args.elmer_mesh
@@ -240,8 +248,10 @@ class GridConfig:
             )
             raise Exception("Invalid grid configuration.")
 
-        # Shading is only supported for MATLAB meshes; see https://github.com/EBFMorg/EBFM/issues/11
-        grid_type_supports_shading_supported = self.grid_type is GridInputType.MATLAB
+        # Shading is only supported for MATLAB & Greenland meshes; see https://github.com/EBFMorg/EBFM/issues/11
+        grid_type_supports_shading_supported = (
+            self.grid_type is GridInputType.MATLAB or self.grid_type is GridInputType.GREENLAND
+        )
 
         # Partitioned grids don't support shading
         grid_partitioning_supports_shading = not self.is_partitioned

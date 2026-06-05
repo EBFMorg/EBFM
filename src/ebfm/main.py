@@ -224,13 +224,13 @@ def _main_impl():
     input_group.add_argument(
         "--elmer-mesh",
         type=Path,
-        help="Path to the Elmer mesh file. Either --elmer-mesh or --matlab-mesh is required.",
+        help="Path to the Elmer mesh file. Either --elmer-mesh or --matlab-mesh or --greenland-mesh is required.",
     )
 
     input_group.add_argument(
         "--matlab-mesh",
         type=Path,
-        help="Path to the MATLAB mesh file. Either --elmer-mesh or --matlab-mesh is required.",
+        help="Path to the MATLAB mesh file. Either --elmer-mesh or --matlab-mesh or --greenland-mesh is required.",
     )
 
     input_group.add_argument(
@@ -238,6 +238,13 @@ def _main_impl():
         type=Path,
         help="Path to the NetCDF mesh file. Optional if using --elmer-mesh."
         " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+    )
+
+    input_group.add_argument(
+        "--greenland-mesh",
+        type=Path,
+        help="Path to the mesh file and climate data for a test on Greenland. "
+        "Either --elmer-mesh or --matlab-mesh or --greenland-mesh is required.",
     )
 
     input_group.add_argument(
