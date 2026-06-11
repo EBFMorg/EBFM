@@ -21,3 +21,16 @@ class GridInputType(Enum):
 
 
 GridDict = dict[str, Any]  # Alias for grid dictionary type, can be replaced with a more specific type in the future
+
+
+class ShadingMethod(Enum):
+    """Available shading algorithms for topographic shading.
+
+    - `CLASSICAL`: computes shading online each time step by ray-marching from
+        each glacier cell in the current solar azimuth direction.
+    - `LUT`: uses a precomputed look-up table of maximum horizon angles per cell
+        and azimuth sector, which is faster at runtime.
+    """
+
+    CLASSICAL = "classical_shading"
+    LUT = "lut_shading"

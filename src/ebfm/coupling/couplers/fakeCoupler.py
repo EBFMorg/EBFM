@@ -13,7 +13,6 @@ from ebfm.core.config import CouplingConfig
 from .base import Coupler, CouplerErrorCode, Grid, GridDict
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -98,6 +97,7 @@ class FakeCoupler(Coupler):
                                    which fields are available and what scalar value they
                                    return.  Defaults to :data:`_DEFAULT_FAKE_FIELDS`.
         """
+        logger.debug("Creating FakeCoupler...")
         super().__init__(coupling_config)
 
         self.field_validation_level = coupling_config.field_validation_level
@@ -161,6 +161,10 @@ class FakeCoupler(Coupler):
             "vertex_ids, lon, lat, x_vertices, y_vertices (for Elmer-like grids) or "
             "n_points, x, lon, lat, mask (for MATLAB/full EBFM grids)."
         )
+
+    @staticmethod
+    def get_mpi_handshake_group_name() -> str:
+        return "ebfmFakeCoupler"
 
     def _setup(self, grid: GridDict, field_definitions: FieldSet):
         """

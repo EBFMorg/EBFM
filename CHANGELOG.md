@@ -6,9 +6,24 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Revise helper script `reader.py`. https://github.com/EBFMorg/EBFM/pull/119.
+* Add reduced-size BedMachine Greenland NetCDF example (`examples/BedMachineGreenland-v5_lo.nc`) and two utility scripts under `tools/`: `nc_reduce_size.py` to produce smaller NetCDF copies (field selection and grid subsampling), and `nc_2_vtk.py` to convert NetCDF fields to VTK for visualisation in ParaView. https://github.com/EBFMorg/EBFM/pull/123.
+* Bug fixes in double depth method in INIT.py and LOOP_SNOW.py
+* Implement MPI handshake for comm splitting. https://github.com/EBFMorg/EBFM/pull/88.
 * EBFM now only adds metadata to fields where this is explicitly specified. Note: This can lead to failures in components that do not properly guard `get_metadata` calls with `has_metadata` checks. https://github.com/EBFMorg/EBFM/pull/102
 * Add functionality for (optional) unit conversion of data received from/sent to other components. https://github.com/EBFMorg/EBFM/pull/106
 * Introduce option `--component-name` to allow configuration of the name this component used to identify to the coupler. https://github.com/EBFMorg/EBFM/pull/101
+* Introduced options:
+  * `--diagnostics` to show diagnostics for every timestep
+  * `--dump-reference` to create file at the end of the run for comparison
+  * `--random-seed` to fix the random seed for reproducible results
+  * `--with-numba` and `--numba-threads` to run numba kernels with N threads
+* Added `tools/compare_snapshots.py` to compare two runs using dumped `.npz` files
+* Performance improvements:
+  * Improvements in LOOP_SNOW.py (compaction, heat_conduction, percolation_refreezing_and_storage and layer_merging_and_splitting)
+  * Added numba kernels for compaction, heat_conduction and percolation_refreezing_and_storage (in `LOOP_SNOW_kernels.py`) , addresses: https://github.com/EBFMorg/EBFM/issues/55
+  * Introduced `compute_backend.py` to manage compute-backend dispatch to separate kernel code from logic. Explicit `if/else` dispatch with a single return per function. Prepares codebase for adding, e.g., GPU offload backends without structural changes.
+* Bug fixes in double depth method in INIT.py and LOOP_SNOW.py (by Ward)
 
 # v0.3.0
 
@@ -19,10 +34,11 @@ SPDX-License-Identifier: CC-BY-4.0
 * Introduce type checking with mypy for `ebfm.coupling` module. https://github.com/EBFMorg/EBFM/pull/92
 * Generalize restart by providing additional options `--restart-dir` and `--restart-init`. https://github.com/EBFMorg/EBFM/pull/90
 * Introduce `--field-validation-level` to let user specify how EBFM should treat fields that are defined by EBFM but not provided/accepted by the coupled component. https://github.com/EBFMorg/EBFM/pull/87.
-* Fix put/get signatures of couplers and return types to match the Coupler base class, 
+* Fix put/get signatures of couplers and return types to match the Coupler base class,
 * Dropped Python 3.9 support in favor of Python >= 3.10 (required for PEP 604 union type annotations). https://github.com/EBFMorg/EBFM/pull/82
 * Added tox testing infrastructure with multi-version Python support (3.9-3.13) and separate unit/example test environments. https://github.com/EBFMorg/EBFM/pull/78.
 * Introduce `--elmer-mesh-crs-epsg` to let user define the projection used in the Elmer mesh. Mandatory when using `--elmer-mesh`. https://github.com/EBFMorg/EBFM/pull/86.
+* Implement a faster shading calculation method based on look-up tables generated before the time-loop. https://github.com/EBFMorg/EBFM/pull/60
 
 # v0.2.0
 

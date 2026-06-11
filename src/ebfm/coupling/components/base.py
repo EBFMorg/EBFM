@@ -33,10 +33,15 @@ class Component(ABC):
     Each component owns its fields as an instance attribute.
     """
 
-    name: str  # name of this component
+    def __init__(self, coupler: "Coupler", name: str):
+        """
+        Initialize the component.
 
-    def __init__(self, coupler: "Coupler"):
+        @param[in] coupler Coupler instance to use for coupling
+        @param[in] name unique name of the component
+        """
         self._coupler = coupler
+        self.name = name
         pass
 
     def _uses_coupler(self, coupler_class_type) -> bool:
@@ -70,8 +75,8 @@ class Component(ABC):
             assert (
                 field_name in data_to_exchange
             ), f"Field '{field_name}' is missing in data_to_exchange for component '{self.name}'."
-            logger.debug(f"Putting field {field_name=}")
-            err = self._coupler.put(self.name, field_name, transform(data_to_exchange[field_name]))
+            logger.debug(f"Putting data for field '{field_name}' to coupler: {data_to_exchange[field_name]}")
+	    err = self._coupler.put(self.name, field_name, transform(data_to_exchange[field_name]))
             if err:
                 logger.warning(f"Error code {err=} after put of {field_name=}")
 
@@ -86,11 +91,11 @@ class Component(ABC):
         from ebfm.coupling.fields.base import ExchangeType
 
         if self._coupler.has_field(self.name, field_name, ExchangeType.TARGET):
-            logger.debug(f"Getting field {field_name=}")
             data, err = self._coupler.get(self.name, field_name)
+            logger.debug(f"Received data for field '{field_name}' from coupler: {data}")
             if err:
                 logger.warning(f"Error code {err=} after get of {field_name=}")
-            assert data is not None, f"Received data for field '{field_name}' is None. {err}"
+	    assert data is not None, f"Received data for field '{field_name}' is None. {err}"
             return transform(data)
         return None
 

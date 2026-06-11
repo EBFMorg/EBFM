@@ -13,6 +13,10 @@ from numpy.typing import NDArray
 from ebfm.elmer.mesh import TriangleMesh
 import ebfm.elmer.parser
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def read_elmer_mesh(
     mesh_root: Path,
@@ -152,28 +156,123 @@ def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
 
     import netCDF4
 
-    nc = netCDF4.Dataset(dem_file)
-    # find all matching ids in x direction
-    idx_x = np.searchsorted(nc["x"], xs)
+    def nearest_indices(axis_values: NDArray[np.float64], query_values: NDArray[np.float64]) -> NDArray[np.int64]:
+        """Return nearest-neighbor indices for query values on a monotonic axis."""
+        assert axis_values.size > 0, "Axis array is empty."
 
-    # find all matching ids in y direction
-    # nc['y'] is in reversed order. So finding the matches is a bit more complicated since np.searchsorted expects and
-    # array in ascending order sorter=reversed(...) allows us to find indices in an array with descending order
-    idx_y = np.searchsorted(nc["y"], ys, sorter=list(reversed(range(len(nc["y"])))))
-    idx_y *= -1  # we have invert the sign since indices of the reversed array are counted from the back
-    idx_y += -1
+        diffs = np.diff(axis_values)
+        is_ascending = np.all(diffs > 0)
+        is_descending = np.all(diffs < 0)
+        is_monotonic = is_ascending or is_descending
 
-    print(
-        f"{np.sum(abs(xs - nc['x'][idx_x][:]) > 10e-5)} of {len(idx_x)} x-coordinates have a significant mismatch."
-        " Surface value of a neighboring point will be used."
-    )
-    print(
-        f"{np.sum(abs(ys - nc['y'][idx_y][:]) > 10e-5)} of {len(idx_y)} y-coordinates have a significant mismatch."
-        " Surface value of a neighboring point will be used."
-    )
+        if not is_monotonic:
+            raise ValueError("Axis values must be strictly monotonic (strictly increasing or strictly decreasing).")
 
-    surf = nc["surface"][:]  # get numpy array
-    return surf[idx_y, idx_x]  # sample at given indexes and return
+        if is_descending:
+            # For searchsorted to work correctly, we need to reverse the axis values if they are descending.
+            axis_for_search = axis_values[::-1]
+        else:
+            axis_for_search = axis_values
+
+        n_axis = len(axis_for_search)
+        insert_pos = np.searchsorted(axis_for_search, query_values)
+
+        # Candidate neighbors around each insertion position.
+        left_pos = insert_pos - 1
+        right_pos = insert_pos
+        left_valid = left_pos >= 0
+        right_valid = right_pos < n_axis
+
+        # Create safe indices for array access, then invalidate out-of-range side via inf distance.
+        left_pos_safe = np.where(left_valid, left_pos, 0)
+        right_pos_safe = np.where(right_valid, right_pos, n_axis - 1)
+        left_dist = np.where(left_valid, np.abs(axis_for_search[left_pos_safe] - query_values), np.inf)
+        right_dist = np.where(right_valid, np.abs(axis_for_search[right_pos_safe] - query_values), np.inf)
+
+        choose_right = right_dist <= left_dist
+        nearest_pos = np.where(choose_right, right_pos_safe, left_pos_safe)
+
+        if is_descending:
+            # we reversed it for search, so we need to flip the indices back
+            nearest_pos = len(axis_values) - 1 - nearest_pos
+
+        return nearest_pos.astype(np.int64)
+
+    with netCDF4.Dataset(dem_file) as nc:
+        x_axis = np.asarray(nc["x"][:], dtype=np.float64)
+        y_axis = np.asarray(nc["y"][:], dtype=np.float64)
+
+        idx_x = nearest_indices(x_axis, xs)
+        idx_y = nearest_indices(y_axis, ys)
+
+        # Normalize absolute coordinate mismatch by typical axis spacing.
+        # This keeps diagnostics meaningful near x/y ~= 0.
+        x_spacing = np.median(np.abs(np.diff(x_axis)))
+        y_spacing = np.median(np.abs(np.diff(y_axis)))
+        x_spacing = max(x_spacing, np.finfo(np.float64).eps)
+        y_spacing = max(y_spacing, np.finfo(np.float64).eps)
+
+        normalized_error_tol = 0.5  # warn if nearest neighbor is more than 0.5 typical spacings away from query point
+        mismatch_x = np.abs(xs - x_axis[idx_x]) / x_spacing
+        mismatch_y = np.abs(ys - y_axis[idx_y]) / y_spacing
+
+        def print_axis_diagnostics(
+            axis_name: str,
+            axis_values: NDArray[np.float64],
+            queries: NDArray[np.float64],
+            matched_indices: NDArray[np.int64],
+            normalized_mismatch: NDArray[np.float64],
+            axis_spacing: float,
+            max_examples: int = 5,
+        ) -> None:
+            n_low = np.sum(queries < np.min(axis_values))
+            n_high = np.sum(queries > np.max(axis_values))
+
+            logger.info(
+                f"{axis_name} axis diagnostics:, "
+                f"axis_range=[{np.min(axis_values)}, {np.max(axis_values)}], "
+                f"query_range=[{np.min(queries)}, {np.max(queries)}], "
+                f"out_of_range={n_low + n_high} (low={n_low}, high={n_high}), "
+                f"typical_spacing={axis_spacing}."
+            )
+
+            q50, q90, q99 = np.quantile(normalized_mismatch, [0.5, 0.9, 0.99])
+            logger.info(
+                f"{axis_name} spacing-normalized mismatch quantiles: q50={q50}, q90={q90}, q99={q99}, "
+                f"max={np.max(normalized_mismatch)}."
+            )
+
+            worst_local = np.argsort(normalized_mismatch)[-max_examples:][::-1]
+            for rank, i in enumerate(worst_local, start=1):
+                matched_value = axis_values[matched_indices[i]]
+                abs_error = np.abs(queries[i] - matched_value)
+                norm_error = normalized_mismatch[i]
+                logger.info(
+                    f"{axis_name} worst#{rank}: query={queries[i]}, matched={matched_value}, "
+                    f"idx={matched_indices[i]}, "
+                    f"abs_err={abs_error}, norm_err={norm_error}."
+                )
+
+        if np.any(mismatch_x > normalized_error_tol):
+            logger.warning(
+                f"{np.sum(mismatch_x > normalized_error_tol)} of {len(idx_x)} x-coordinates do not match within "
+                "tolerance."
+            )
+            logger.warning(f"Maximum spacing-normalized mismatch: {np.max(mismatch_x)} in x.")
+            print_axis_diagnostics("x", x_axis, xs, idx_x, mismatch_x, x_spacing)
+
+        if np.any(mismatch_y > normalized_error_tol):
+            logger.warning(
+                f"{np.sum(mismatch_y > normalized_error_tol)} of {len(idx_y)} y-coordinates do not match within "
+                "tolerance."
+            )
+            logger.warning(f"Maximum spacing-normalized mismatch: {np.max(mismatch_y)} in y.")
+            print_axis_diagnostics("y", y_axis, ys, idx_y, mismatch_y, y_spacing)
+
+        surf = np.asarray(nc["surface"][:])
+        result = surf[idx_y, idx_x]
+
+    return result
 
 
 def read_matlab(

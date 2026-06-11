@@ -16,6 +16,10 @@ from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation
 
 from ebfm.coupling import Coupler
 
+from ebfm.core import logging
+
+logger = logging.getLogger(__name__)
+
 
 def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     """
@@ -32,6 +36,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     Returns:
         dict: Updated OUT dictionary containing energy balance results.
     """
+    logger.debug("Starting LOOP_EBM...")
     ###########################################################
     # SOLVE THE SURFACE ENERGY BALANCE
     ###########################################################

@@ -4,3 +4,6 @@
 
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Files tracked with git LFS
+examples/BedMachineGreenland-v5_lo.nc filter=lfs diff=lfs merge=lfs -text

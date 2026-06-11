@@ -6,8 +6,11 @@ from pathlib import Path
 from datetime import datetime
 import argparse
 from enum import Enum
+import numpy as np
 
 import ebfm.core
+import ebfm.core.comm
+
 from ebfm.core import (
     INIT,
     LOOP_general_functions,
@@ -22,8 +25,6 @@ from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValida
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
-
-from mpi4py import MPI
 
 # logger for this module
 logger: Logger
@@ -120,7 +121,96 @@ def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
     return active_coupling_args
 
 
-def main():
+# Arrays saved by --dump-reference
+_REFERENCE_KEYS = [
+    "smb",
+    "smb_cumulative",
+    "Tsurf",
+    "subT",
+    "subD",
+    "subZ",
+    "subW",
+    "subS",
+    "surfH",
+    "subTmean",
+    "runoff_irr",
+    "Dens_destr_metam",
+    "Dens_overb_pres",
+    "Dens_drift",
+    # reboot / restart state
+    "snowmass",
+    "ys",
+    "timelastsnow_netCDF",
+    "alb_snow",
+]
+
+
+def dump_reference(logger, OUT, filepath: str):
+    """Save key output arrays to a .npz file for later comparison."""
+    import numpy as np
+
+    data = {k: OUT[k] for k in _REFERENCE_KEYS if k in OUT}
+    missing = [k for k in _REFERENCE_KEYS if k not in OUT]
+    if missing:
+        logger.warning(f"[DUMP] Keys not found in OUT and will be skipped: {missing}")
+    np.savez(filepath, **data)
+    logger.info(f"[DUMP] Reference snapshot saved to '{filepath}' (keys: {list(data.keys())})")
+
+
+def print_diagnostics(logger, grid, OUT, t):
+    """Log key diagnostic values each timestep for performance and correctness analysis."""
+
+    gpsum = grid.get("gpsum", "N/A")
+    has_shading = grid.get("has_shading", False)
+    smb = OUT.get("smb")
+    smb_cum = OUT.get("smb_cumulative")
+
+    logger.info(f"[DIAG t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
+    if smb is not None:
+        logger.info(f"[DIAG t={t + 1}] smb:            min={smb.min():.4e}  max={smb.max():.4e}  mean={smb.mean():.4e}")
+    if smb_cum is not None:
+        logger.info(
+            f"[DIAG t={t + 1}] smb_cumulative: "
+            f"min={smb_cum.min():.4e}  "
+            f"max={smb_cum.max():.4e}  "
+            f"mean={smb_cum.mean():.4e}"
+        )
+
+
+def _compute_numba_threads(args, comm, parser, logger) -> int:
+    """Determine the number of Numba threads per MPI rank based on CLI args and system resources."""
+    import multiprocessing as _mp
+
+    cpu_count = _mp.cpu_count()
+    mpi_size = comm.size
+    suggested_max_threads = max(1, cpu_count // mpi_size)
+
+    n_threads = args.numba_threads if args.numba_threads is not None else 1
+
+    if args.numba_threads is None:
+        logger.info(
+            f"[NUMBA] --with-numba enabled. Using default threads per rank: {n_threads}. "
+            f"To increase, pass --numba-threads N (suggested max: {suggested_max_threads}; "
+            f"cpu_count={cpu_count}, MPI world size={mpi_size})."
+        )
+    else:
+        if n_threads < 1:
+            parser.error("--numba-threads must be >= 1")
+        if n_threads > suggested_max_threads:
+            parser.error(
+                f"[NUMBA] --numba-threads={n_threads} exceeds suggested max {suggested_max_threads} "
+                f"(cpu_count={cpu_count}, MPI world size={mpi_size}). "
+                f"--numba-threads must be between 1 and {suggested_max_threads} on this system. "
+            )
+        logger.info(
+            f"[NUMBA] --with-numba enabled. Threads per rank: {n_threads} "
+            f"(suggested max {suggested_max_threads}; cpu_count={cpu_count}, MPI world size={mpi_size})."
+        )
+
+    return n_threads
+
+
+def _main_impl():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument(
@@ -221,6 +311,13 @@ def main():
     parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
 
     parallel_group.add_argument(
+        "--local-group-label",
+        type=str,
+        default=argparse.SUPPRESS,
+        help="MPI group label for the local EBFM communicator. Defaults to --component-name.",
+    )
+
+    parallel_group.add_argument(
         "--is-partitioned-elmer-mesh",
         action="store_true",
         help="Indicate if the provided Elmer mesh is partitioned for parallel runs.",
@@ -229,7 +326,7 @@ def main():
     parallel_group.add_argument(
         "--use-part",
         type=int,
-        default=MPI.COMM_WORLD.rank + 1,
+        default=argparse.SUPPRESS,  # To not print (default: ...) in --help
         help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. "
         "If not provided, the MPI rank + 1 will be used as partition ID.",
     )
@@ -250,13 +347,81 @@ def main():
         help="If provided, log output will be written to the specified file (one file per MPI rank).",
     )
 
+    diag_group = parser.add_argument_group("diagnostics, reference snapshots, random seed")
+
+    diag_group.add_argument(
+        "--diagnostics",
+        action="store_true",
+        default=False,
+        help=(
+            "Log diagnostic info each timestep via the INFO logger: "
+            "gpsum, shading status, and smb / smb_cumulative statistics."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--dump-reference",
+        type=str,
+        default=None,
+        metavar="FILE",
+        help=(
+            "After the final timestep, save key output arrays "
+            "(see defined `_REFERENCE_KEYS`) to FILE as a NumPy .npz archive. "
+            "Use tools/compare_snapshots.py to diff two such files."
+        ),
+    )
+
+    diag_group.add_argument(
+        "--random-seed",
+        type=int,
+        default=None,
+        metavar="INT",
+        help=(
+            "Fix the NumPy random seed before the time loop. Required for reproducible "
+            "results when using random climate forcing (e.g. set_random_weather_data), "
+            "so that --dump-reference snapshots from two identical runs can be compared."
+        ),
+    )
+
+    performance_group = parser.add_argument_group("Performance and Numba configuration")
+
+    performance_group.add_argument(
+        "--numba-threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Number of Numba threads to use per MPI rank. "
+            "Requires numba; install via 'pip install ebfm[performance]'. "
+        ),
+    )
+
+    performance_group.add_argument(
+        "--with-numba",
+        action="store_true",
+        default=False,
+        help=("Enable the parallel Numba kernel. " "Requires numba; install via: pip install 'ebfm[performance]'. "),
+    )
+
     # Add args for features requiring 'import coupling'
     add_coupling_arguments(parser)
 
     args = parser.parse_args()
 
+    if not hasattr(args, "local_group_label"):
+        args.local_group_label = args.component_name
+
     if args.version:
         ebfm.core.print_version_and_exit()
+
+    # Bootstrap logging before communicator splitting so early diagnostics are available.
+    setup_logging(
+        stdout_log_level=log_levels_map[args.log_level_console],
+        file=args.log_file,
+        reset_handlers=True,
+    )
+    logger = getLogger(__name__)
+    logger.debug("Bootstrap logging initialized with MPI.COMM_WORLD.")
 
     # Validate that --elmer-mesh-crs-epsg is provided when using --elmer-mesh
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
@@ -266,15 +431,37 @@ def main():
     coupling_config = CouplingConfig(args)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
-    # TODO: replace MPI.COMM_WORLD with communicator from ebfm; either from couplers comm splitting or default comm
+    coupler_cls: type[ebfm.coupling.Coupler] = None
+
+    ebfm_comm, coupler_cls = ebfm.core.comm.do_comm_splitting(args.local_group_label, coupling_config)
+    # Reconfigure logging for (now available) EBFM communicator.
     setup_logging(
         stdout_log_level=log_levels_map[args.log_level_console],
         file=args.log_file,
-        comm=MPI.COMM_WORLD,
+        comm=ebfm_comm,
+        reset_handlers=True,
     )
+
+    if not hasattr(args, "use_part"):
+        # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
+        args.use_part = ebfm_comm.rank + 1
 
     logger = getLogger(__name__)
     logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
+
+    # Numba is opt-in: only activate when --with-numba is explicitly passed.
+    if args.with_numba:
+        from ebfm.core.compute_backend import is_numba_available, init_numba
+
+        if not is_numba_available():
+            parser.error("--with-numba: numba is not installed. " "Run: pip install 'ebfm[performance]'")
+
+        n_threads = _compute_numba_threads(args, ebfm_comm, parser, logger)
+        init_numba(n_threads)
+    else:
+        logger.info(
+            "Pass --with-numba to enable the parallel Numba kernels " "(requires: pip install 'ebfm[performance]')."
+        )
 
     logger.info("Done parsing command line arguments.")
     logger.debug("Parsed the following command line arguments:")
@@ -301,6 +488,10 @@ def main():
     # Model setup & initialization
     time = time_config.to_dict()
     grid, io, phys = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
+
+    if args.random_seed is not None:
+        np.random.seed(args.random_seed)
+        logger.info(f"[DIAG] NumPy random seed fixed to {args.random_seed} for reproducibility.")
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
@@ -333,7 +524,7 @@ def main():
             data_from_icon = icon_atmo.exchange(data_to_icon)
 
             logger.debug("Done.")
-            logger.debug("Received the following data from ICON:", data_from_icon)
+            logger.debug(f"Received the following data from ICON: {data_from_icon}")
 
             IN["P"] = data_from_icon["pr"]
             IN["snow"] = data_from_icon["pr_snow"]
@@ -356,8 +547,7 @@ def main():
             else:  # use fallback value
                 IN["Pres"] = _T0 + 101500.0
 
-        logger.info("EBFM main calculations")
-
+        # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
         # Run surface energy balance model
@@ -368,6 +558,9 @@ def main():
 
         # Calculate surface mass balance
         OUT = LOOP_mass_balance.main(OUT, IN, C)
+
+        if args.diagnostics:
+            print_diagnostics(logger, grid, OUT, t)
 
         if coupler.has_coupling_to("elmer_ice"):
             elmer_ice = coupler.get_component("elmer_ice")
@@ -382,7 +575,7 @@ def main():
             }
             data_from_elmer = elmer_ice.exchange(data_to_elmer)
             logger.debug("Done.")
-            logger.debug("Received the following data from Elmer/Ice:", data_from_elmer)
+            logger.debug(f"Received the following data from Elmer/Ice: {data_from_elmer}")
 
             IN["h"] = data_from_elmer["h"]
             OUT["h"] = IN["h"]
@@ -421,9 +614,25 @@ def main():
 
     logger.info("Time loop completed.")
 
+    if args.dump_reference:
+        dump_reference(logger, OUT, args.dump_reference)
+
     coupler.finalize()
 
     logger.info("Closing down EBFM.")
+
+
+def main():
+    try:
+        _main_impl()
+    except Exception as e:
+        logger = getLogger(__name__)
+        logger.exception("Fatal Error in EBFM")
+
+        if ebfm.core.comm.is_initialized():
+            ebfm.core.comm.abort()
+
+        raise e
 
 
 # Entry point for script execution

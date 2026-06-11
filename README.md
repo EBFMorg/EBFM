@@ -117,7 +117,7 @@ of the input x/y coordinates. EBFM uses this CRS to convert coordinates to lon/l
   Usage example:
 
   ```sh
-  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5.nc --elmer-mesh-crs-epsg 3413
+  ebfm --elmer-mesh examples/MESH --netcdf-mesh examples/BedMachineGreenland-v5_lo.nc --elmer-mesh-crs-epsg 3413
   ```
 
 Note that an Elmer mesh must be provided in a directory following the structure:
@@ -154,14 +154,24 @@ path/to/your/elmer/MESH
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
 ### Getting the example data
 
-The example inputs and datasets referenced above (e.g. `BedMachineGreenland-v5.nc` or `MESH`) can be obtained from the [TerraDT testcase repository](https://gitlab.dkrz.de/TerraDT/testcase). Please note that access to this repository may need to be requested, and you must have access to the Levante supercomputer at DKRZ.
+A reduced-resolution NetCDF file (`examples/BedMachineGreenland-v5_lo.nc`) is
+included directly in this repository and can be used as a drop-in for quick
+testing. See [`examples/README.md`](examples/README.md) for details on how it
+was derived from the original dataset.
 
-Once available, you can either copy or symlink the required files into the `examples/` directory of this repository, or point EBFM to their locations using the CLI arguments shown above.
+For the full-resolution dataset and the example Elmer mesh (`MESH`), refer to
+the [TerraDT testcase repository](https://gitlab.dkrz.de/TerraDT/testcase).
+Note that access to that repository may need to be requested and requires
+access to the Levante supercomputer at DKRZ.
+
+Once available, you can either copy or symlink the required files into the
+`examples/` directory of this repository, or point EBFM to their locations
+using the CLI arguments shown above.
 
 
 ### Using `reader.py` to prepare an Elmer mesh with elevation data
@@ -171,7 +181,7 @@ The helper script `reader.py` can be used to combine an existing Elmer mesh with
 Assuming the example data has been copied into the `examples/` directory as described above, you can run the following command from the repository root:
 
 ```sh
-python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --outpath examples/MESH_with_DEM
+python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5_lo.nc --outpath examples/MESH_with_DEM --elmer-mesh-crs-epsg 3413
 ```
 
 This will write the updated mesh to a new directory. The path `examples/MESH_with_DEM` should not already exist. The original `examples/MESH` directory is copied and left unchanged.
@@ -179,14 +189,91 @@ This will write the updated mesh to a new directory. The path `examples/MESH_wit
 Alternatively, you can modify the mesh directly in place, which overwrites `mesh.nodes`:
 
 ```sh
-python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5.nc --in-place
+python3 src/ebfm/reader.py examples/MESH examples/BedMachineGreenland-v5_lo.nc --in-place --elmer-mesh-crs-epsg 3413
 ```
 
 The resulting mesh can then be used directly with EBFM similar to the example with the MATLAB file from above:
 
 ```sh
-ebfm --elmer-mesh examples/MESH_with_DEM
+ebfm --elmer-mesh examples/MESH_with_DEM --elmer-mesh-crs-epsg 3413
 ```
+
+### Performance and Profiling Runs
+
+#### Installation for Performance Runs
+
+Install this branch with the performance dependencies:
+
+```sh
+pip install -e .[performance]
+```
+
+This additionally installs `numba` to run with multiple CPU-threads.
+
+#### Running EBFM with performance optimiuations
+
+EBFM now includes several performance improvements and supports several options for performance testing and benchmarking:
+
+- Regular (NumPy) path:
+
+  The default run already includes some performance improvements. Run as usual:
+
+  ```sh
+  ebfm --matlab-mesh examples/dem_and_mask.mat
+  ```
+
+- Numba kernels:
+
+  To enable Numba-accelerated kernels, use the `--with-numba` flag. You can control the number of threads with `--numba-threads N` (replace `N` with the desired thread count):
+
+  ```sh
+  ebfm --matlab-mesh examples/dem_and_mask.mat --with-numba --numba-threads 2
+  ```
+
+  Note: If you use more than one thread, you must specify `--numba-threads`. In practice, 2 threads have shown the best performance so far, but optimal settings depend on your hardware and problem size. Feel free to experiment.
+
+
+#### Timing Your Run
+
+To measure the total runtime, simply prepend your command with `time`:
+
+```sh
+time ebfm --matlab-mesh examples/dem_and_mask.mat --with-numba --numba-threads 2
+```
+
+#### Comparing Results
+
+A new script is provided to compare model output snapshots:
+
+- `tools/compare_snapshots.py` can be used to compare two output files (e.g., from different runs or configurations).
+
+To create a reference file for comparison, use the `--dump-reference` option at the end of your run:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat --dump-reference reference_run.npz
+```
+
+Then compare with:
+
+```sh
+python tools/compare_snapshots.py reference_run.npz new_run.npz
+```
+
+Note: If you use the random-forcing within EBFM in your testcases, make sure to additionally set the option `--random-seed`, as explained below.
+
+#### Diagnostics and Reproducibility
+
+- The option `--random-seed` was introduced to allow reproducible runs (especially if the random forcing in the example testcase is used). Set a fixed seed to ensure identical results for repeated runs (important for benchmarking and debugging):
+
+  ```sh
+  ebfm --matlab-mesh examples/dem_and_mask.mat --random-seed 42
+  ```
+
+- Use `--diagnostics` to print some diagnostics for a quick overview for every timestep:
+
+  ```sh
+  ebfm --matlab-mesh examples/dem_and_mask.mat --diagnostics
+  ```
 
 ### Coupled simulation
 
