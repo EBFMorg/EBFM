@@ -43,6 +43,7 @@ class ElmerIce(Component):
                     name="smb",
                     coupled_component=self,
                     timestep=timestep,
+                    metadata="Surface mass balance",
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 Field(
