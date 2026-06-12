@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Rename "h" received from Elmer to "surface_elevation". https://github.com/EBFMorg/EBFM/pull/124.
 * Coupler `put`/`get` operations now log a warning if coupler returns non-zero error code to investigate unexpected behavior, instead of silently ignoring it. Warning is intentionally non-fatal, because error may be transient or coupler-specific.
 * Revise helper script `reader.py`. https://github.com/EBFMorg/EBFM/pull/119.
 * Add reduced-size BedMachine Greenland NetCDF example (`examples/BedMachineGreenland-v5_lo.nc`) and two utility scripts under `tools/`: `nc_reduce_size.py` to produce smaller NetCDF copies (field selection and grid subsampling), and `nc_2_vtk.py` to convert NetCDF fields to VTK for visualisation in ParaView. https://github.com/EBFMorg/EBFM/pull/123.
