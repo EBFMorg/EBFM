@@ -76,7 +76,11 @@ class Component(ABC):
                 field_name in data_to_exchange
             ), f"Field '{field_name}' is missing in data_to_exchange for component '{self.name}'."
             logger.debug(f"Putting data for field '{field_name}' to coupler: {data_to_exchange[field_name]}")
-            self._coupler.put(self.name, field_name, transform(data_to_exchange[field_name]))
+            err = self._coupler.put(self.name, field_name, transform(data_to_exchange[field_name]))
+            if err:
+                logger.warning(
+                    f"Put for {field_name=} returned error code ({err=}). Please report this to the developers."
+                )
 
     def _get_if_coupled(self, field_name: str, transform: Callable = identity) -> np.ndarray | None:
         """
@@ -91,6 +95,10 @@ class Component(ABC):
         if self._coupler.has_field(self.name, field_name, ExchangeType.TARGET):
             data, err = self._coupler.get(self.name, field_name)
             logger.debug(f"Received data for field '{field_name}' from coupler: {data}")
+            if err:
+                logger.warning(
+                    f"Get for {field_name=} returned error code ({err=}). Please report this to the developers."
+                )
             assert data is not None, f"Received data for field '{field_name}' is None. {err}"
             return transform(data)
         return None
