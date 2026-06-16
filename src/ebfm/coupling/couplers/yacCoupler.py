@@ -50,6 +50,9 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             logging.debug(f"YAC uses the following comm from EBFM's mpi-handshake: {yac_group_label}: {coupling_comm}.")
             self.interface = yac.YAC(comm=coupling_comm)
 
+        self.interface.def_starttime(coupling_config.start_time)
+        self.interface.def_endtime(coupling_config.end_time)
+
         if coupling_config.coupler_config:
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
 

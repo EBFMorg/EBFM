@@ -427,8 +427,10 @@ def _main_impl():
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
 
+    time_config = TimeConfig(args)
+
     active_coupling_features = extract_active_coupling_features(args)
-    coupling_config = CouplingConfig(args)
+    coupling_config = CouplingConfig(args, time_config)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
     coupler_cls: type[ebfm.coupling.Coupler] = None
@@ -480,8 +482,6 @@ def _main_impl():
             "Shading routine not implemented for coupled runs. "
             "Please deactivate shading via --no-shading or deactivate coupling."
         )
-
-    time_config = TimeConfig(args)
 
     logger.debug("Successfully completed consistency checks.")
 
