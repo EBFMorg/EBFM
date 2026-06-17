@@ -33,6 +33,8 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         yac_performs_mpi_handshake = not coupling_config.has_group_communicators()
 
+        yac.def_calendar(yac.Calendar.PROLEPTIC_GREGORIAN)  # work with hard-coded default for now
+
         if yac_performs_mpi_handshake:
             # MPI handshake has not been performed yet, so YAC will perform the splitting
             self.interface = yac.YAC()
@@ -50,6 +52,8 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             logging.debug(f"YAC uses the following comm from EBFM's mpi-handshake: {yac_group_label}: {coupling_comm}.")
             self.interface = yac.YAC(comm=coupling_comm)
 
+        # candidate for abstract function in Coupler base class?
+        # self.initialize_time_frame(coupling_config.start_time, coupling_config.end_time)
         self.interface.def_datetime(coupling_config.start_time, coupling_config.end_time)
 
         if coupling_config.coupler_config:
