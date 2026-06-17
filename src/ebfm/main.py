@@ -28,6 +28,8 @@ import ebfm.coupling
 
 # logger for this module
 logger: Logger
+# dedicated logger for diagnostic output (--print-diagnostics)
+diag_logger = getLogger("ebfm.diagnostics")
 
 
 class CliDefaults(Enum):
@@ -145,6 +147,11 @@ _REFERENCE_KEYS = [
 ]
 
 
+def _format_stats(arr: np.ndarray) -> str:
+    """Format min/max/mean statistics of an array for diagnostic log output."""
+    return f"min={arr.min():.4e}  max={arr.max():.4e}  mean={arr.mean():.4e}"
+
+
 def dump_reference(logger, OUT, filepath: str):
     """Save key output arrays to a .npz file for later comparison."""
     import numpy as np
@@ -157,7 +164,7 @@ def dump_reference(logger, OUT, filepath: str):
     logger.info(f"[DUMP] Reference snapshot saved to '{filepath}' (keys: {list(data.keys())})")
 
 
-def print_diagnostics(logger, grid, OUT, t):
+def print_diagnostics(grid, OUT, t):
     """Log key diagnostic values each timestep for performance and correctness analysis."""
 
     gpsum = grid.get("gpsum", "N/A")
@@ -165,16 +172,11 @@ def print_diagnostics(logger, grid, OUT, t):
     smb = OUT.get("smb")
     smb_cum = OUT.get("smb_cumulative")
 
-    logger.info(f"[DIAG t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
+    diag_logger.info(f"[t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
     if smb is not None:
-        logger.info(f"[DIAG t={t + 1}] smb:            min={smb.min():.4e}  max={smb.max():.4e}  mean={smb.mean():.4e}")
+        diag_logger.info(f"[t={t + 1}] smb:            {_format_stats(smb)}")
     if smb_cum is not None:
-        logger.info(
-            f"[DIAG t={t + 1}] smb_cumulative: "
-            f"min={smb_cum.min():.4e}  "
-            f"max={smb_cum.max():.4e}  "
-            f"mean={smb_cum.mean():.4e}"
-        )
+        diag_logger.info(f"[t={t + 1}] smb_cumulative: {_format_stats(smb_cum)}")
 
 
 def _compute_numba_threads(args, comm, parser, logger) -> int:
@@ -347,10 +349,10 @@ def _main_impl():
         help="If provided, log output will be written to the specified file (one file per MPI rank).",
     )
 
-    diag_group = parser.add_argument_group("diagnostics, reference snapshots, random seed")
+    diagnostics_group = parser.add_argument_group("diagnostics, reference snapshots, random seed")
 
-    diag_group.add_argument(
-        "--diagnostics",
+    diagnostics_group.add_argument(
+        "--print-diagnostics",
         action="store_true",
         default=False,
         help=(
@@ -359,7 +361,7 @@ def _main_impl():
         ),
     )
 
-    diag_group.add_argument(
+    diagnostics_group.add_argument(
         "--dump-reference",
         type=str,
         default=None,
@@ -371,7 +373,7 @@ def _main_impl():
         ),
     )
 
-    diag_group.add_argument(
+    diagnostics_group.add_argument(
         "--random-seed",
         type=int,
         default=None,
@@ -491,7 +493,7 @@ def _main_impl():
 
     if args.random_seed is not None:
         np.random.seed(args.random_seed)
-        logger.info(f"[DIAG] NumPy random seed fixed to {args.random_seed} for reproducibility.")
+        logger.info(f"NumPy random seed fixed to {args.random_seed} for reproducibility.")
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
@@ -559,8 +561,8 @@ def _main_impl():
         # Calculate surface mass balance
         OUT = LOOP_mass_balance.main(OUT, IN, C)
 
-        if args.diagnostics:
-            print_diagnostics(logger, grid, OUT, t)
+        if args.print_diagnostics:
+            print_diagnostics(grid, OUT, t)
 
         if coupler.has_coupling_to("elmer_ice"):
             elmer_ice = coupler.get_component("elmer_ice")

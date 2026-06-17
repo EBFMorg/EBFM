@@ -417,6 +417,7 @@ def main(C, OUT, IN, dt, grid, phys):
         c_eff = OUT["subD"] * (152.2 + 7.122 * OUT["subT"])  # Effective heat capacity
 
         # Stability time step (CFL condition)
+        # Layer 0: surface ghost layer, excluded from CFL condition
         dt_stab = (
             0.5
             * np.min(c_eff[:, 1:], axis=1)
@@ -427,11 +428,14 @@ def main(C, OUT, IN, dt, grid, phys):
 
         # subZ and c_eff do not change
         # Precompute kk*subZ products once
+        # kk_sz_top: conductivity-thickness product for the top interface
+        # kk_sz_interior: same for all interior interfaces
         kk_sz_top = kk[:, 0] * OUT["subZ"][:, 0] + 0.5 * kk[:, 1] * OUT["subZ"][:, 1]
-        kk_sz_mid = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
+        kk_sz_interior = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
 
         # Precompute full temperature-update denominators once
-        denom_l1 = c_eff[:, 1] * (0.5 * OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1] + 0.25 * OUT["subZ"][:, 2])
+        # denom_layer1: first active layer (layer 0: surface ghost layer overwritten from Tsurf)
+        denom_layer1 = c_eff[:, 1] * (0.5 * OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1] + 0.25 * OUT["subZ"][:, 2])
         denom_interior = c_eff[:, 2:-1] * (
             0.25 * OUT["subZ"][:, 1:-2] + 0.5 * OUT["subZ"][:, 2:-1] + 0.25 * OUT["subZ"][:, 3:]
         )
@@ -444,10 +448,10 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subT"],
                 OUT["Tsurf"],
                 kk_sz_top,
-                kk_sz_mid,
+                kk_sz_interior,
                 dz1,
                 dz2,
-                denom_l1,
+                denom_layer1,
                 denom_interior,
                 denom_bottom,
                 dt_stab,
@@ -478,12 +482,12 @@ def main(C, OUT, IN, dt, grid, phys):
                     break
                 # Calculate vertical heat fluxes
                 kdTdz[idx, 1] = kk_sz_top[idx] * (T_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
-                kdTdz[idx, 2:] = kk_sz_mid[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
+                kdTdz[idx, 2:] = kk_sz_interior[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
 
                 # Update layer-wise temperatures
                 C_day_dt = C["dayseconds"] * dt_temp[idx]
 
-                T_new[idx, 1] = T_old[idx, 1] + C_day_dt * (kdTdz[idx, 2] - kdTdz[idx, 1]) / denom_l1[idx]
+                T_new[idx, 1] = T_old[idx, 1] + C_day_dt * (kdTdz[idx, 2] - kdTdz[idx, 1]) / denom_layer1[idx]
 
                 T_new[idx, 2:-1] = (
                     T_old[idx, 2:-1]
