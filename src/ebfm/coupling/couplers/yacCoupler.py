@@ -13,6 +13,8 @@ from .base import Coupler, Grid, GridDict, CouplingConfig, CouplerErrorCode
 from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
 from ebfm.coupling.fields import YACField
 
+from ebfm.core.config import Calendar
+
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
 logger = logging.getLogger(__name__)
@@ -33,7 +35,18 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         yac_performs_mpi_handshake = not coupling_config.has_group_communicators()
 
-        yac.def_calendar(yac.Calendar.PROLEPTIC_GREGORIAN)  # work with hard-coded default for now
+        match coupling_config.time_config.calendar:
+            case Calendar.PROLEPTIC_GREGORIAN:
+                yac.def_calendar(yac.Calendar.PROLEPTIC_GREGORIAN)
+            case Calendar.YEAR_OF_365_DAYS:
+                yac.def_calendar(yac.Calendar.YEAR_OF_365_DAYS)
+            case Calendar.YEAR_OF_360_DAYS:
+                yac.def_calendar(yac.Calendar.YEAR_OF_360_DAYS)
+            case _:
+                raise ValueError(
+                    f"Unsupported calendar '{coupling_config.time_config.calendar}'. Supported calendars are: "
+                    f"{[c.value for c in yac.Calendar]}"
+                )
 
         if yac_performs_mpi_handshake:
             # MPI handshake has not been performed yet, so YAC will perform the splitting

@@ -12,7 +12,17 @@ from ..constants import SECONDS_PER_DAY
 
 import logging
 
+from enum import Enum
+
 logger = logging.getLogger(__name__)
+
+
+class Calendar(Enum):
+    """Enumeration of supported calendar types for time handling."""
+
+    PROLEPTIC_GREGORIAN = "proleptic_gregorian"
+    YEAR_OF_365_DAYS = "year_of_365_days"
+    YEAR_OF_360_DAYS = "year_of_360_days"
 
 
 class TimeConfig:
@@ -29,6 +39,7 @@ class TimeConfig:
     end_time: datetime  # End time of the simulation (i.e., time at the end of the last time step)
     time_step: timedelta  # Time step of the simulation
     dT_UTC: int  # Time difference relative to UTC in hours
+    calendar: Calendar  # Calendar type for time handling
 
     def __init__(self, args: Namespace):
         """
@@ -56,6 +67,14 @@ class TimeConfig:
             )
 
         self.dT_UTC = 1  # Time difference relative to UTC in hours (hard-coded for now)
+
+        self.calendar = Calendar(args.calendar)
+
+        if self.calendar is not Calendar.PROLEPTIC_GREGORIAN:
+            logger.warning(
+                f"Using calendar {self.calendar.value}. Note that support for non-proleptic-gregorian calendars is "
+                f"experimental and may lead to unexpected behavior."
+            )
 
     def tn(self) -> int:
         """Calculate the number of time steps.

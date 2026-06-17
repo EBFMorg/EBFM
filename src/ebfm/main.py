@@ -21,7 +21,7 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.grid import GridInputType
-from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel, Calendar
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
@@ -37,6 +37,7 @@ class CliDefaults(Enum):
     TIME_STEP_SIZE_IN_DAYS = 0.125  # = 0.125 days = 3 hours
     LOG_LEVEL_CONSOLE = "INFO"
     COMPONENT_NAME = "ebfm"
+    CALENDAR = Calendar.PROLEPTIC_GREGORIAN.value
 
     @classmethod
     def default_time_step_size_in_hours(cls) -> float:
@@ -306,6 +307,13 @@ def _main_impl():
         f"{CliDefaults.default_time_step_size_in_hours()} hours. Note: The difference between --end-time and "
         "--start-time must be divisible by --time-step.",
         default=CliDefaults.TIME_STEP_SIZE_IN_DAYS.value,
+    )
+
+    time_group.add_argument(
+        "--calendar",
+        type=str,
+        help=f"Calendar type for time handling. Supported values: {[cal.value for cal in Calendar]}.",
+        default=CliDefaults.CALENDAR.value,
     )
 
     parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
