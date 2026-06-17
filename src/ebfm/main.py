@@ -29,7 +29,7 @@ import ebfm.coupling
 # logger for this module
 logger: Logger
 # dedicated logger for diagnostic output (--print-diagnostics)
-diag_logger = getLogger("ebfm.diagnostics")
+diagnostics_logger = getLogger("ebfm.diagnostics")
 
 
 class CliDefaults(Enum):
@@ -172,11 +172,11 @@ def print_diagnostics(grid, OUT, t):
     smb = OUT.get("smb")
     smb_cum = OUT.get("smb_cumulative")
 
-    diag_logger.info(f"[t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
+    diagnostics_logger.info(f"[t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
     if smb is not None:
-        diag_logger.info(f"[t={t + 1}] smb:            {_format_stats(smb)}")
+        diagnostics_logger.info(f"[t={t + 1}] smb:            {_format_stats(smb)}")
     if smb_cum is not None:
-        diag_logger.info(f"[t={t + 1}] smb_cumulative: {_format_stats(smb_cum)}")
+        diagnostics_logger.info(f"[t={t + 1}] smb_cumulative: {_format_stats(smb_cum)}")
 
 
 def _compute_numba_threads(args, comm, parser, logger) -> int:
