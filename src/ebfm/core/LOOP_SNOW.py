@@ -17,6 +17,8 @@ except NameError:
 
 from ebfm.core import logging
 
+_SUCCESS = True
+
 logger = logging.getLogger(__name__)
 
 
@@ -128,7 +130,7 @@ def main(C, OUT, IN, dt, grid, phys):
             # Update runoff for shifted layers
             OUT["runoff_irr_deep"][is_shift] += subW_old[is_shift, nl - 1]
 
-        return True
+        return _SUCCESS
 
     def melt_sublimation():
         """
@@ -204,7 +206,7 @@ def main(C, OUT, IN, dt, grid, phys):
                     OUT["subZ"][idx, nl - 1] = grid["max_subZ"]
                 OUT["subD"][idx, nl - 1] = subD_old[idx, nl - 1]
 
-        return True
+        return _SUCCESS
 
     @profile
     def compaction():
@@ -404,7 +406,7 @@ def main(C, OUT, IN, dt, grid, phys):
             OUT["surfH"] += shift
             OUT["runoff_irr"] = OUT["sumWinit"] - np.sum(OUT["subW"], axis=1)
 
-        return True
+        return _SUCCESS
 
     @profile
     def heat_conduction():
@@ -517,7 +519,7 @@ def main(C, OUT, IN, dt, grid, phys):
         OUT["subCeff"] = c_eff
         OUT["subK"] = kk
 
-        return True
+        return _SUCCESS
 
     @profile
     def percolation_refreezing_and_storage():
@@ -764,14 +766,14 @@ def main(C, OUT, IN, dt, grid, phys):
             OUT["slushw"] = np.sum(OUT["subS"], axis=1)  # Total stored slush water
             OUT["irrw"] = np.sum(OUT["subW"], axis=1)  # Total stored irreducible water
 
-        return True
+        return _SUCCESS
 
     def layer_merging_and_splitting():
         """
         Layer merging and splitting
         """
         if not grid["doubledepth"]:
-            return True
+            return _SUCCESS
 
         # Precompute constants / reuse lookups
         max_subZ = grid["max_subZ"]
@@ -878,7 +880,7 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["runoff_irr_deep"][idx_split] += subW_old[idx_split, -1]
                 OUT["runoff_slush"][idx_split] += subS_old[idx_split, -1]
 
-        return True
+        return _SUCCESS
 
     def runoff():
         ###########################################
@@ -907,7 +909,7 @@ def main(C, OUT, IN, dt, grid, phys):
         # Irreducible water runoff below the base of the domain [in meters water equivalent per timestep]
         OUT["runoff_irr_deep"] = 1e-3 * OUT["runoff_irr_deep_mean"]
 
-        return True
+        return _SUCCESS
 
     snowfall_and_deposition()
     melt_sublimation()
