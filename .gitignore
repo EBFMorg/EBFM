@@ -10,3 +10,13 @@ Output/*.nc
 Reboot/*.nc
 .coverage
 .tox
+examples/1990_1_forcing_vectorized.nc
+examples/1990_2_forcing_vectorized.nc
+examples/preprocess_greenland_forcing_files.py
+examples/add_mask_field_to_greenland_grid.py
+.idea/EBFM_with_YAC.iml
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/misc.xml
+.idea/vcs.xml
+.idea/workspace.xml
+examples/download_CARRA2.py
