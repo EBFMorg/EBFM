@@ -78,6 +78,14 @@ After installation, a basic, uncoupled simulation can be run with the following 
 ebfm --matlab-mesh examples/dem_and_mask.mat
 ```
 
+A more advanced case can be run via
+
+```sh
+ebfm --greenland-mesh examples/Greenland_grid.nc --start-time "01-Jan-1990 00:00" --end-time "31-Dec-1990 00:00"
+```
+
+Note: Please download [`1990_1_forcing_vectorized.nc`](https://drive.google.com/file/d/13pIjbIljL4LUPuOtBm0ArX23NCwgLhOZ/view?usp=sharing) and [`1990_2_forcing_vectorized.nc`](https://drive.google.com/file/d/13tVXkXDA1Nhf_X-IK9qE_hEwIv1wme9x/view?usp=sharing) and put these files into the `examples` folder before running the case.
+
 ### Mesh data
 
 The arguments `--matlab-mesh` and `--elmer-mesh` allow to provide different kinds of mesh data.
