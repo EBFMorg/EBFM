@@ -167,10 +167,10 @@ def _heat_conduction_kernel(
     subT,  # (gpsum, nl) Output array, updated in-place
     Tsurf,  # (gpsum,)
     kk_sz_top,  # (gpsum,)
-    kk_sz_mid,  # (gpsum, nl-2)
+    kk_sz_interior,  # (gpsum, nl-2)
     dz1,  # (gpsum,)
     dz2,  # (gpsum, nl-2)
-    denom_l1,  # (gpsum,)
+    denom_layer1,  # (gpsum,)
     denom_interior,  # (gpsum, nl-3)
     denom_bottom,  # (gpsum,)
     dt_stab,  # (gpsum,)
@@ -206,10 +206,10 @@ def _heat_conduction_kernel(
             # ---- Step 1: freeze all fluxes from current T_loc ----
             kdTdz[1] = kk_sz_top[i] * (T_loc[1] - Tsurf[i]) / dz1[i]
             for k in range(2, nl):
-                kdTdz[k] = kk_sz_mid[i, k - 2] * (T_loc[k] - T_loc[k - 1]) / dz2[i, k - 2]
+                kdTdz[k] = kk_sz_interior[i, k - 2] * (T_loc[k] - T_loc[k - 1]) / dz2[i, k - 2]
 
             # ---- Step 2: update T_loc in-place (kdTdz is now frozen) ----
-            T_loc[1] += C_day_dt * (kdTdz[2] - kdTdz[1]) / denom_l1[i]
+            T_loc[1] += C_day_dt * (kdTdz[2] - kdTdz[1]) / denom_layer1[i]
             for k in range(2, nl - 1):
                 T_loc[k] += C_day_dt * (kdTdz[k + 1] - kdTdz[k]) / denom_interior[i, k - 2]
             T_loc[nl - 1] += C_day_dt * (geothermal_flux - kdTdz[nl - 1]) / denom_bottom[i]
