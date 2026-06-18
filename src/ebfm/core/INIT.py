@@ -411,7 +411,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         # loop over the azimuth angles to determine gridded maximum grid angles per angle
         grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
         for n in range(grid["nr_az_steps"]):
-            print(n)
             az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
 
             # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
@@ -423,7 +422,8 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
             count = 1
             active = np.ones(grid["gpsum"], dtype=bool)
-            while active.any():
+
+            while active.any() and count * grid["dx"] < 5e4:
                 j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
                 i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
 
@@ -436,7 +436,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
                 max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle when needed
 
                 active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
-
                 count += 1
 
             # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
@@ -538,52 +537,78 @@ def read_MATLAB_grid(gridfile: Path):
 
 def read_GREENLAND_grid(gridfile: Path):
     """
-    Provides grid information by reading from a NetCDF file.
+    Provides Greenland grid information by reading from an updated Greenland_grid.nc file.
 
     Parameters:
-        gridfile: Path to the NetCDF file containing grid data.
+        gridfile: Path to Greenland_grid.nc.
 
     Returns:
         dict: A dictionary named `input_data` containing:
             - 'x': 2D NumPy array of UTM zone 24N easting coordinates (m).
             - 'y': 2D NumPy array of UTM zone 24N northing coordinates (m).
-            - 'z': 2D NumPy array of orography/elevation from the 'orog' field.
-            - 'mask': 2D NumPy array of glacier mask. Currently all finite `orog` cells are treated as glacier cells.
-            - 'lon': 2D NumPy array of longitude coordinates.
+            - 'z': 2D NumPy array of orography/elevation.
+            - 'mask': 2D NumPy array of fractional glacier mask values.
+            - 'lon': 2D NumPy array of longitude coordinates in degrees East.
             - 'lat': 2D NumPy array of latitude coordinates.
     """
 
-    logger.info("EBFM: Reading grid data from NetCDF file...")
+    logger.info("EBFM: Reading Greenland grid data from NetCDF file...")
     input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
 
     try:
         with Dataset(gridfile, "r") as ncfile:
-            orog = np.asarray(ncfile.variables["orog"][:])
+            if "orography" in ncfile.variables:
+                raw_orography = ncfile.variables["orography"][:]
+            elif "orog" in ncfile.variables:
+                raw_orography = ncfile.variables["orog"][:]
+            else:
+                raise KeyError("Neither `orography` nor `orog` found in Greenland grid file.")
+
+            if "mask" not in ncfile.variables:
+                raise KeyError("Missing `mask` in Greenland grid file.")
+
+            raw_mask = ncfile.variables["mask"][:]
             latitude = np.asarray(ncfile.variables["latitude"][:])
             longitude = np.asarray(ncfile.variables["longitude"][:])
 
-            orog = np.squeeze(orog)
+            orography = np.asarray(raw_orography)
+            mask = np.asarray(raw_mask, dtype=np.float32)
+
+            orography = np.squeeze(orography)
+            mask = np.squeeze(mask)
             latitude = np.squeeze(latitude)
             longitude = np.squeeze(longitude)
+
+            if np.ma.isMaskedArray(raw_orography):
+                valid_orography = ~np.squeeze(np.ma.getmaskarray(raw_orography))
+            else:
+                valid_orography = np.isfinite(orography)
 
             if latitude.ndim == 1 and longitude.ndim == 1:
                 longitude, latitude = np.meshgrid(longitude, latitude)
 
-            if orog.shape != latitude.shape or orog.shape != longitude.shape:
+            if orography.shape != mask.shape or orography.shape != latitude.shape or orography.shape != longitude.shape:
                 raise ValueError(
-                    "`orog`, `latitude`, and `longitude` must have matching 2D shapes. "
-                    f"Got orog={orog.shape}, latitude={latitude.shape}, longitude={longitude.shape}."
+                    "`orography`/`orog`, `mask`, `latitude`, and `longitude` must have matching 2D shapes. "
+                    f"Got orography={orography.shape}, mask={mask.shape}, "
+                    f"latitude={latitude.shape}, longitude={longitude.shape}."
                 )
+
+            mask = np.where(valid_orography & (mask > 0.0), 1.0, 0.0).astype(np.float32)
+            longitude = np.mod(longitude, 360.0)
+
+            if not np.any(mask > 0.0):
+                raise ValueError("Greenland mask contains no active cells with `mask > 0`.")
 
             lonlat_to_utm24n = Transformer.from_crs("EPSG:4326", "EPSG:32624", always_xy=True)
             x, y = lonlat_to_utm24n.transform(longitude, latitude)
 
             input_data["x"] = x
             input_data["y"] = y
-            input_data["z"] = orog
+            input_data["z"] = orography
             input_data["lat"] = latitude
             input_data["lon"] = longitude
-            input_data["mask"] = (orog >= 10).astype(int)
+            input_data["mask"] = mask
 
     except FileNotFoundError:
         logger.info(f"File not found: {gridfile}")
