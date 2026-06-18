@@ -436,7 +436,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
                 max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle when needed
 
                 active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
-
                 count += 1
 
             # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
