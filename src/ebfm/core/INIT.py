@@ -286,35 +286,58 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-    elif config.grid_type is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
+    elif config.grid_type is GridInputType.MATLAB or GridInputType.GREENLAND:  # Read grid and elevations from a file
         # ---------------------------------------------------------------------
         # Read and process grid information
         # ---------------------------------------------------------------------
         # Read grid data
-        input_data = read_MATLAB_grid(config.mesh_file)
-        grid["x_2D"] = input_data["x"][0][0]
-        grid["y_2D"] = input_data["y"][0][0]
-        grid["z_2D"] = input_data["z"][0][0]
-        mask_2D = input_data["mask"][0][0]
+        if config.grid_type is GridInputType.MATLAB:
+            input_data = read_MATLAB_grid(config.mesh_file)
+
+            grid["x_2D"] = input_data["x"][0][0]
+            grid["y_2D"] = input_data["y"][0][0]
+            grid["z_2D"] = input_data["z"][0][0]
+            mask_2D = input_data["mask"][0][0]
+
+            # Flip grid E-W or N-S when needed
+            fy, _ = np.gradient(grid["y_2D"])
+
+            if fy[0, 0] < 0:
+                grid["x_2D"] = np.flipud(grid["x_2D"])
+                grid["y_2D"] = np.flipud(grid["y_2D"])
+                grid["z_2D"] = np.flipud(grid["z_2D"])
+                mask_2D = np.flipud(mask_2D)
+
+            _, fx = np.gradient(grid["x_2D"])
+            if fx[0, 0] < 0:
+                grid["x_2D"] = np.fliplr(grid["x_2D"])
+                grid["y_2D"] = np.fliplr(grid["y_2D"])
+                grid["z_2D"] = np.fliplr(grid["z_2D"])
+                mask_2D = np.fliplr(mask_2D)
+
+            # Calculate latitude & longitude fields (from the original UTM coordinates)
+            utmzone = grid["utmzone"]  # Assume this is already part of the grid
+            utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + utmzone}", "EPSG:4326", always_xy=True)
+            x_coords = grid["x_2D"].ravel()
+            y_coords = grid["y_2D"].ravel()
+            lon, lat = utm_to_latlon.transform(x_coords, y_coords)
+
+            # Reshape to 2D arrays matching the input's shape
+            grid["lon_2D"] = lon.reshape(grid["x_2D"].shape)
+            grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
+
+        else:
+            input_data = read_GREENLAND_grid(config.mesh_file)
+
+            grid["x_2D"] = input_data["x"]
+            grid["y_2D"] = input_data["y"]
+            grid["z_2D"] = input_data["z"]
+            mask_2D = input_data["mask"]
+            grid["lon_2D"] = input_data["lon"]
+            grid["lat_2D"] = input_data["lat"]
 
         # Determine domain extent
         grid["Lx"], grid["Ly"] = grid["x_2D"].shape
-
-        # Flip grid E-W or N-S when needed
-        fy, _ = np.gradient(grid["y_2D"])
-
-        if fy[0, 0] < 0:
-            grid["x_2D"] = np.flipud(grid["x_2D"])
-            grid["y_2D"] = np.flipud(grid["y_2D"])
-            grid["z_2D"] = np.flipud(grid["z_2D"])
-            mask_2D = np.flipud(mask_2D)
-
-        _, fx = np.gradient(grid["x_2D"])
-        if fx[0, 0] < 0:
-            grid["x_2D"] = np.fliplr(grid["x_2D"])
-            grid["y_2D"] = np.fliplr(grid["y_2D"])
-            grid["z_2D"] = np.fliplr(grid["z_2D"])
-            mask_2D = np.fliplr(mask_2D)
 
         # Calculate grid spacing
         grid["dx"] = grid["x_2D"][0][1] - grid["x_2D"][0][0]
@@ -385,74 +408,52 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
         # -----------------------------------------------------------------------------------------------------
-        # Skip the (expensive) look-up table when shading is disabled.
-        if grid["has_shading"]:
-            _precompute_shading_matlab(grid, mask_2D)
+        grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
+        grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
 
-        # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
-    else:
-        raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
+        # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
+        grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
 
-    return grid
+        xl, yl = grid["x_2D"].shape
 
         # loop over the azimuth angles to determine gridded maximum grid angles per angle
         grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
         for n in range(grid["nr_az_steps"]):
             az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
 
-def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
-    """Pre-compute the shading look-up table of a MATLAB grid.
+            # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
+            ddx, ddy = calculate_step_sizes(az)
 
-    For every azimuth angle, walk outwards from each glacier cell until the domain edge is
-    reached and record the largest grid elevation angle seen along the path. The resulting
-    table `grid["maxgridangle"]` of shape (gpsum, nr_az_steps) lets the time loop decide
-    whether a cell is shaded without repeating the walk. This is the expensive part of grid
-    initialization, so it is only called when shading is enabled.
+            # from every grid cell step in the direction of the azimuth until the grid end is reached
+            # and detect maximum grid angle along the path
+            i0, j0 = np.where(mask_2D == 1)
+            max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
+            count = 1
+            active = np.ones(grid["gpsum"], dtype=bool)
 
-    @param[in,out] grid Grid dictionary, updated with `shading_method`, `nr_az_steps`,
-                        `az_array` and `maxgridangle`.
-    @param[in] mask_2D 2-D glacier mask, 1 for glacier cells.
-    """
-    grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
-    grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
+            while active.any() and count * grid["dx"] < 5e4:
+                j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
+                i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
 
-    # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
-    grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
+                inbound = (j >= 0) & (j < yl) & (i >= 0) & (i < xl) & active
+                if not inbound.any():  # stop when all walks have reached the domain edge
+                    break
 
-    xl, yl = grid["x_2D"].shape
+                grid_angle = compute_grid_angle(grid, i, j, inbound)  # calculate grid angle from start to target
 
-    # loop over the azimuth angles to determine gridded maximum grid angles per angle
-    grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
-    for n in range(grid["nr_az_steps"]):
-        az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
+                max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle when needed
 
-        # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
-        ddx, ddy = calculate_step_sizes(az)
+                active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
+                count += 1
 
-        # from every grid cell step in the direction of the azimuth until the grid end is reached
-        # and detect maximum grid angle along the path
-        i0, j0 = np.where(mask_2D == 1)
-        max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
-        count = 1
-        active = np.ones(grid["gpsum"], dtype=bool)
-        while active.any():
-            j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
-            i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
+            # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
+            grid["maxgridangle"][:, n] = max_angle
 
-            inbound = (j >= 0) & (j < yl) & (i >= 0) & (i < xl) & active
-            if not inbound.any():  # stop when all walks have reached the domain edge
-                break
+        # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
+    else:
+        raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
-            grid_angle = compute_grid_angle(grid, i, j, inbound)  # calculate grid angle from start to target
-
-            max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle if needed
-
-            active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
-
-            count += 1
-
-        # fill lookup table with maximum grid angles for all cells (dim 1) and azimuth angle (dim 2)
-        grid["maxgridangle"][:, n] = max_angle
+    return grid
 
 
 def compute_grid_angle(grid: GridDict, i, j, inbound) -> float:
@@ -544,42 +545,68 @@ def read_MATLAB_grid(gridfile: Path):
 
 def read_GREENLAND_grid(gridfile: Path):
     """
-    Provides grid information by reading from a NetCDF file.
+    Provides Greenland grid information by reading from an updated Greenland_grid.nc file.
 
     Parameters:
-        gridfile: Path to the NetCDF file containing grid data.
+        gridfile: Path to Greenland_grid.nc.
 
     Returns:
         dict: A dictionary named `input_data` containing:
             - 'x': 2D NumPy array of UTM zone 24N easting coordinates (m).
             - 'y': 2D NumPy array of UTM zone 24N northing coordinates (m).
-            - 'z': 2D NumPy array of orography/elevation from the 'orog' field.
-            - 'mask': 2D NumPy array of glacier mask. Currently all finite `orog` cells are treated as glacier cells.
-            - 'lon': 2D NumPy array of longitude coordinates.
+            - 'z': 2D NumPy array of orography/elevation.
+            - 'mask': 2D NumPy array of fractional glacier mask values.
+            - 'lon': 2D NumPy array of longitude coordinates in degrees East.
             - 'lat': 2D NumPy array of latitude coordinates.
     """
 
-    logger.info("EBFM: Reading grid data from NetCDF file...")
+    logger.info("EBFM: Reading Greenland grid data from NetCDF file...")
     input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
 
     try:
         with Dataset(gridfile, "r") as ncfile:
-            orog = np.asarray(ncfile.variables["orog"][:])
+            if "orography" in ncfile.variables:
+                raw_orography = ncfile.variables["orography"][:]
+            elif "orog" in ncfile.variables:
+                raw_orography = ncfile.variables["orog"][:]
+            else:
+                raise KeyError("Neither `orography` nor `orog` found in Greenland grid file.")
+
+            if "mask" not in ncfile.variables:
+                raise KeyError("Missing `mask` in Greenland grid file.")
+
+            raw_mask = ncfile.variables["mask"][:]
             latitude = np.asarray(ncfile.variables["latitude"][:])
             longitude = np.asarray(ncfile.variables["longitude"][:])
 
-            orog = np.squeeze(orog)
+            orography = np.asarray(raw_orography)
+            mask = np.asarray(raw_mask, dtype=np.float32)
+
+            orography = np.squeeze(orography)
+            mask = np.squeeze(mask)
             latitude = np.squeeze(latitude)
             longitude = np.squeeze(longitude)
+
+            if np.ma.isMaskedArray(raw_orography):
+                valid_orography = ~np.squeeze(np.ma.getmaskarray(raw_orography))
+            else:
+                valid_orography = np.isfinite(orography)
 
             if latitude.ndim == 1 and longitude.ndim == 1:
                 longitude, latitude = np.meshgrid(longitude, latitude)
 
-            if orog.shape != latitude.shape or orog.shape != longitude.shape:
+            if orography.shape != mask.shape or orography.shape != latitude.shape or orography.shape != longitude.shape:
                 raise ValueError(
-                    "`orog`, `latitude`, and `longitude` must have matching 2D shapes. "
-                    f"Got orog={orog.shape}, latitude={latitude.shape}, longitude={longitude.shape}."
+                    "`orography`/`orog`, `mask`, `latitude`, and `longitude` must have matching 2D shapes. "
+                    f"Got orography={orography.shape}, mask={mask.shape}, "
+                    f"latitude={latitude.shape}, longitude={longitude.shape}."
                 )
+
+            mask = np.where(valid_orography & (mask > 0.0), 1.0, 0.0).astype(np.float32)
+            longitude = np.mod(longitude, 360.0)
+
+            if not np.any(mask > 0.0):
+                raise ValueError("Greenland mask contains no active cells with `mask > 0`.")
 
             lonlat_to_utm24n = Transformer.from_crs("EPSG:4326", "EPSG:32624", always_xy=True)
             x, y = lonlat_to_utm24n.transform(longitude, latitude)
