@@ -77,14 +77,15 @@ def main(grid, time2, OUT):
 
         # Azimuth (radians)
         cos_elevation = np.cos(elevationangle)
+        azimuth_argument = (
+            np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)
+        ) / cos_elevation
+        azimuth_argument = np.clip(azimuth_argument, -1.0, 1.0)
+
         azimuth = np.where(
             h < 0,
-            np.arccos(
-                (np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)) / cos_elevation
-            ),
-            -np.arccos(
-                (np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)) / cos_elevation
-            ),
+            np.arccos(azimuth_argument),
+            -np.arccos(azimuth_argument),
         )
 
         # TODO: CLASSICAL shading could potentially be removed since Matlab meshes now use LUT-based shading and other
