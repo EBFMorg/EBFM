@@ -88,7 +88,7 @@ Note: Please download [`1990_1_forcing_vectorized.nc`](https://drive.google.com/
 
 ### Mesh data
 
-The arguments `--matlab-mesh` and `--elmer-mesh` allow to provide different kinds of mesh data.
+The arguments `--matlab-mesh`, `--elmer-mesh`, and `--greenland-mesh` allow to provide different kinds of mesh data.
 The arguments `--netcdf-dem-mesh` and `--netcdf-dem-mesh-unstructured` allow to add a Digital Elevation Model (DEM) for meshes that come without elevation information.
 EBFM supports the following formats:
 
