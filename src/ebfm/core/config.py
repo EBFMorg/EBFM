@@ -314,7 +314,7 @@ class TimeConfig:
                 f"day ({SECONDS_PER_DAY} seconds). This may lead to unexpected behavior."
             )
 
-        self.dT_UTC = 1  # Time difference relative to UTC in hours (hard-coded for now)
+        self.dT_UTC = -3  # Time difference relative to UTC in hours (hard-coded for now)
 
     def tn(self) -> int:
         """Calculate the number of time steps.
