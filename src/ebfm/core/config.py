@@ -180,6 +180,12 @@ class GridConfig:
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
 
+    # Shading is only supported for some grid types
+    grid_types_supporting_shading = {
+        GridInputType.MATLAB,
+        GridInputType.GREENLAND,
+    }
+
     def __init__(self, args: Namespace):
         """
         Initialize grid configuration from command line arguments.
@@ -248,30 +254,39 @@ class GridConfig:
             )
             raise Exception("Invalid grid configuration.")
 
-        # Shading is only supported for MATLAB & Greenland meshes; see https://github.com/EBFMorg/EBFM/issues/11
-        grid_type_supports_shading_supported = (
-            self.grid_type is GridInputType.MATLAB or self.grid_type is GridInputType.GREENLAND
-        )
+        self.use_shading = self._check_shading(args)
+
+    def _check_shading(self, args: Namespace) -> bool:
+        """Configure shading based on the user input, grid type, and partitioning.
+
+        Shading is only supported for certain configurations, see https://github.com/EBFMorg/EBFM/issues/129.
+        """
+        grid_type_supports_shading = self.grid_type in self.grid_types_supporting_shading
 
         # Partitioned grids don't support shading
         grid_partitioning_supports_shading = not self.is_partitioned
 
         # shading is supported if both the grid type and the partitioning support it
-        _shading_supported = grid_type_supports_shading_supported and grid_partitioning_supports_shading
+        shading_supported = grid_type_supports_shading and grid_partitioning_supports_shading
 
-        if args.shading is None:
-            self.use_shading = _shading_supported  # default: on for MATLAB, off for all others
-        else:
-            if args.shading and not _shading_supported:
-                if not grid_type_supports_shading_supported:
-                    raise ValueError(
-                        f"Shading is not supported for grid type {self.grid_type}. "
-                        "See https://github.com/EBFMorg/EBFM/issues/11"
-                    )
-                if not grid_partitioning_supports_shading:
-                    raise ValueError("Shading is not supported for partitioned grids.")
+        # if user did not explicitly set the shading option use the default based on the grid configuration
+        if not hasattr(args, "shading"):
+            return shading_supported  # default: use shading if supported, otherwise disable it
 
-            self.use_shading = args.shading
+        assert hasattr(args, "shading"), "args should have 'shading' attribute at this point."
+
+        if not shading_supported and args.shading:
+            # user asks for shading but grid configuration does not support it
+            if not grid_type_supports_shading:
+                raise ValueError(
+                    f"Shading is not supported for grid type {self.grid_type}. "
+                    "See https://github.com/EBFMorg/EBFM/issues/129"
+                )
+            if not grid_partitioning_supports_shading:
+                raise ValueError("Shading is not supported for partitioned grids.")
+
+        # provided shading configuration is safe
+        return args.shading
 
 
 class TimeConfig:
