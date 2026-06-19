@@ -213,13 +213,26 @@ def _compute_numba_threads(args, comm, parser, logger) -> int:
     return n_threads
 
 
-def _main_impl():
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
+def _add_version_argument(parser: argparse.ArgumentParser) -> None:
+    """Add the shared --version flag used by both pre-parser and full parser."""
     parser.add_argument(
         "--version",
         action="store_true",
         help="Show the EBFM version and exit.",
+    )
+
+
+def _main_impl():
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    _add_version_argument(pre_parser)
+
+    pre_args, _ = pre_parser.parse_known_args()
+    if pre_args.version:
+        ebfm.core.print_version_and_exit()
+
+    parser = argparse.ArgumentParser(
+        parents=[pre_parser],
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
     input_group = parser.add_argument_group("input mesh types")
@@ -434,9 +447,6 @@ def _main_impl():
 
     if not hasattr(args, "local_group_label"):
         args.local_group_label = args.component_name
-
-    if args.version:
-        ebfm.core.print_version_and_exit()
 
     # Bootstrap logging before communicator splitting so early diagnostics are available.
     setup_logging(
