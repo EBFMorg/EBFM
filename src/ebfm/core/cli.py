@@ -1,6 +1,9 @@
-# SPDX-FileCopyrightText: 2025 EBFM Authors
+# SPDX-FileCopyrightText: 2026 EBFM Authors
 #
 # SPDX-License-Identifier: BSD-3-Clause
+#
+# This file was generated with the help of AI tools.
+
 """Command-line interface for EBFM.
 
 This module owns the full argument parser, all user-facing option compatibility checks, and the
@@ -122,7 +125,7 @@ def extract_active_coupling_features(args: Namespace) -> list[str]:
     return active_coupling_args
 
 
-def parse_cli_args() -> Namespace:
+def parse_cli_args(args: list[str] | None = None) -> Namespace:
     """Build the argument parser, parse args, and validate option compatibility.
 
     Handles --version early exit before required arguments are enforced.
@@ -134,19 +137,14 @@ def parse_cli_args() -> Namespace:
     functions (resolve_numba_threads, validate_shading_coupling_compat) can issue further
     parser.error() calls without requiring callers to hold a reference to the parser.
 
+    @param[in] args  argument list to parse; defaults to sys.argv[1:] when None
     @returns validated Namespace
     """
     global _parser
     parser = ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     _parser = parser
     mesh_opts = {
-        GridInputType.ELMER: "--elmer-mesh",
-        GridInputType.MATLAB: "--matlab-mesh",
-        GridInputType.GREENLAND: "--greenland-mesh",
-    }
-    grid_types_supporting_shading = {
-        GridInputType.MATLAB,
-        GridInputType.GREENLAND,
+        grid_type: f"--{arg_dest.replace('_', '-')}" for grid_type, arg_dest in GridConfig.mesh_arg_dests.items()
     }
     partitioned_elmer_mesh_opt = "--is-partitioned-elmer-mesh"
     netcdf_mesh_opt = "--netcdf-mesh"
@@ -199,9 +197,9 @@ def parse_cli_args() -> Namespace:
         f"If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
-    grid_types_without_shading = set(mesh_opts.keys()) - grid_types_supporting_shading
+    grid_types_without_shading = set(GridConfig.mesh_arg_dests.keys()) - GridConfig.grid_types_supporting_shading
     shading_default_info = "(default: True for {}, False for {})".format(
-        ", ".join(mesh_opts[g] for g in grid_types_supporting_shading),
+        ", ".join(mesh_opts[g] for g in GridConfig.grid_types_supporting_shading),
         ", ".join(mesh_opts[g] for g in grid_types_without_shading),
     )
 
