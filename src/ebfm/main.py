@@ -355,7 +355,7 @@ def _main_impl():
     )
 
     parallel_group.add_argument(
-        "--is-partitioned-elmer-mesh",
+        partitioned_elmer_mesh_opt,
         action="store_true",
         help="Indicate if the provided Elmer mesh is partitioned for parallel runs.",
     )
@@ -444,6 +444,11 @@ def _main_impl():
     add_coupling_arguments(parser)
 
     args = parser.parse_args()
+
+    if args.is_partitioned_elmer_mesh and getattr(args, GridConfig.mesh_arg_dests[GridInputType.ELMER], None) is None:
+        parser.error(f"{partitioned_elmer_mesh_opt} requires {mesh_opts[GridInputType.ELMER]}")
+    if args.is_partitioned_elmer_mesh and args.netcdf_mesh is None:
+        parser.error(f"{partitioned_elmer_mesh_opt} requires {netcdf_mesh_opt}")
 
     if not hasattr(args, "local_group_label"):
         args.local_group_label = args.component_name
