@@ -448,6 +448,9 @@ def _main_impl():
     if not hasattr(args, "local_group_label"):
         args.local_group_label = args.component_name
 
+    if args.version:
+        ebfm.core.print_version_and_exit()
+
     # Bootstrap logging before communicator splitting so early diagnostics are available.
     setup_logging(
         stdout_log_level=log_levels_map[args.log_level_console],
