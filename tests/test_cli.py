@@ -5,6 +5,8 @@
 # This file was generated with the help of AI tools.
 
 import unittest
+import io
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -280,6 +282,20 @@ class TestCliCalendarArgument(unittest.TestCase):
     def test_calendar_rejects_invalid_value(self):
         with self.assertRaises(SystemExit):
             parse_cli_args(_MATLAB + ["--calendar", "invalid_calendar"])
+
+
+class TestCliHelpOutput(unittest.TestCase):
+    def test_help_lists_full_parser_options(self):
+        buf = io.StringIO()
+        with self.assertRaises(SystemExit) as ctx:
+            with redirect_stdout(buf):
+                parse_cli_args(["--help"])
+
+        self.assertEqual(ctx.exception.code, 0)
+        help_text = buf.getvalue()
+        self.assertIn("--matlab-mesh", help_text)
+        self.assertIn("--elmer-mesh", help_text)
+        self.assertIn("--calendar", help_text)
 
 
 class TestTimeConfigCalendar(unittest.TestCase):

@@ -140,6 +140,18 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     @param[in] args  argument list to parse; defaults to sys.argv[1:] when None
     @returns validated Namespace
     """
+    pre_parser = ArgumentParser(add_help=False)
+    pre_parser.add_argument(
+        "--version",
+        action="store_true",
+        help="Show the EBFM version and exit.",
+    )
+
+    # Parse --version early so users can request it without providing required runtime arguments.
+    pre_args, _ = pre_parser.parse_known_args(args)
+    if pre_args.version:
+        ebfm.core.print_version_and_exit()
+
     global _parser
     parser = ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     _parser = parser
@@ -154,11 +166,6 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         action="store_true",
         help="Show the EBFM version and exit.",
     )
-
-    # Parse --version early so users can request it without providing required runtime arguments.
-    pre_args, _ = parser.parse_known_args()
-    if pre_args.version:
-        ebfm.core.print_version_and_exit()
 
     input_group = parser.add_argument_group("input mesh types")
 
