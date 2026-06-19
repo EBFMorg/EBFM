@@ -21,7 +21,7 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.grid import GridInputType
-from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel, Calendar
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
@@ -39,6 +39,7 @@ class CliDefaults(Enum):
     TIME_STEP_SIZE_IN_DAYS = 0.125  # = 0.125 days = 3 hours
     LOG_LEVEL_CONSOLE = "INFO"
     COMPONENT_NAME = "ebfm"
+    CALENDAR = Calendar.PROLEPTIC_GREGORIAN.value
 
     @classmethod
     def default_time_step_size_in_hours(cls) -> float:
@@ -310,6 +311,13 @@ def _main_impl():
         default=CliDefaults.TIME_STEP_SIZE_IN_DAYS.value,
     )
 
+    time_group.add_argument(
+        "--calendar",
+        type=str,
+        help=f"Calendar type for time handling. Supported values: {[cal.value for cal in Calendar]}.",
+        default=CliDefaults.CALENDAR.value,
+    )
+
     parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
 
     parallel_group.add_argument(
@@ -429,8 +437,10 @@ def _main_impl():
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
 
+    time_config = TimeConfig(args)
+
     active_coupling_features = extract_active_coupling_features(args)
-    coupling_config = CouplingConfig(args)
+    coupling_config = CouplingConfig(args, time_config)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
     coupler_cls: type[ebfm.coupling.Coupler] = None
@@ -482,8 +492,6 @@ def _main_impl():
             "Shading routine not implemented for coupled runs. "
             "Please deactivate shading via --no-shading or deactivate coupling."
         )
-
-    time_config = TimeConfig(args)
 
     logger.debug("Successfully completed consistency checks.")
 
