@@ -30,23 +30,32 @@ class GridConfig:
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
 
+    # maps GridInputType to corresponding argparse destination
+    mesh_arg_dests = {
+        GridInputType.ELMER: "elmer_mesh",
+        GridInputType.MATLAB: "matlab_mesh",
+    }
+
+    # Shading is only supported for some grid types
+    grid_types_supporting_shading = {
+        GridInputType.MATLAB,
+    }
+
     def __init__(self, args: Namespace):
         """
         Initialize grid configuration from command line arguments.
 
         @param[in] args command line arguments
         """
-        if not (args.elmer_mesh or args.matlab_mesh):
-            logger.error("Grid needed. Please provide either --elmer-mesh or --matlab-mesh.")
-            raise Exception("Missing grid.")
+        selected_primary_grids = [
+            grid_type
+            for grid_type, arg_dest in self.mesh_arg_dests.items()
+            if getattr(args, arg_dest, None) is not None
+        ]
+        assert len(selected_primary_grids) == 1, "Internal error: expected exactly one primary grid option to be set."
 
-        if args.elmer_mesh and args.matlab_mesh:
-            logger.error("Please provide either --elmer-mesh or --matlab-mesh, not both.")
-            raise Exception("Invalid grid configuration.")
-
-        if args.is_partitioned_elmer_mesh and not args.elmer_mesh:
-            logger.error("--is-partitioned-elmer-mesh requires --elmer-mesh.")
-            raise Exception("Invalid grid configuration.")
+        matlab_mesh = getattr(args, self.mesh_arg_dests[GridInputType.MATLAB], None)
+        elmer_mesh = getattr(args, self.mesh_arg_dests[GridInputType.ELMER], None)
 
         self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
 
@@ -54,34 +63,35 @@ class GridConfig:
         self.dem_file = None
         self.partition_id = None
 
+        assert (
+            not self.is_partitioned or elmer_mesh is not None
+        ), "Internal error: partitioned grid configuration requires an Elmer mesh input."
+
         if self.is_partitioned:
-            assert args.netcdf_mesh, (
-                "--is-partitioned-elmer-mesh requires --netcdf-mesh. "
-                "(Without --netcdf-mesh should also work but is untested.)"
-            )
+            assert args.netcdf_mesh, "Internal error: partitioned grid configuration requires NetCDF mesh input."
             logger.info("Using partitioned grid...")
             self.partition_id = args.use_part
             logger.info(f"{self.partition_id=}")
         else:
             logger.info("Using non-partitioned grid...")
 
-        if args.matlab_mesh:
+        if matlab_mesh:
             self.grid_type = GridInputType.MATLAB
-            self.mesh_file = args.matlab_mesh
+            self.mesh_file = matlab_mesh
             self.is_unstructured = False
-        elif args.netcdf_mesh and args.elmer_mesh:
+        elif args.netcdf_mesh and elmer_mesh:
             self.grid_type = GridInputType.CUSTOM
-            self.mesh_file = args.elmer_mesh
+            self.mesh_file = elmer_mesh
             self.dem_file = args.netcdf_mesh
             self.is_unstructured = False
-        elif args.netcdf_mesh_unstructured and args.elmer_mesh:
+        elif args.netcdf_mesh_unstructured and elmer_mesh:
             self.grid_type = GridInputType.ELMERXIOS
-            self.mesh_file = args.elmer_mesh
+            self.mesh_file = elmer_mesh
             self.dem_file = args.netcdf_mesh_unstructured
             self.is_unstructured = True
-        elif args.elmer_mesh:
+        elif elmer_mesh:
             self.grid_type = GridInputType.ELMER
-            self.mesh_file = args.elmer_mesh
+            self.mesh_file = elmer_mesh
             self.is_unstructured = False
         else:
             logger.error(
@@ -90,25 +100,29 @@ class GridConfig:
             )
             raise Exception("Invalid grid configuration.")
 
-        # Shading is only supported for MATLAB meshes; see https://github.com/EBFMorg/EBFM/issues/11
-        grid_type_supports_shading_supported = self.grid_type is GridInputType.MATLAB
+        self.use_shading = self._check_shading(args)
+
+    def _check_shading(self, args: Namespace) -> bool:
+        """Configure shading based on the user input, grid type, and partitioning."""
+        grid_type_supports_shading = self.grid_type in self.grid_types_supporting_shading
 
         # Partitioned grids don't support shading
         grid_partitioning_supports_shading = not self.is_partitioned
 
         # shading is supported if both the grid type and the partitioning support it
-        _shading_supported = grid_type_supports_shading_supported and grid_partitioning_supports_shading
+        shading_supported = grid_type_supports_shading and grid_partitioning_supports_shading
 
-        if args.shading is None:
-            self.use_shading = _shading_supported  # default: on for MATLAB, off for all others
-        else:
-            if args.shading and not _shading_supported:
-                if not grid_type_supports_shading_supported:
-                    raise ValueError(
-                        f"Shading is not supported for grid type {self.grid_type}. "
-                        "See https://github.com/EBFMorg/EBFM/issues/11"
-                    )
-                if not grid_partitioning_supports_shading:
-                    raise ValueError("Shading is not supported for partitioned grids.")
+        # if user did not explicitly set the shading option use the default based on the grid configuration
+        if not hasattr(args, "shading"):
+            return shading_supported
 
-            self.use_shading = args.shading
+        if not shading_supported and args.shading:
+            if not grid_type_supports_shading:
+                raise ValueError(
+                    f"Shading is not supported for grid type {self.grid_type}. "
+                    "See https://github.com/EBFMorg/EBFM/issues/129"
+                )
+            if not grid_partitioning_supports_shading:
+                raise ValueError("Shading is not supported for partitioned grids.")
+
+        return args.shading

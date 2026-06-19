@@ -13,7 +13,7 @@ from mpi4py import MPI
 
 from datetime import datetime
 
-from ebfm.core.config import TimeConfig
+from .time import TimeConfig
 
 import logging
 
