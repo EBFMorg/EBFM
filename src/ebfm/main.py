@@ -224,37 +224,51 @@ def _main_impl():
 
     input_group = parser.add_argument_group("input mesh types")
 
-    input_group.add_argument(
-        "--elmer-mesh",
+    mesh_opts = {
+        grid_type: f"--{arg_dest.replace('_', '-')}" for grid_type, arg_dest in GridConfig.mesh_arg_dests.items()
+    }
+
+    mesh_msg = f"Either {', or '.join([mesh_opts[g] for g in mesh_opts.keys()])} is required."
+
+    primary_grid_group = input_group.add_mutually_exclusive_group(required=True)
+
+    primary_grid_group.add_argument(
+        mesh_opts[GridInputType.MATLAB],
         type=Path,
-        help="Path to the Elmer mesh file. Either --elmer-mesh or --matlab-mesh is required.",
+        help="Path to the MATLAB mesh file. " + mesh_msg,
     )
 
-    input_group.add_argument(
-        "--matlab-mesh",
+    primary_grid_group.add_argument(
+        mesh_opts[GridInputType.ELMER],
         type=Path,
-        help="Path to the MATLAB mesh file. Either --elmer-mesh or --matlab-mesh is required.",
+        help="Path to the Elmer mesh file. " + mesh_msg,
     )
 
     input_group.add_argument(
         "--netcdf-mesh",
         type=Path,
-        help="Path to the NetCDF mesh file. Optional if using --elmer-mesh."
-        " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
-    )
-
-    input_group.add_argument(
-        "--shading",
-        default=None,
-        action=argparse.BooleanOptionalAction,
-        help="Enable/disable shading. Defaults to True for MATLAB meshes, False for all other mesh types.",
+        help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. "
+        "If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
     input_group.add_argument(
         "--netcdf-mesh-unstructured",
         type=Path,
-        help="Path to the unstructured NetCDF mesh file. Optional if using --elmer-mesh."
-        " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+        help="Path to the unstructured NetCDF mesh file. "
+        f"Optional if using {mesh_opts[GridInputType.ELMER]}. "
+        f"If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+    )
+
+    shading_default_info = "(default: True for {}, False for {})".format(
+        ", ".join([mesh_opts[g] for g in GridConfig.grid_types_supporting_shading]),
+        ", ".join([mesh_opts[g] for g in (mesh_opts.keys() - GridConfig.grid_types_supporting_shading)]),
+    )
+
+    input_group.add_argument(
+        "--shading",
+        default=argparse.SUPPRESS,
+        action=argparse.BooleanOptionalAction,
+        help="Enable/disable shading. " + shading_default_info,
     )
 
     example_restart_file_name = INIT.create_restart_file_name(CliDefaults.START_TIME.value)
