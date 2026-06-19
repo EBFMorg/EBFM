@@ -20,3 +20,7 @@ examples/add_mask_field_to_greenland_grid.py
 .idea/vcs.xml
 .idea/workspace.xml
 examples/download_CARRA2.py
+examples/createLowResGreenlandExperiment.py
+examples/Greenland_coarse/1990_1_forcing_vectorized.nc
+examples/1990_2_forcing_vectorized_coarse.nc
+examples/1990_1_forcing_vectorized_coarse.nc

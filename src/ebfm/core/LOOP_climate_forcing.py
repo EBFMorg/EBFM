@@ -128,9 +128,23 @@ def read_Greenland_data(IN, C, time, grid, config: GridConfig):
     model_time_utc = time["TCUR"] - timedelta(hours=time["dT_UTC"])
     model_time_seconds = model_time_utc.replace(tzinfo=timezone.utc).timestamp()
 
+    def forcing_file_suffix_from_grid_file() -> str:
+        """Return forcing-file suffix implied by the Greenland grid file name."""
+        grid_stem = config.mesh_file.stem
+        marker = "Greenland_grid"
+
+        if grid_stem == marker:
+            return ""
+
+        if grid_stem.startswith(f"{marker}_"):
+            return grid_stem.removeprefix(marker)
+
+        return ""
+
     file_group = 1 if model_time_utc.month <= 6 else 2
     forcing_prefix = f"{model_time_utc.year}_{file_group}"
-    forcing_file = forcing_dir / f"{forcing_prefix}_forcing_vectorized.nc"
+    forcing_suffix = forcing_file_suffix_from_grid_file()
+    forcing_file = forcing_dir / f"{forcing_prefix}_forcing_vectorized{forcing_suffix}.nc"
 
     forcing_variables = ("C", "T", "Pres", "WS", "P", "q")
 
