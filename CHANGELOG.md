@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# develop
+
+* Refactor how parser and configuration modules process errors in user input. https://github.com/EBFMorg/EBFM/pull/131
+
 # v0.4.0
 
 * Call `def_datetime` and `def_calendar` in YAC coupler setup to forward EBFM calendar and time frame to YAC. This will lead to a YAC error the setup of the coupled run is inconsistent. https://github.com/EBFMorg/EBFM/pull/125.
