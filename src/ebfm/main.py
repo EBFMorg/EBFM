@@ -252,15 +252,15 @@ def _main_impl():
     )
 
     primary_grid_group.add_argument(
-        mesh_opts[GridInputType.ELMER],
-        type=Path,
-        help="Path to the Elmer mesh file. " + mesh_msg,
-    )
-
-    input_group.add_argument(
         mesh_opts[GridInputType.GREENLAND],
         type=Path,
         help="Path to the mesh file and climate data for a test on Greenland. " + mesh_msg,
+    )
+
+    primary_grid_group.add_argument(
+        mesh_opts[GridInputType.ELMER],
+        type=Path,
+        help="Path to the Elmer mesh file. " + mesh_msg,
     )
 
     input_group.add_argument(
