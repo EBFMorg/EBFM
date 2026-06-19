@@ -180,6 +180,13 @@ class GridConfig:
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
 
+    # maps GridInputType to corresponding command line argument
+    mesh_opts = {
+        GridInputType.ELMER: "--elmer-mesh",
+        GridInputType.MATLAB: "--matlab-mesh",
+        GridInputType.GREENLAND: "--greenland-mesh",
+    }
+
     # Shading is only supported for some grid types
     grid_types_supporting_shading = {
         GridInputType.MATLAB,
@@ -192,20 +199,31 @@ class GridConfig:
 
         @param[in] args command line arguments
         """
-        if not (args.elmer_mesh or args.matlab_mesh or args.greenland_mesh):
-            logger.error("Grid needed. Please provide either --elmer-mesh or --matlab-mesh or --greenland-mesh.")
-            raise Exception("Missing grid.")
 
-        if args.elmer_mesh and (args.matlab_mesh or args.greenland_mesh):
-            logger.error("Please provide either --elmer-mesh or --matlab-mesh or --greenland-mesh, not several.")
+        provided_grid = {
+            GridInputType.ELMER: args.elmer_mesh is not None,
+            GridInputType.MATLAB: args.matlab_mesh is not None,
+            GridInputType.GREENLAND: args.greenland_mesh is not None,
+        }
+
+        if sum(provided_grid.values()) > 1:
+            logger.error(
+                "Providing more than one grid is forbidden. "
+                "You are currently providing the following incompatible options: "
+                f"{', '.join([GridConfig.mesh_opts[g] for g in provided_grid if provided_grid[g]])}."
+            )
             raise Exception("Invalid grid configuration.")
 
-        if args.matlab_mesh and args.greenland_mesh:
-            logger.error("Please provide either --elmer-mesh or --matlab-mesh or --greenland-mesh, not several.")
+        if sum(provided_grid.values()) == 0:
+            logger.error(
+                "No grid provided. "
+                "Please provide exactly one grid using one of the following options: "
+                f"{', '.join(self.mesh_opts.values())}."
+            )
             raise Exception("Invalid grid configuration.")
 
         if args.is_partitioned_elmer_mesh and not args.elmer_mesh:
-            logger.error("--is-partitioned-elmer-mesh requires --elmer-mesh.")
+            logger.error(f"--is-partitioned-elmer-mesh requires {self.mesh_opts[GridInputType.ELMER]}.")
             raise Exception("Invalid grid configuration.")
 
         self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
