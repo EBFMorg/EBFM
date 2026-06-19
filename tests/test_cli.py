@@ -14,7 +14,8 @@ from ebfm.core.cli import (
     parse_cli_args,
     validate_shading_coupling_compat,
 )
-from ebfm.core.config import FieldValidationLevel
+
+from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig
 
 # Minimal valid args for each primary grid type.
 _MATLAB = ["--matlab-mesh", "mesh.mat"]
@@ -264,6 +265,28 @@ class TestValidateShadingCouplingCompat(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             validate_shading_coupling_compat(grid, coupling)
         self.assertEqual(ctx.exception.code, 2)
+
+
+class TestCliCalendarArgument(unittest.TestCase):
+    def test_calendar_default(self):
+        args = parse_cli_args(_MATLAB)
+        self.assertEqual(args.calendar, CliDefaults.CALENDAR.value)
+
+    def test_calendar_accepts_all_supported_values(self):
+        for calendar in Calendar:
+            args = parse_cli_args(_MATLAB + ["--calendar", calendar.value])
+            self.assertEqual(args.calendar, calendar.value)
+
+    def test_calendar_rejects_invalid_value(self):
+        with self.assertRaises(SystemExit):
+            parse_cli_args(_MATLAB + ["--calendar", "invalid_calendar"])
+
+
+class TestTimeConfigCalendar(unittest.TestCase):
+    def test_time_config_uses_calendar_from_cli_args(self):
+        args = parse_cli_args(_MATLAB + ["--calendar", Calendar.YEAR_OF_365_DAYS.value])
+        time_config = TimeConfig(args)
+        self.assertEqual(time_config.calendar, Calendar.YEAR_OF_365_DAYS)
 
 
 if __name__ == "__main__":
