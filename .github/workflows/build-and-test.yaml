@@ -9,7 +9,17 @@ on:
 
 jobs:
   build-and-test:
+    name: Build and test (${{ matrix.variant }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - variant: serial
+            install_target: .
+            run_mpi: false
+          - variant: mpi
+            install_target: .[mpi]
+            run_mpi: true
     steps:
       - name: Checkout EBFM repository
         uses: actions/checkout@v6
@@ -18,41 +28,32 @@ jobs:
         with:
           python-version: '3.x'
       - name: Setup MPI
+        if: ${{ matrix.run_mpi }}
         uses: mpi4py/setup-mpi@v1
       - name: Create virtual environment and install EBFM
         run: |
           python3 -m venv .venv
-          source .venv/bin/activate
-          python3 -m pip install --upgrade pip
-          pip3 install .
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install "${{ matrix.install_target }}"
       - name: Check Git version
-        run: |
-          source .venv/bin/activate
-          git --version
+        run: git --version
       - name: Check EBFM version
-        run: |
-          source .venv/bin/activate
-          ebfm --version
+        run: .venv/bin/ebfm --version
       - name: Run example
-        run: |
-          source .venv/bin/activate
-          ebfm --matlab-mesh examples/dem_and_mask.mat
+        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat
       - name: Run example with restart
         run: |
-          source .venv/bin/activate
-          ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot
-          ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --restart-init --start-time "02-Jan-1979 00:00" --end-time "03-Jan-1979 00:00"
+          .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot
+          .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --restart-init --start-time "02-Jan-1979 00:00" --end-time "03-Jan-1979 00:00"
       - name: Run example with (pseudo) coupling
-        run: |
-          source .venv/bin/activate
-          ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon --couple-to-elmer --fake-coupling --no-shading
+        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon --couple-to-elmer --fake-coupling --no-shading
       - name: Run example with MPI handshake
+        if: ${{ matrix.run_mpi }}
         run: |
-          source .venv/bin/activate
           # Run dummy script first; dummy on rank 0, EBFM on rank 1
-          mpirun -np 1 python tests/core/comm/mpi_handshake_dummy.py first : \
-                 -np 1 ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00"
+          mpirun -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py first : \
+                 -np 1 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00"
           # Run dummy script second; EBFM on rank 0, dummy on rank 1
-          mpirun -np 1 ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00" : \
-                 -np 1 python tests/core/comm/mpi_handshake_dummy.py second
+          mpirun -np 1 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00" : \
+                 -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py second
 
