@@ -10,7 +10,6 @@ license = "BSD-3-Clause"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "mpi4py >= 4.1",
     "mypy >= 1.0",
     "netCDF4 >= 1.7",
     "numpy >= 2.0",
@@ -29,11 +28,17 @@ dev = [
     "tox-gh-actions",
 ]
 
+mpi = [
+    "mpi4py >= 4.1",
+]
+
 cpl = [
+    "EBFM[mpi]",
     "yac >= 3.8",
 ]
 
 performance = [
+    "EBFM[mpi]",
     "numba >= 0.59",
 ]
 
