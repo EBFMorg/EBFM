@@ -21,7 +21,6 @@ from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig
 
 # Minimal valid args for each primary grid type.
 _MATLAB = ["--matlab-mesh", "mesh.mat"]
-_GREENLAND = ["--greenland-mesh", "grid.nc"]
 _ELMER = ["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413"]
 
 
@@ -37,10 +36,6 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
         args = parse_cli_args(_MATLAB)
         self.assertEqual(args.matlab_mesh, Path("mesh.mat"))
 
-    def test_greenland_mesh_accepted(self):
-        args = parse_cli_args(_GREENLAND)
-        self.assertEqual(args.greenland_mesh, Path("grid.nc"))
-
     def test_elmer_mesh_accepted(self):
         args = parse_cli_args(_ELMER)
         self.assertEqual(args.elmer_mesh, Path("mesh/"))
@@ -52,7 +47,7 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
 
     def test_two_grid_options_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
-            parse_cli_args(_MATLAB + _GREENLAND)
+            parse_cli_args(_MATLAB + _ELMER)
         self.assertEqual(ctx.exception.code, 2)
 
 

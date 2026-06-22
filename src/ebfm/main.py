@@ -220,7 +220,7 @@ def _main_impl():
                 IN["Pres"] = _T0 + 101500.0
 
         # Read/set meteorological forcing
-        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler, grid_config)
+        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
 
         # Run surface energy balance model
         OUT = LOOP_EBM.main(C, OUT, IN, time, grid, coupler)
@@ -267,7 +267,7 @@ def _main_impl():
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         # TODO: should be supported for all cases to avoid case distinction here
         if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
-            if grid_config.grid_type is GridInputType.MATLAB or grid_config.grid_type is GridInputType.GREENLAND:
+            if grid_config.grid_type is GridInputType.MATLAB:
                 io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time)
             else:
                 logger.warning("Skipping writing output to file for Elmer input grids.")
