@@ -19,6 +19,7 @@ from pathlib import Path
 
 import ebfm.core
 from ebfm.core import INIT
+from ebfm.core.comm import mpi_available
 from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, TimeConfig
 from ebfm.core.grid import GridInputType
 from ebfm.core.logger import log_levels_map
@@ -273,7 +274,9 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         default=CliDefaults.CALENDAR.value,
     )
 
-    parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
+    parallel_group = parser.add_argument_group(
+        "parallel runs and distributed meshes (requires MPI; install via: pip install 'ebfm[mpi]')"
+    )
 
     parallel_group.add_argument(
         "--local-group-label",
@@ -385,6 +388,15 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
 
     if not hasattr(args, "local_group_label"):
         args.local_group_label = args.component_name
+
+    _mpi_opts = {
+        "--local-group-label": hasattr(args, "local_group_label") and args.local_group_label != args.component_name,
+        "--is-partitioned-elmer-mesh": args.is_partitioned_elmer_mesh,
+        "--use-part": hasattr(args, "use_part"),
+    }
+    active_mpi_opts = [opt for opt, active in _mpi_opts.items() if active]
+    if active_mpi_opts and not mpi_available:
+        parser.error(f"{', '.join(active_mpi_opts)} require MPI. Install via: pip install 'ebfm[mpi]'")
 
     return args
 
