@@ -17,6 +17,7 @@ from ebfm.core.cli import (
     validate_shading_coupling_compat,
 )
 
+from ebfm.core.comm import mpi_available
 from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig
 
 # Minimal valid args for each primary grid type.
@@ -86,6 +87,7 @@ class TestPartitionedMeshConstraints(unittest.TestCase):
             parse_cli_args(["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413", "--is-partitioned-elmer-mesh"])
         self.assertEqual(ctx.exception.code, 2)
 
+    @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
     def test_partitioned_with_elmer_and_netcdf_accepted(self):
         args = parse_cli_args(
             [
@@ -151,6 +153,7 @@ class TestDefaults(unittest.TestCase):
 class TestLocalGroupLabel(unittest.TestCase):
     """--local-group-label overrides the default derived from --component-name."""
 
+    @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
     def test_explicit_local_group_label(self):
         args = _parse("--local-group-label", "my-group")
         self.assertEqual(args.local_group_label, "my-group")
