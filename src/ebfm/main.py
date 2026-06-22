@@ -467,9 +467,13 @@ def _main_impl():
     coupling_config = CouplingConfig(args, time_config)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
-    coupler_cls: type[ebfm.coupling.Coupler] = None
+    if ebfm.core.comm.mpi_available:
+        from ebfm.core.comm import mpi as comm_mpi
 
-    ebfm_comm, coupler_cls = ebfm.core.comm.do_comm_splitting(args.local_group_label, coupling_config)
+        ebfm_comm = comm_mpi.do_comm_splitting(args.local_group_label, coupling_config)
+    else:
+        ebfm_comm = ebfm.core.comm.defaultComm
+
     # Reconfigure logging for (now available) EBFM communicator.
     setup_logging(
         stdout_log_level=log_levels_map[args.log_level_console],
@@ -663,8 +667,10 @@ def main():
         logger = getLogger(__name__)
         logger.exception("Fatal Error in EBFM")
 
-        if ebfm.core.comm.is_initialized():
-            ebfm.core.comm.abort()
+        if ebfm.core.comm.mpi_available:
+            from ebfm.core.comm import mpi as comm_mpi
+
+            comm_mpi.abort()
 
         raise e
 
