@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+
 from mpi4py import MPI
 
 from ebfm.core.config import CouplingConfig
