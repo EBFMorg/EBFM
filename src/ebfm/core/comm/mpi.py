@@ -66,4 +66,4 @@ def do_comm_splitting(
     coupling_config.set_group_communicators(groupcomms)
     ebfm_comm = groupcomms[comp_name]
 
-    return ebfm_comm, coupler_cls
+    return ebfm_comm

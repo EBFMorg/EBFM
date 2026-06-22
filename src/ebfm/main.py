@@ -11,6 +11,9 @@ import numpy as np
 import ebfm.core
 import ebfm.core.comm
 
+if ebfm.core.comm.mpi_available:
+    import ebfm.core.comm.mpi
+
 from ebfm.core import (
     INIT,
     LOOP_general_functions,
