@@ -10,8 +10,6 @@ Output/*.nc
 Reboot/*.nc
 .coverage
 .tox
-examples/1990_1_forcing_vectorized.nc
-examples/1990_2_forcing_vectorized.nc
 examples/preprocess_greenland_forcing_files.py
 examples/add_mask_field_to_greenland_grid.py
 .idea/EBFM_with_YAC.iml
@@ -24,3 +22,5 @@ examples/createLowResGreenlandExperiment.py
 examples/Greenland_coarse/1990_1_forcing_vectorized.nc
 examples/1990_2_forcing_vectorized_coarse.nc
 examples/1990_1_forcing_vectorized_coarse.nc
+examples/1990_1.nc
+examples/1990_2.nc
