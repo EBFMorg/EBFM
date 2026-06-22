@@ -11,9 +11,6 @@ import numpy as np
 import ebfm.core
 import ebfm.core.comm
 
-if ebfm.core.comm.mpi_available:
-    import ebfm.core.comm.mpi
-
 from ebfm.core import (
     INIT,
     LOOP_general_functions,
@@ -471,7 +468,9 @@ def _main_impl():
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
     if ebfm.core.comm.mpi_available:
-        ebfm_comm = ebfm.core.comm.mpi.do_comm_splitting(args.local_group_label, coupling_config)
+        from ebfm.core.comm import mpi as comm_mpi
+
+        ebfm_comm = comm_mpi.do_comm_splitting(args.local_group_label, coupling_config)
     else:
         ebfm_comm = ebfm.core.comm.defaultComm
 
@@ -669,7 +668,9 @@ def main():
         logger.exception("Fatal Error in EBFM")
 
         if ebfm.core.comm.mpi_available:
-            ebfm.core.comm.mpi.abort()
+            from ebfm.core.comm import mpi as comm_mpi
+
+            comm_mpi.abort()
 
         raise e
 
