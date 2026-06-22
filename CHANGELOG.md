@@ -6,7 +6,15 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Refactor how parser and configuration modules process errors in user input. https://github.com/EBFMorg/EBFM/pull/131
+
+# v0.4.0
+
+* Call `def_datetime` and `def_calendar` in YAC coupler setup to forward EBFM calendar and time frame to YAC. This will lead to a YAC error the setup of the coupled run is inconsistent. https://github.com/EBFMorg/EBFM/pull/125.
+* Add Elmer Greenland Mesh in this repository for more conveniently running examples. https://github.com/EBFMorg/EBFM/pull/120.
+* Coupler `put`/`get` operations now log a warning if coupler returns non-zero error code to investigate unexpected behavior, instead of silently ignoring it. Warning is intentionally non-fatal, because error may be transient or coupler-specific.
 * Revise helper script `reader.py`. https://github.com/EBFMorg/EBFM/pull/119.
+* Add reduced-size BedMachine Greenland NetCDF example (`examples/BedMachineGreenland-v5_lo.nc`) and two utility scripts under `tools/`: `nc_reduce_size.py` to produce smaller NetCDF copies (field selection and grid subsampling), and `nc_2_vtk.py` to convert NetCDF fields to VTK for visualisation in ParaView. https://github.com/EBFMorg/EBFM/pull/123.
 * Bug fixes in double depth method in INIT.py and LOOP_SNOW.py
 * Implement MPI handshake for comm splitting. https://github.com/EBFMorg/EBFM/pull/88.
 * EBFM now only adds metadata to fields where this is explicitly specified. Note: This can lead to failures in components that do not properly guard `get_metadata` calls with `has_metadata` checks. https://github.com/EBFMorg/EBFM/pull/102
