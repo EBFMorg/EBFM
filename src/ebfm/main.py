@@ -21,13 +21,15 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.grid import GridInputType
-from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel, Calendar
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 
 import ebfm.coupling
 
 # logger for this module
 logger: Logger
+# dedicated logger for diagnostic output (--print-diagnostics)
+diagnostics_logger = getLogger("ebfm.diagnostics")
 
 
 class CliDefaults(Enum):
@@ -37,6 +39,7 @@ class CliDefaults(Enum):
     TIME_STEP_SIZE_IN_DAYS = 0.125  # = 0.125 days = 3 hours
     LOG_LEVEL_CONSOLE = "INFO"
     COMPONENT_NAME = "ebfm"
+    CALENDAR = Calendar.PROLEPTIC_GREGORIAN.value
 
     @classmethod
     def default_time_step_size_in_hours(cls) -> float:
@@ -145,6 +148,11 @@ _REFERENCE_KEYS = [
 ]
 
 
+def _format_stats(arr: np.ndarray) -> str:
+    """Format min/max/mean statistics of an array for diagnostic log output."""
+    return f"min={arr.min():.4e}  max={arr.max():.4e}  mean={arr.mean():.4e}"
+
+
 def dump_reference(logger, OUT, filepath: str):
     """Save key output arrays to a .npz file for later comparison."""
     import numpy as np
@@ -157,7 +165,7 @@ def dump_reference(logger, OUT, filepath: str):
     logger.info(f"[DUMP] Reference snapshot saved to '{filepath}' (keys: {list(data.keys())})")
 
 
-def print_diagnostics(logger, grid, OUT, t):
+def print_diagnostics(grid, OUT, t):
     """Log key diagnostic values each timestep for performance and correctness analysis."""
 
     gpsum = grid.get("gpsum", "N/A")
@@ -165,16 +173,11 @@ def print_diagnostics(logger, grid, OUT, t):
     smb = OUT.get("smb")
     smb_cum = OUT.get("smb_cumulative")
 
-    logger.info(f"[DIAG t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
+    diagnostics_logger.info(f"[t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
     if smb is not None:
-        logger.info(f"[DIAG t={t + 1}] smb:            min={smb.min():.4e}  max={smb.max():.4e}  mean={smb.mean():.4e}")
+        diagnostics_logger.info(f"[t={t + 1}] smb:            {_format_stats(smb)}")
     if smb_cum is not None:
-        logger.info(
-            f"[DIAG t={t + 1}] smb_cumulative: "
-            f"min={smb_cum.min():.4e}  "
-            f"max={smb_cum.max():.4e}  "
-            f"mean={smb_cum.mean():.4e}"
-        )
+        diagnostics_logger.info(f"[t={t + 1}] smb_cumulative: {_format_stats(smb_cum)}")
 
 
 def _compute_numba_threads(args, comm, parser, logger) -> int:
@@ -210,48 +213,75 @@ def _compute_numba_threads(args, comm, parser, logger) -> int:
     return n_threads
 
 
-def _main_impl():
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
+def _add_version_argument(parser: argparse.ArgumentParser) -> None:
+    """Add the shared --version flag used by both pre-parser and full parser."""
     parser.add_argument(
         "--version",
         action="store_true",
         help="Show the EBFM version and exit.",
     )
 
-    input_group = parser.add_argument_group("input mesh types")
 
-    input_group.add_argument(
-        "--elmer-mesh",
-        type=Path,
-        help="Path to the Elmer mesh file. Either --elmer-mesh or --matlab-mesh is required.",
+def _main_impl():
+    pre_parser = argparse.ArgumentParser(add_help=False)
+    _add_version_argument(pre_parser)
+
+    pre_args, _ = pre_parser.parse_known_args()
+    if pre_args.version:
+        ebfm.core.print_version_and_exit()
+
+    parser = argparse.ArgumentParser(
+        parents=[pre_parser],
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
 
-    input_group.add_argument(
-        "--matlab-mesh",
+    input_group = parser.add_argument_group("input mesh types")
+
+    mesh_opts = {
+        grid_type: f"--{arg_dest.replace('_', '-')}" for grid_type, arg_dest in GridConfig.mesh_arg_dests.items()
+    }
+
+    mesh_msg = f"Either {', or '.join([mesh_opts[g] for g in mesh_opts.keys()])} is required."
+
+    primary_grid_group = input_group.add_mutually_exclusive_group(required=True)
+
+    primary_grid_group.add_argument(
+        mesh_opts[GridInputType.MATLAB],
         type=Path,
-        help="Path to the MATLAB mesh file. Either --elmer-mesh or --matlab-mesh is required.",
+        help="Path to the MATLAB mesh file. " + mesh_msg,
+    )
+
+    primary_grid_group.add_argument(
+        mesh_opts[GridInputType.ELMER],
+        type=Path,
+        help="Path to the Elmer mesh file. " + mesh_msg,
     )
 
     input_group.add_argument(
         "--netcdf-mesh",
         type=Path,
-        help="Path to the NetCDF mesh file. Optional if using --elmer-mesh."
-        " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
-    )
-
-    input_group.add_argument(
-        "--shading",
-        default=None,
-        action=argparse.BooleanOptionalAction,
-        help="Enable/disable shading. Defaults to True for MATLAB meshes, False for all other mesh types.",
+        help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. "
+        "If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
     input_group.add_argument(
         "--netcdf-mesh-unstructured",
         type=Path,
-        help="Path to the unstructured NetCDF mesh file. Optional if using --elmer-mesh."
-        " If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+        help="Path to the unstructured NetCDF mesh file. "
+        f"Optional if using {mesh_opts[GridInputType.ELMER]}. "
+        f"If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+    )
+
+    shading_default_info = "(default: True for {}, False for {})".format(
+        ", ".join([mesh_opts[g] for g in GridConfig.grid_types_supporting_shading]),
+        ", ".join([mesh_opts[g] for g in (mesh_opts.keys() - GridConfig.grid_types_supporting_shading)]),
+    )
+
+    input_group.add_argument(
+        "--shading",
+        default=argparse.SUPPRESS,
+        action=argparse.BooleanOptionalAction,
+        help="Enable/disable shading. " + shading_default_info,
     )
 
     example_restart_file_name = INIT.create_restart_file_name(CliDefaults.START_TIME.value)
@@ -308,6 +338,13 @@ def _main_impl():
         default=CliDefaults.TIME_STEP_SIZE_IN_DAYS.value,
     )
 
+    time_group.add_argument(
+        "--calendar",
+        type=str,
+        help=f"Calendar type for time handling. Supported values: {[cal.value for cal in Calendar]}.",
+        default=CliDefaults.CALENDAR.value,
+    )
+
     parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
 
     parallel_group.add_argument(
@@ -347,10 +384,10 @@ def _main_impl():
         help="If provided, log output will be written to the specified file (one file per MPI rank).",
     )
 
-    diag_group = parser.add_argument_group("diagnostics, reference snapshots, random seed")
+    diagnostics_group = parser.add_argument_group("diagnostics, reference snapshots, random seed")
 
-    diag_group.add_argument(
-        "--diagnostics",
+    diagnostics_group.add_argument(
+        "--print-diagnostics",
         action="store_true",
         default=False,
         help=(
@@ -359,7 +396,7 @@ def _main_impl():
         ),
     )
 
-    diag_group.add_argument(
+    diagnostics_group.add_argument(
         "--dump-reference",
         type=str,
         default=None,
@@ -371,7 +408,7 @@ def _main_impl():
         ),
     )
 
-    diag_group.add_argument(
+    diagnostics_group.add_argument(
         "--random-seed",
         type=int,
         default=None,
@@ -411,9 +448,6 @@ def _main_impl():
     if not hasattr(args, "local_group_label"):
         args.local_group_label = args.component_name
 
-    if args.version:
-        ebfm.core.print_version_and_exit()
-
     # Bootstrap logging before communicator splitting so early diagnostics are available.
     setup_logging(
         stdout_log_level=log_levels_map[args.log_level_console],
@@ -427,8 +461,10 @@ def _main_impl():
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
 
+    time_config = TimeConfig(args)
+
     active_coupling_features = extract_active_coupling_features(args)
-    coupling_config = CouplingConfig(args)
+    coupling_config = CouplingConfig(args, time_config)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
     coupler_cls: type[ebfm.coupling.Coupler] = None
@@ -481,8 +517,6 @@ def _main_impl():
             "Please deactivate shading via --no-shading or deactivate coupling."
         )
 
-    time_config = TimeConfig(args)
-
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
@@ -491,7 +525,7 @@ def _main_impl():
 
     if args.random_seed is not None:
         np.random.seed(args.random_seed)
-        logger.info(f"[DIAG] NumPy random seed fixed to {args.random_seed} for reproducibility.")
+        logger.info(f"NumPy random seed fixed to {args.random_seed} for reproducibility.")
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
@@ -559,8 +593,8 @@ def _main_impl():
         # Calculate surface mass balance
         OUT = LOOP_mass_balance.main(OUT, IN, C)
 
-        if args.diagnostics:
-            print_diagnostics(logger, grid, OUT, t)
+        if args.print_diagnostics:
+            print_diagnostics(grid, OUT, t)
 
         if coupler.has_coupling_to("elmer_ice"):
             elmer_ice = coupler.get_component("elmer_ice")
