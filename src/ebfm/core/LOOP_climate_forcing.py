@@ -144,7 +144,7 @@ def read_Greenland_data(IN, C, time, grid, config: GridConfig):
     file_group = 1 if model_time_utc.month <= 6 else 2
     forcing_prefix = f"{model_time_utc.year}_{file_group}"
     forcing_suffix = forcing_file_suffix_from_grid_file()
-    forcing_file = forcing_dir / f"{forcing_prefix}_forcing_vectorized{forcing_suffix}.nc"
+    forcing_file = forcing_dir / f"{forcing_prefix}{forcing_suffix}.nc"
 
     forcing_variables = ("C", "T", "Pres", "WS", "P", "q")
 
