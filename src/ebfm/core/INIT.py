@@ -430,8 +430,8 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
             count = 1
             active = np.ones(grid["gpsum"], dtype=bool)
-
-            while active.any() and count * grid["dx"] < 5e4:
+            max_walk_distance = 5e4  # maximum walk distance in meters along the azimuth
+            while active.any() and count * grid["dx"] < max_walk_distance:
                 j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
                 i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
 
@@ -444,6 +444,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
                 max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle when needed
 
                 active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
+
                 count += 1
 
             # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
