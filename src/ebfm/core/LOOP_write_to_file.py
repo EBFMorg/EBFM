@@ -40,11 +40,11 @@ def main(OUTFILE, io, OUT, grid, t, time):
             ["surfH", "m", "sample", "Surface height"],
             ["albedo", "fraction", "mean", "Albedo"],
             ["shade", "fraction", "mean", "Shading (0=not shaded, 1=shaded)"],
-            # ["subD", "kg m^-3", "sample", "Density"],
-            # ["subT", "K", "sample", "Temperature"],
-            # ["subS", "mm w.e.", "sample", "Slush water content"],
-            # ["subW", "mm w.e.", "sample", "Irreducible water"],
-            # ["subZ", "m", "sample", "Layer thickness"],
+            ["subD", "kg m^-3", "sample", "Density"],
+            ["subT", "K", "sample", "Temperature"],
+            ["subS", "mm w.e.", "sample", "Slush water content"],
+            ["subW", "mm w.e.", "sample", "Irreducible water"],
+            ["subZ", "m", "sample", "Layer thickness"],
         ]
 
         io["varsout"] = [
