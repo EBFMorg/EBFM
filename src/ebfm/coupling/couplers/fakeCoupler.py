@@ -29,7 +29,7 @@ class FakeFieldConfig:
     """Name of the coupled component this field belongs to (e.g. ``"elmer_ice"``)."""
 
     field_name: str
-    """Name of the field (e.g. ``"h"``)."""
+    """Name of the field (e.g. ``"surface_elevation"``)."""
 
     value: float = 0.0
     """Scalar fill value used to construct the returned array."""
@@ -42,7 +42,7 @@ class FakeFieldConfig:
 # ---------------------------------------------------------------------------
 _DEFAULT_FAKE_FIELDS: tuple[FakeFieldConfig, ...] = (
     # Elmer/Ice → EBFM
-    FakeFieldConfig("elmer_ice", "h", 1000.0),  # surface height            [m]
+    FakeFieldConfig("elmer_ice", "surface_elevation", 1000.0),  # surface elevation        [m]
     # ICON atmosphere → EBFM
     FakeFieldConfig("icon_atmo", "pr", 0.0),  # precipitation rate        [kg m-2 s-1]
     FakeFieldConfig("icon_atmo", "pr_snow", 0.0),  # snowfall rate             [kg m-2 s-1]
@@ -77,12 +77,12 @@ class FakeCoupler(Coupler):
 
         # Or override specific fields
         coupler = FakeCoupler(coupling_config, fake_fields=[
-            FakeFieldConfig("elmer_ice", "h", 500.0),
+            FakeFieldConfig("elmer_ice", "surface_elevation", 500.0),
             FakeFieldConfig("icon_atmo", "tas", 270.0),
         ])
 
         coupler.setup(grid, time)
-        data, err = coupler.get("elmer_ice", "h")   # returns np.full(n_points, 500.0)
+        data, err = coupler.get("elmer_ice", "surface_elevation")   # returns np.full(n_points, 500.0)
         coupler.put("elmer_ice", "smb", smb_data)   # silently discarded
     """
 

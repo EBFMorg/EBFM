@@ -249,12 +249,12 @@ def _main_impl():
             logger.debug("Done.")
             logger.debug(f"Received the following data from Elmer/Ice: {data_from_elmer}")
 
-            IN["h"] = data_from_elmer["h"]
-            OUT["h"] = IN["h"]
+            IN["surface_elevation"] = data_from_elmer["surface_elevation"]
+            OUT["surface_elevation"] = IN["surface_elevation"]
             OUT["x"] = grid["x"]
             OUT["y"] = grid["y"]
             if coupler.has_coupling_to("icon_atmo"):
-                grid["z"] = IN["h"][0].ravel()
+                grid["z"] = IN["surface_elevation"][0].ravel()
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
@@ -262,7 +262,7 @@ def _main_impl():
             # Needed by FINAL_create_restart_file.main(OUT, io)
             OUT["x"] = grid["x"]
             OUT["y"] = grid["y"]
-            OUT["h"] = grid["z"]
+            OUT["surface_elevation"] = grid["z"]
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         # TODO: should be supported for all cases to avoid case distinction here

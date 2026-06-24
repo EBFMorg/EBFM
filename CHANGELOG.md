@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Rename "h" received from Elmer to "surface_elevation". https://github.com/EBFMorg/EBFM/pull/124.
 * Refactor how parser and configuration modules process errors in user input. https://github.com/EBFMorg/EBFM/pull/131
 
 # v0.4.0
