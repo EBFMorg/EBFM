@@ -111,15 +111,15 @@ class TestDefaults(unittest.TestCase):
         self.args = parse_cli_args(_MATLAB)
 
     def test_start_time_default(self):
-        expected = CliDefaults.START_TIME.value.strftime("%d-%b-%Y %H:%M")
+        expected = CliDefaults.START_TIME.value.isoformat()
         self.assertEqual(self.args.start_time, expected)
 
     def test_end_time_default(self):
-        expected = CliDefaults.END_TIME.value.strftime("%d-%b-%Y %H:%M")
+        expected = CliDefaults.END_TIME.value.isoformat()
         self.assertEqual(self.args.end_time, expected)
 
     def test_time_step_default(self):
-        self.assertEqual(self.args.time_step, CliDefaults.TIME_STEP_SIZE_IN_DAYS.value)
+        self.assertEqual(self.args.time_step, CliDefaults.TIME_STEP_SIZE.value)
 
     def test_log_level_default(self):
         self.assertEqual(self.args.log_level_console, CliDefaults.LOG_LEVEL_CONSOLE.value)
@@ -301,6 +301,45 @@ class TestTimeConfigCalendar(unittest.TestCase):
         args = parse_cli_args(_MATLAB + ["--calendar", Calendar.YEAR_OF_365_DAYS.value])
         time_config = TimeConfig(args)
         self.assertEqual(time_config.calendar, Calendar.YEAR_OF_365_DAYS)
+
+
+class TestTimeConfigStartEndTimes(unittest.TestCase):
+    start_time_str = "01-Jan-2020 00:00"
+    end_time_str = "31-Dec-2020 23:59"
+
+    start_time_iso = "2020-01-01T00:00:00"
+    end_time_iso = "2020-12-31T23:59:59"
+
+    def test_time_config_parses_start_end_times_from_cli_args(self):
+        args = parse_cli_args(_MATLAB + ["--start-time", self.start_time_str, "--end-time", self.end_time_str])
+        time_config = TimeConfig(args)
+        self.assertEqual(time_config.start_time.strftime("%d-%b-%Y %H:%M"), self.start_time_str)
+        self.assertEqual(time_config.end_time.strftime("%d-%b-%Y %H:%M"), self.end_time_str)
+
+    def test_time_config_parses_start_end_times_from_cli_args_iso8601(self):
+
+        args = parse_cli_args(_MATLAB + ["--start-time", self.start_time_iso, "--end-time", self.end_time_iso])
+        time_config = TimeConfig(args)
+        self.assertEqual(time_config.start_time.strftime("%Y-%m-%dT%H:%M:%S"), self.start_time_iso)
+        self.assertEqual(time_config.end_time.strftime("%Y-%m-%dT%H:%M:%S"), self.end_time_iso)
+
+
+class TestTimeConfigTimeStep(unittest.TestCase):
+    time_step_iso_in = "P2DT12H"  # 2 days and 12 hours
+    time_step_iso_out = "P2DT12H0M0S"  # 2 days and 12 hours
+    time_step_days = 2.5
+
+    def test_time_config_parses_time_step_from_cli_args(self):
+        args = parse_cli_args(_MATLAB + ["--time-step", str(self.time_step_days)])
+        time_config = TimeConfig(args)
+        self.assertEqual(time_config.time_step_in_days(), self.time_step_days)
+        self.assertEqual(time_config.time_step_iso8601(), self.time_step_iso_out)
+
+    def test_time_config_parses_time_step_from_cli_args_iso8601(self):
+        args = parse_cli_args(_MATLAB + ["--time-step", self.time_step_iso_in])
+        time_config = TimeConfig(args)
+        self.assertEqual(time_config.time_step_in_days(), self.time_step_days)
+        self.assertEqual(time_config.time_step_iso8601(), self.time_step_iso_out)
 
 
 if __name__ == "__main__":
