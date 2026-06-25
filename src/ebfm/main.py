@@ -269,18 +269,12 @@ def _main_impl():
             OUT["y"] = grid["y"]
             OUT["surface_elevation"] = grid["z"]
 
-        # Write output to files (only in uncoupled run and for unpartitioned grid)
-        # TODO: should be supported for all cases to avoid case distinction here
-        if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
-            if LOOP_write_to_file.is_supported_grid_type(grid_config.grid_type):
-                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
-            else:
-                logger.warning("Skipping writing output to file for Elmer input grids.")
-        elif grid["is_partitioned"] or not isinstance(coupler, ebfm.coupling.DummyCoupler):
-            logger.warning("Skipping writing output to file for coupled or partitioned runs.")
+        # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
+        # TODO: partitioned output should be supported in a dedicated parallel-safe writer.
+        if not grid["is_partitioned"]:
+            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
         else:
-            logger.error("Unhandled case in output writing.")
-            raise Exception("Unhandled case in output writing.")
+            logger.warning("Skipping writing output to file for partitioned runs.")
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
