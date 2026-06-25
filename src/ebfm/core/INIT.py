@@ -238,7 +238,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             )
 
         grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
-        grid["lat"], grid["lon"] = mesh.lat_cells, mesh.lon_cells
 
         logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
