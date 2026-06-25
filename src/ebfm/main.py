@@ -16,7 +16,6 @@ from ebfm.core import (
     LOOP_mass_balance,
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
-from ebfm.core.grid import GridInputType
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
@@ -265,17 +264,11 @@ def _main_impl():
             OUT["h"] = grid["z"]
 
         # Write output to files (only in uncoupled run and for unpartitioned grid)
-        # TODO: should be supported for all cases to avoid case distinction here
-        if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
-            if grid_config.grid_type is GridInputType.MATLAB:
-                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time)
-            else:
-                logger.warning("Skipping writing output to file for Elmer input grids.")
-        elif grid["is_partitioned"] or not isinstance(coupler, ebfm.coupling.DummyCoupler):
-            logger.warning("Skipping writing output to file for coupled or partitioned runs.")
+        # TODO: partitioned/coupled output should be supported in a dedicated parallel-safe writer.
+        if not grid["is_partitioned"]:
+            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time)
         else:
-            logger.error("Unhandled case in output writing.")
-            raise Exception("Unhandled case in output writing.")
+            logger.warning("Skipping writing output to file for partitioned runs.")
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
