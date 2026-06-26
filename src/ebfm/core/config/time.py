@@ -38,7 +38,6 @@ class TimeConfig:
     start_time: datetime  # Start time of the simulation (i.e., time at the beginning of the first time step)
     end_time: datetime  # End time of the simulation (i.e., time at the end of the last time step)
     time_step: timedelta  # Time step of the simulation
-    dT_UTC: int  # Time difference relative to UTC in hours
     calendar: Calendar  # Calendar type for time handling
 
     def __init__(self, args: Namespace):
@@ -65,8 +64,6 @@ class TimeConfig:
                 f"Time step of {self.time_step.total_seconds()} seconds does not evenly divide one "
                 f"day ({SECONDS_PER_DAY} seconds). This may lead to unexpected behavior."
             )
-
-        self.dT_UTC = 1  # Time difference relative to UTC in hours (hard-coded for now)
 
         self.calendar = Calendar(args.calendar)
 
@@ -113,5 +110,4 @@ class TimeConfig:
             "te": self.end_time,
             "dt": self.time_step_in_days(),
             "tn": self.tn(),
-            "dT_UTC": self.dT_UTC,
         }

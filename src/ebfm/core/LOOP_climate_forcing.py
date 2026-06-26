@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2025 EBFM Authors
 #
 # SPDX-License-Identifier: BSD-3-Clause
-from datetime import timezone, timedelta
+from datetime import timezone
 
 from netCDF4 import Dataset
 import numpy as np
@@ -125,7 +125,7 @@ def read_Greenland_data(IN, C, time, grid, config: GridConfig):
     """
     forcing_dir = config.mesh_file.parent
 
-    model_time_utc = time["TCUR"] - timedelta(hours=time["dT_UTC"])
+    model_time_utc = time["TCUR"]
     model_time_seconds = model_time_utc.replace(tzinfo=timezone.utc).timestamp()
 
     def forcing_file_suffix_from_grid_file() -> str:
