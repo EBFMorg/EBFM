@@ -2,10 +2,6 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from pathlib import Path
-from datetime import datetime
-import argparse
-from enum import Enum
 import numpy as np
 
 import ebfm.core
@@ -21,8 +17,14 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.grid import GridInputType
-from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, FieldValidationLevel, Calendar
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
+from ebfm.core.cli import (
+    extract_active_coupling_features,
+    parse_cli_args,
+    resolve_numba_threads,
+    validate_shading_coupling_compat,
+)
 
 import ebfm.coupling
 
@@ -30,98 +32,6 @@ import ebfm.coupling
 logger: Logger
 # dedicated logger for diagnostic output (--print-diagnostics)
 diagnostics_logger = getLogger("ebfm.diagnostics")
-
-
-class CliDefaults(Enum):
-    START_TIME = datetime(1979, 1, 1, 0, 0)
-    END_TIME = datetime(1979, 1, 2, 0, 0)
-    FIELD_VALIDATION_LEVEL = FieldValidationLevel.FATAL
-    TIME_STEP_SIZE_IN_DAYS = 0.125  # = 0.125 days = 3 hours
-    LOG_LEVEL_CONSOLE = "INFO"
-    COMPONENT_NAME = "ebfm"
-    CALENDAR = Calendar.PROLEPTIC_GREGORIAN.value
-
-    @classmethod
-    def default_time_step_size_in_hours(cls) -> float:
-        return cls.TIME_STEP_SIZE_IN_DAYS.value * 24
-
-
-def add_coupling_arguments(parser: argparse.ArgumentParser):
-    """
-    Add command line arguments related to coupling with other models via YAC.
-
-    @param[in] parser the argument parser to add the coupling arguments to.
-    """
-
-    # Note: If you add arguments to this function, also update check_coupling_features.
-
-    coupling_group = parser.add_argument_group("coupling (requires YAC)")
-
-    coupling_group.add_argument(
-        "--couple-to-elmer-ice",
-        action="store_true",
-        help="Enable coupling with Elmer/Ice models via YAC",
-    )
-
-    coupling_group.add_argument(
-        "--couple-to-icon-atmo",
-        action="store_true",
-        help="Enable coupling with ICON via YAC",
-    )
-
-    coupling_group.add_argument(
-        "--coupler-config",
-        type=Path,
-        help="Path to the coupling configuration file (YAC coupler_config.yaml).",
-    )
-
-    coupling_group.add_argument(
-        "--field-validation-level",
-        type=str,
-        choices={level.value for level in FieldValidationLevel},
-        default=CliDefaults.FIELD_VALIDATION_LEVEL.value,
-        help="Level of validation for field exchange type checks. "
-        "'FATAL': raise exception on mismatch (default), "
-        "'WARNING': log warning on mismatch, "
-        "'SILENT': only log at debug level on mismatch.",
-    )
-
-    coupling_group.add_argument(
-        "--fake-coupling",
-        action="store_true",
-        help="Use FakeCoupler to provide synthetic data for coupled fields without requiring YAC or actual coupled "
-        "models. Useful for testing the coupling infrastructure.",
-    )
-
-    coupling_group.add_argument(
-        "--component-name",
-        type=str,
-        default=CliDefaults.COMPONENT_NAME.value,
-        help="Identifier for this EBFM instance used by the coupler.",
-    )
-
-
-def extract_active_coupling_features(args: argparse.Namespace) -> list[str]:
-    """
-    Determine if coupling is required based on the provided command line arguments.
-
-    @param[in] args the parsed command line arguments.
-
-    @return a list of argument names that indicate coupling is required.
-    """
-
-    active_coupling_args = []
-
-    if args.couple_to_elmer_ice:
-        active_coupling_args.append("--couple-to-elmer-ice")
-
-    if args.couple_to_icon_atmo:
-        active_coupling_args.append("--couple-to-icon-atmo")
-
-    if args.coupler_config:
-        active_coupling_args.append("--coupler-config")
-
-    return active_coupling_args
 
 
 # Arrays saved by --dump-reference
@@ -180,279 +90,8 @@ def print_diagnostics(grid, OUT, t):
         diagnostics_logger.info(f"[t={t + 1}] smb_cumulative: {_format_stats(smb_cum)}")
 
 
-def _compute_numba_threads(args, comm, parser, logger) -> int:
-    """Determine the number of Numba threads per MPI rank based on CLI args and system resources."""
-    import multiprocessing as _mp
-
-    cpu_count = _mp.cpu_count()
-    mpi_size = comm.size
-    suggested_max_threads = max(1, cpu_count // mpi_size)
-
-    n_threads = args.numba_threads if args.numba_threads is not None else 1
-
-    if args.numba_threads is None:
-        logger.info(
-            f"[NUMBA] --with-numba enabled. Using default threads per rank: {n_threads}. "
-            f"To increase, pass --numba-threads N (suggested max: {suggested_max_threads}; "
-            f"cpu_count={cpu_count}, MPI world size={mpi_size})."
-        )
-    else:
-        if n_threads < 1:
-            parser.error("--numba-threads must be >= 1")
-        if n_threads > suggested_max_threads:
-            parser.error(
-                f"[NUMBA] --numba-threads={n_threads} exceeds suggested max {suggested_max_threads} "
-                f"(cpu_count={cpu_count}, MPI world size={mpi_size}). "
-                f"--numba-threads must be between 1 and {suggested_max_threads} on this system. "
-            )
-        logger.info(
-            f"[NUMBA] --with-numba enabled. Threads per rank: {n_threads} "
-            f"(suggested max {suggested_max_threads}; cpu_count={cpu_count}, MPI world size={mpi_size})."
-        )
-
-    return n_threads
-
-
-def _add_version_argument(parser: argparse.ArgumentParser) -> None:
-    """Add the shared --version flag used by both pre-parser and full parser."""
-    parser.add_argument(
-        "--version",
-        action="store_true",
-        help="Show the EBFM version and exit.",
-    )
-
-
 def _main_impl():
-    pre_parser = argparse.ArgumentParser(add_help=False)
-    _add_version_argument(pre_parser)
-
-    pre_args, _ = pre_parser.parse_known_args()
-    if pre_args.version:
-        ebfm.core.print_version_and_exit()
-
-    parser = argparse.ArgumentParser(
-        parents=[pre_parser],
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-
-    input_group = parser.add_argument_group("input mesh types")
-
-    mesh_opts = {
-        grid_type: f"--{arg_dest.replace('_', '-')}" for grid_type, arg_dest in GridConfig.mesh_arg_dests.items()
-    }
-
-    mesh_msg = f"Either {', or '.join([mesh_opts[g] for g in mesh_opts.keys()])} is required."
-
-    primary_grid_group = input_group.add_mutually_exclusive_group(required=True)
-
-    primary_grid_group.add_argument(
-        mesh_opts[GridInputType.MATLAB],
-        type=Path,
-        help="Path to the MATLAB mesh file. " + mesh_msg,
-    )
-
-    primary_grid_group.add_argument(
-        mesh_opts[GridInputType.GREENLAND],
-        type=Path,
-        help="Path to the mesh file and climate data for a test on Greenland. " + mesh_msg,
-    )
-
-    primary_grid_group.add_argument(
-        mesh_opts[GridInputType.ELMER],
-        type=Path,
-        help="Path to the Elmer mesh file. " + mesh_msg,
-    )
-
-    input_group.add_argument(
-        "--netcdf-mesh",
-        type=Path,
-        help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. "
-        "If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
-    )
-
-    input_group.add_argument(
-        "--netcdf-mesh-unstructured",
-        type=Path,
-        help="Path to the unstructured NetCDF mesh file. "
-        f"Optional if using {mesh_opts[GridInputType.ELMER]}. "
-        f"If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
-    )
-
-    shading_default_info = "(default: True for {}, False for {})".format(
-        ", ".join([mesh_opts[g] for g in GridConfig.grid_types_supporting_shading]),
-        ", ".join([mesh_opts[g] for g in (mesh_opts.keys() - GridConfig.grid_types_supporting_shading)]),
-    )
-
-    input_group.add_argument(
-        "--shading",
-        default=argparse.SUPPRESS,
-        action=argparse.BooleanOptionalAction,
-        help="Enable/disable shading. " + shading_default_info,
-    )
-
-    example_restart_file_name = INIT.create_restart_file_name(CliDefaults.START_TIME.value)
-
-    input_group.add_argument(
-        "--restart-dir",
-        type=Path,
-        help="Path to folder with restart files. If --restart-init there must be a restart file in "
-        f" the folder must be named after given --start-time (e.g., '{example_restart_file_name}').",
-    )
-
-    input_group.add_argument(
-        "--restart-init",
-        action="store_true",
-        help="Initialise from restart file in --restart-dir.",
-    )
-
-    input_group.add_argument(
-        "--elmer-mesh-crs-epsg",
-        type=int,
-        choices={
-            3413,  # EPSG code for NSIDC Sea Ice Polar Stereographic North (commonly used for Greenland)
-            3031,  # EPSG code for NSIDC Sea Ice Polar Stereographic South (commonly used for Antarctica)
-        },
-        help="EPSG code of the input Elmer mesh coordinate reference system."
-        " Used to convert mesh x/y coordinates to lon/lat."
-        " Required when using --elmer-mesh.",
-    )
-
-    time_group = parser.add_argument_group("time configuration")
-
-    time_group.add_argument(
-        "--start-time",
-        type=str,
-        help=f"Start time of the simulation in format '{TimeConfig.input_time_format_display}' "
-        "(i.e., time at the beginning of the first time step)",
-        default=CliDefaults.START_TIME.value.strftime(TimeConfig.input_time_format),
-    )
-
-    time_group.add_argument(
-        "--end-time",
-        type=str,
-        help=f"End time of the simulation in format '{TimeConfig.input_time_format_display}' "
-        "(i.e., time at the end of the last time step)",
-        default=CliDefaults.END_TIME.value.strftime(TimeConfig.input_time_format),
-    )
-
-    time_group.add_argument(
-        "--time-step",
-        type=float,
-        help=f"Time step of the simulation in days, e.g., {CliDefaults.TIME_STEP_SIZE_IN_DAYS.value} for "
-        f"{CliDefaults.default_time_step_size_in_hours()} hours. Note: The difference between --end-time and "
-        "--start-time must be divisible by --time-step.",
-        default=CliDefaults.TIME_STEP_SIZE_IN_DAYS.value,
-    )
-
-    time_group.add_argument(
-        "--calendar",
-        type=str,
-        help=f"Calendar type for time handling. Supported values: {[cal.value for cal in Calendar]}.",
-        default=CliDefaults.CALENDAR.value,
-    )
-
-    parallel_group = parser.add_argument_group("parallel runs and distributed meshes")
-
-    parallel_group.add_argument(
-        "--local-group-label",
-        type=str,
-        default=argparse.SUPPRESS,
-        help="MPI group label for the local EBFM communicator. Defaults to --component-name.",
-    )
-
-    parallel_group.add_argument(
-        "--is-partitioned-elmer-mesh",
-        action="store_true",
-        help="Indicate if the provided Elmer mesh is partitioned for parallel runs.",
-    )
-
-    parallel_group.add_argument(
-        "--use-part",
-        type=int,
-        default=argparse.SUPPRESS,  # To not print (default: ...) in --help
-        help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. "
-        "If not provided, the MPI rank + 1 will be used as partition ID.",
-    )
-
-    logger_group = parser.add_argument_group("logging configuration")
-
-    logger_group.add_argument(
-        "--log-level-console",
-        type=str,
-        choices=list(log_levels_map.keys()),
-        default=CliDefaults.LOG_LEVEL_CONSOLE.value,
-        help="Log level for console output for all MPI ranks (unless overridden by custom settings in utils.py).",
-    )
-
-    logger_group.add_argument(
-        "--log-file",
-        type=Path,
-        help="If provided, log output will be written to the specified file (one file per MPI rank).",
-    )
-
-    diagnostics_group = parser.add_argument_group("diagnostics, reference snapshots, random seed")
-
-    diagnostics_group.add_argument(
-        "--print-diagnostics",
-        action="store_true",
-        default=False,
-        help=(
-            "Log diagnostic info each timestep via the INFO logger: "
-            "gpsum, shading status, and smb / smb_cumulative statistics."
-        ),
-    )
-
-    diagnostics_group.add_argument(
-        "--dump-reference",
-        type=str,
-        default=None,
-        metavar="FILE",
-        help=(
-            "After the final timestep, save key output arrays "
-            "(see defined `_REFERENCE_KEYS`) to FILE as a NumPy .npz archive. "
-            "Use tools/compare_snapshots.py to diff two such files."
-        ),
-    )
-
-    diagnostics_group.add_argument(
-        "--random-seed",
-        type=int,
-        default=None,
-        metavar="INT",
-        help=(
-            "Fix the NumPy random seed before the time loop. Required for reproducible "
-            "results when using random climate forcing (e.g. set_random_weather_data), "
-            "so that --dump-reference snapshots from two identical runs can be compared."
-        ),
-    )
-
-    performance_group = parser.add_argument_group("Performance and Numba configuration")
-
-    performance_group.add_argument(
-        "--numba-threads",
-        type=int,
-        default=None,
-        metavar="N",
-        help=(
-            "Number of Numba threads to use per MPI rank. "
-            "Requires numba; install via 'pip install ebfm[performance]'. "
-        ),
-    )
-
-    performance_group.add_argument(
-        "--with-numba",
-        action="store_true",
-        default=False,
-        help=("Enable the parallel Numba kernel. " "Requires numba; install via: pip install 'ebfm[performance]'. "),
-    )
-
-    # Add args for features requiring 'import coupling'
-    add_coupling_arguments(parser)
-
-    args = parser.parse_args()
-
-    if not hasattr(args, "local_group_label"):
-        args.local_group_label = args.component_name
+    args = parse_cli_args()
 
     # Bootstrap logging before communicator splitting so early diagnostics are available.
     setup_logging(
@@ -463,19 +102,19 @@ def _main_impl():
     logger = getLogger(__name__)
     logger.debug("Bootstrap logging initialized with MPI.COMM_WORLD.")
 
-    # Validate that --elmer-mesh-crs-epsg is provided when using --elmer-mesh
-    if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
-        parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
-
     time_config = TimeConfig(args)
 
     active_coupling_features = extract_active_coupling_features(args)
     coupling_config = CouplingConfig(args, time_config)
     ebfm.coupling.check_coupling_requirements(coupling_config, active_coupling_features)
 
-    coupler_cls: type[ebfm.coupling.Coupler] = None
+    if ebfm.core.comm.mpi_available:
+        from ebfm.core.comm import mpi as comm_mpi
 
-    ebfm_comm, coupler_cls = ebfm.core.comm.do_comm_splitting(args.local_group_label, coupling_config)
+        ebfm_comm = comm_mpi.do_comm_splitting(args.local_group_label, coupling_config)
+    else:
+        ebfm_comm = ebfm.core.comm.defaultComm
+
     # Reconfigure logging for (now available) EBFM communicator.
     setup_logging(
         stdout_log_level=log_levels_map[args.log_level_console],
@@ -493,12 +132,9 @@ def _main_impl():
 
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
     if args.with_numba:
-        from ebfm.core.compute_backend import is_numba_available, init_numba
+        from ebfm.core.compute_backend import init_numba
 
-        if not is_numba_available():
-            parser.error("--with-numba: numba is not installed. " "Run: pip install 'ebfm[performance]'")
-
-        n_threads = _compute_numba_threads(args, ebfm_comm, parser, logger)
+        n_threads = resolve_numba_threads(args, ebfm_comm, logger)
         init_numba(n_threads)
     else:
         logger.info(
@@ -515,13 +151,9 @@ def _main_impl():
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
     grid_config = GridConfig(args)
 
-    # Ensure shading routine is only used in uncoupled runs
-    # see https://github.com/EBFMorg/EBFM/issues/11 for details.
-    if grid_config.use_shading and coupling_config.defines_coupling():
-        parser.error(
-            "Shading routine not implemented for coupled runs. "
-            "Please deactivate shading via --no-shading or deactivate coupling."
-        )
+    # Ensure shading routine is only used in uncoupled runs.
+    # See https://github.com/EBFMorg/EBFM/issues/11 for details.
+    validate_shading_coupling_compat(grid_config, coupling_config)
 
     logger.debug("Successfully completed consistency checks.")
 
@@ -669,8 +301,10 @@ def main():
         logger = getLogger(__name__)
         logger.exception("Fatal Error in EBFM")
 
-        if ebfm.core.comm.is_initialized():
-            ebfm.core.comm.abort()
+        if ebfm.core.comm.mpi_available:
+            from ebfm.core.comm import mpi as comm_mpi
+
+            comm_mpi.abort()
 
         raise e
 

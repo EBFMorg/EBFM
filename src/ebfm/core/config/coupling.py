@@ -9,7 +9,8 @@ This file exposes the coupling configuration dataclass for EBFM components.
 from argparse import Namespace
 from pathlib import Path
 from enum import Enum
-from mpi4py import MPI
+
+from ebfm.core.comm import Comm
 
 from datetime import datetime
 
@@ -49,7 +50,7 @@ class CouplingConfig:
     coupler_config: Path | None  # Path to the coupler configuration file
     field_validation_level: FieldValidationLevel  # Level of validation for field exchange types
     use_fake_coupling: bool  # Whether to use FakeCoupler instead of production backend
-    comms: dict[str, MPI.Comm] | None  # Dict with MPI communicators used by this model
+    comms: dict[str, Comm] | None  # Dict with communicators used by this model
 
     def __init__(
         self,
@@ -92,7 +93,7 @@ class CouplingConfig:
                 "This is fine if configuration is provided by other components or through the API."
             )
 
-    def set_group_communicators(self, group_comms: dict[str, MPI.Comm]):
+    def set_group_communicators(self, group_comms: dict[str, Comm]):
         """Store group communicators in the coupling configuration.
 
         @param[in] group_comms dict with MPI communicators for different groups
@@ -119,7 +120,7 @@ class CouplingConfig:
         """
         return self.has_group_communicators() and group_label in self.comms  # type: ignore[operator]
 
-    def get_group_communicator(self, group_label: str) -> MPI.Comm:
+    def get_group_communicator(self, group_label: str) -> Comm:
         """Get the communicator for the given group label.
 
         @param[in] group_label label of the group
