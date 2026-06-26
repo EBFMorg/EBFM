@@ -24,3 +24,5 @@ examples/1990_2_forcing_vectorized_coarse.nc
 examples/1990_1_forcing_vectorized_coarse.nc
 examples/1990_1.nc
 examples/1990_2.nc
+.idea/pyProjectModel.xml
+.idea/EBFM.iml
