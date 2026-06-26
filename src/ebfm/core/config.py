@@ -248,10 +248,8 @@ class GridConfig:
             )
             raise Exception("Invalid grid configuration.")
 
-        # Shading is only supported for MATLAB & Greenland meshes; see https://github.com/EBFMorg/EBFM/issues/11
-        grid_type_supports_shading_supported = (
-            self.grid_type is GridInputType.MATLAB or self.grid_type is GridInputType.GREENLAND
-        )
+        # Shading is only supported for MATLAB mesh; see https://github.com/EBFMorg/EBFM/issues/11
+        grid_type_supports_shading_supported = self.grid_type is GridInputType.MATLAB
 
         # Partitioned grids don't support shading
         grid_partitioning_supports_shading = not self.is_partitioned

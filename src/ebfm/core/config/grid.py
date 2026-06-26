@@ -40,7 +40,6 @@ class GridConfig:
     # Shading is only supported for some grid types
     grid_types_supporting_shading = {
         GridInputType.MATLAB,
-        GridInputType.GREENLAND,
     }
 
     def __init__(self, args: Namespace):
