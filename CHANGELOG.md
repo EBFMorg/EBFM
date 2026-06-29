@@ -10,6 +10,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # v0.4.0
 
+* Introduce coarse-resolution (10-km) and fine-resolution (2.5-km) test cases for Greenland forced with meteorological data from CARRA2. https://github.com/EBFMorg/EBFM/pull/128
 * Call `def_datetime` and `def_calendar` in YAC coupler setup to forward EBFM calendar and time frame to YAC. This will lead to a YAC error the setup of the coupled run is inconsistent. https://github.com/EBFMorg/EBFM/pull/125.
 * Add Elmer Greenland Mesh in this repository for more conveniently running examples. https://github.com/EBFMorg/EBFM/pull/120.
 * Coupler `put`/`get` operations now log a warning if coupler returns non-zero error code to investigate unexpected behavior, instead of silently ignoring it. Warning is intentionally non-fatal, because error may be transient or coupler-specific.
