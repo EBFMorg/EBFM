@@ -72,26 +72,34 @@ If during the installation of EBFM it appears that `yac` is missing, please doub
 
 ## Running EBFM
 
-After installation, a basic, uncoupled simulation can be run with the following command, provided you cloned this repository:
+### Test experiments
+After installation, you are able to perform two basic uncoupled simulations, provided you cloned this repository. The first test runs EBFM for all glaciers in Svalbard for one day in 1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing: 
 
 ```sh
 ebfm --matlab-mesh examples/dem_and_mask.mat
 ```
-This runs EBFM for all glaciers in Svalbard for one day in 1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing.
 
-A more advanced test case simulates the Greenland Ice Sheet during a full year (1990), and can be run on a 10-km coarse resolution grid:
+Another test applies EBFM to the Greenland Ice Sheet and forces it with Copernicus CARRA2 meteorological data for the month May 1990 on a 10-km resolution grid: 
+
+```sh
+ebfm --greenland-mesh examples/Greenland_grid_one_month.nc --with-numba --numba-threads 4 --start-time "1-May-1990 00:00" --end-time "1-Jun-1990 00:00"
+```
+
+Two more tests can be done, simulating the Greenland Ice Sheet for a full year (1990) at spatial resolutions of 2.5 km or 10 km. The faster 10-km resolution test requires this [package](https://drive.google.com/file/d/1bZUKxQ7QgQjwwPA8jTHqlJ-mXhwsU_OP/view?usp=sharing), whereas the computationally more expensive high-resolution 2.5-km resolution test requires this downloadable [package](https://drive.google.com/file/d/1fTFMt0QzGTrQFfzOmBC4xk1OonFsH9ZQ/view?usp=sharing). The zip-files need to be extracted so that the .nc files are in the `/examples/` folder prior to running the model with the following commands:
 
 ```sh
 ebfm --greenland-mesh examples/Greenland_grid_coarse.nc --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
 ```
 
-or on a 2.5-km grid, after downloading forcing files [`1990_1.nc`; 4 GB](https://drive.google.com/file/d/1ek8mQJZlxe8aYzaS5GiZuHXb_NtI4QlS/view?usp=sharing) and [`1990_2.nc`; 4 GB](https://drive.google.com/file/d/1Frl2adPN1MdyzqRZlh8W6v_TD8azFec2/view?usp=sharing) and putting these files into the `examples` folder before running the case:
+for the 10-km resolution experiment, and as:
 
 ```sh
 ebfm --greenland-mesh examples/Greenland_grid.nc --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
 ```
 
-The latter run becomes significantly faster (~3 times) when running with performance optimization (more details under **Performance and Profiling Runs** below):
+for the 2.5-km resolution experiment.
+
+Please note that runs become significantly faster (~3 times) when running with performance optimization (see also **Performance and Profiling Runs** below), e.g.:
 
 ```sh
 ebfm --greenland-mesh examples/Greenland_grid.nc --with-numba --numba-threads 2 --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
