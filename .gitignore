@@ -28,3 +28,4 @@ examples/1990_2.nc
 .idea/EBFM.iml
 examples/Greenland_one_year_highres.zip
 examples/Greenland_one_year_lowres.zip
+examples/selectMay1990FromForcingFiles.py
