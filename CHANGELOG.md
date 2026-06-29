@@ -31,7 +31,6 @@ SPDX-License-Identifier: CC-BY-4.0
   * Improvements in LOOP_SNOW.py (compaction, heat_conduction, percolation_refreezing_and_storage and layer_merging_and_splitting)
   * Added numba kernels for compaction, heat_conduction and percolation_refreezing_and_storage (in `LOOP_SNOW_kernels.py`) , addresses: https://github.com/EBFMorg/EBFM/issues/55
   * Introduced `compute_backend.py` to manage compute-backend dispatch to separate kernel code from logic. Explicit `if/else` dispatch with a single return per function. Prepares codebase for adding, e.g., GPU offload backends without structural changes.
-* Bug fixes in double depth method in INIT.py and LOOP_SNOW.py (by Ward)
 
 # v0.3.0
 
