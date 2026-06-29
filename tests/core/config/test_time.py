@@ -17,8 +17,8 @@ class TestTimeConfig(unittest.TestCase):
 
     def test_init(self):
         args = Namespace(
-            start_time="2024-01-01T00:00:00",
-            end_time="2024-01-02T00:00:00",
+            start_time="2024-01-01T00:00:00Z",
+            end_time="2024-01-02T00:00:00Z",
             time_step="PT1H",
             calendar="proleptic_gregorian",
         )
