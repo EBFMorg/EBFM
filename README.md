@@ -77,14 +77,25 @@ After installation, a basic, uncoupled simulation can be run with the following 
 ```sh
 ebfm --matlab-mesh examples/dem_and_mask.mat
 ```
+This runs EBFM for all glaciers in Svalbard for one day in 1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing.
 
-A more advanced case can be run via
+A more advanced test case simulates the Greenland Ice Sheet during a full year (1990), and can be run on a 10-km coarse resolution grid:
 
 ```sh
-ebfm --greenland-mesh examples/Greenland_grid.nc --start-time "01-Jan-1990 00:00" --end-time "31-Dec-1990 00:00"
+ebfm --greenland-mesh examples/Greenland_grid_coarse.nc --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
 ```
 
-Note: Please download [`1990_1_forcing_vectorized.nc`](https://drive.google.com/file/d/13pIjbIljL4LUPuOtBm0ArX23NCwgLhOZ/view?usp=sharing) and [`1990_2_forcing_vectorized.nc`](https://drive.google.com/file/d/13tVXkXDA1Nhf_X-IK9qE_hEwIv1wme9x/view?usp=sharing) and put these files into the `examples` folder before running the case.
+or on a 2.5-km grid, after downloading forcing files [`1990_1.nc`; 4 GB](https://drive.google.com/file/d/1ek8mQJZlxe8aYzaS5GiZuHXb_NtI4QlS/view?usp=sharing) and [`1990_2.nc`; 4 GB](https://drive.google.com/file/d/1Frl2adPN1MdyzqRZlh8W6v_TD8azFec2/view?usp=sharing) and putting these files into the `examples` folder before running the case:
+
+```sh
+ebfm --greenland-mesh examples/Greenland_grid.nc --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
+```
+
+The latter run becomes significantly faster (~3 times) when running with performance optimization (more details under **Performance and Profiling Runs** below):
+
+```sh
+ebfm --greenland-mesh examples/Greenland_grid.nc --with-numba --numba-threads 2 --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
+```
 
 ### Mesh data
 
@@ -188,7 +199,7 @@ Once available, you can either copy or symlink the required files into the
 using the CLI arguments shown above.
 
 
-### Using `reader.py` to amend elevantion data to `examples/greenland_mesh_v0`
+### Using `reader.py` to amend elevation data to `examples/greenland_mesh_v0`
 
 The helper script `reader.py` can be used to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
 
@@ -224,7 +235,7 @@ pip install -e .[performance]
 
 This additionally installs `numba` to run with multiple CPU-threads.
 
-#### Running EBFM with performance optimiuations
+#### Running EBFM with performance optimizations
 
 EBFM now includes several performance improvements and supports several options for performance testing and benchmarking:
 
