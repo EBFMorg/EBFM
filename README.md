@@ -82,7 +82,7 @@ ebfm --matlab-mesh examples/dem_and_mask.mat
 Another test applies EBFM to the Greenland Ice Sheet and forces it with Copernicus CARRA2 meteorological data for the month May 1990 on a 10-km resolution grid: 
 
 ```sh
-ebfm --greenland-mesh examples/Greenland_grid_one_month.nc --with-numba --numba-threads 4 --start-time "1-May-1990 00:00" --end-time "1-Jun-1990 00:00"
+ebfm --greenland-mesh examples/Greenland_grid_one_month.nc --start-time "1-May-1990 00:00" --end-time "1-Jun-1990 00:00"
 ```
 
 Two more tests can be done, simulating the Greenland Ice Sheet for a full year (1990) at spatial resolutions of 2.5 km or 10 km. The faster 10-km resolution test requires this [package](https://drive.google.com/file/d/1bZUKxQ7QgQjwwPA8jTHqlJ-mXhwsU_OP/view?usp=sharing), whereas the computationally more expensive high-resolution 2.5-km resolution test requires this downloadable [package](https://drive.google.com/file/d/1fTFMt0QzGTrQFfzOmBC4xk1OonFsH9ZQ/view?usp=sharing). The zip-files need to be extracted so that the .nc files are in the `/examples/` folder prior to running the model with the following commands:
