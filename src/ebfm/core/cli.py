@@ -22,7 +22,7 @@ import isodate
 import ebfm.core
 from ebfm.core import INIT
 from ebfm.core.comm import mpi_available
-from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig
+from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ
 from ebfm.core.grid import GridInputType
 from ebfm.core.logger import log_levels_map
 
@@ -39,8 +39,8 @@ def _cli_error(msg: str) -> None:
 
 
 class CliDefaults(Enum):
-    START_TIME = datetime(1979, 1, 1, 0, 0)
-    END_TIME = datetime(1979, 1, 2, 0, 0)
+    START_TIME = datetime(1979, 1, 1, 0, 0, tzinfo=DEFAULT_TZ)
+    END_TIME = datetime(1979, 1, 2, 0, 0, tzinfo=DEFAULT_TZ)
     CALENDAR = Calendar.PROLEPTIC_GREGORIAN.value
     FIELD_VALIDATION_LEVEL = FieldValidationLevel.FATAL.value
     TIME_STEP_SIZE = "PT3H"  # = 3 hours

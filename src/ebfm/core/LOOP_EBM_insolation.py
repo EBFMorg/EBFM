@@ -7,6 +7,8 @@ import datetime
 
 from .grid import ShadingMethod
 
+from .config import DEFAULT_TZ
+
 
 def main(grid, time2, OUT):
     """
@@ -26,7 +28,7 @@ def main(grid, time2, OUT):
     ###########################################################
 
     # Time as a fraction of a year (in radians)
-    start_of_year = datetime.datetime(time2["TCUR"].year, 1, 1)  # January 1 of TCUR's year
+    start_of_year = datetime.datetime(time2["TCUR"].year, 1, 1, tzinfo=DEFAULT_TZ)  # January 1 of TCUR's year
     day_of_year = (time2["TCUR"] - start_of_year).days + (
         time2["TCUR"] - start_of_year
     ).seconds / 86400  # Fractional days
