@@ -17,8 +17,10 @@ class TestTimeConfig(unittest.TestCase):
 
     def test_init(self):
         args = Namespace(
-            start_time="2024-01-01T00:00:00Z",
-            end_time="2024-01-02T00:00:00Z",
+            start_time="2024-01-01T00:00:00+00:00",
+            # start_time="2024-01-01T00:00:00+Z",  # only for Python 3.11 and later, not Python 3.10
+            end_time="2024-01-02T00:00:00+00:00",
+            # start_time="2024-01-02T00:00:00+Z",  # only for Python 3.11 and later, not Python 3.10
             time_step="PT1H",
             calendar="proleptic_gregorian",
         )
