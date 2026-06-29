@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# develop
+
+* Introduce coarse-resolution (10-km) and fine-resolution (2.5-km) test cases for Greenland forced with meteorological data from CARRA2. https://github.com/EBFMorg/EBFM/pull/128
+
 # v0.5.0
 
 * Add support for ISO8601 format for `--time-step`, `--time-start`, and `--time-end`. This is the recommended format and alternatives are deprecated. https://github.com/EBFMorg/EBFM/pull/137

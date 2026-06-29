@@ -72,15 +72,42 @@ If during the installation of EBFM it appears that `yac` is missing, please doub
 
 ## Running EBFM
 
-After installation, a basic, uncoupled simulation can be run with the following command, provided you cloned this repository:
+### Test experiments
+After installation, you are able to perform two basic uncoupled simulations, provided you cloned this repository. Every run produces an output file (`/Output/model_output.nc`), which contains daily output and can be viewed with tools like Ncview. The first test runs EBFM for all glaciers in Svalbard for 1-Jan-1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing: 
 
 ```sh
 ebfm --matlab-mesh examples/dem_and_mask.mat
 ```
 
+Another test applies EBFM to the Greenland Ice Sheet and forces it with Copernicus CARRA2 meteorological data for the month May 1990 on a 10-km resolution grid: 
+
+```sh
+ebfm --greenland-mesh examples/Greenland_grid_one_month.nc --start-time "1-May-1990 00:00" --end-time "1-Jun-1990 00:00"
+```
+
+Two more tests can be done, simulating the Greenland Ice Sheet for a full year (1990) at spatial resolutions of 2.5 km or 10 km. The faster 10-km resolution test requires this [package](https://drive.google.com/file/d/1bZUKxQ7QgQjwwPA8jTHqlJ-mXhwsU_OP/view?usp=sharing), whereas the computationally more expensive high-resolution 2.5-km resolution test requires this downloadable [package](https://drive.google.com/file/d/1fTFMt0QzGTrQFfzOmBC4xk1OonFsH9ZQ/view?usp=sharing). The zip-files need to be extracted so that the .nc files are in the `/examples/` folder prior to running the model with the following commands:
+
+```sh
+ebfm --greenland-mesh examples/Greenland_grid_coarse.nc --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
+```
+
+for the 10-km resolution experiment, and as:
+
+```sh
+ebfm --greenland-mesh examples/Greenland_grid.nc --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
+```
+
+for the 2.5-km resolution experiment.
+
+Please note that runs become significantly faster (~3 times) when running with performance optimization (see also **Performance and Profiling Runs** below), e.g.:
+
+```sh
+ebfm --greenland-mesh examples/Greenland_grid.nc --with-numba --numba-threads 2 --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
+```
+
 ### Mesh data
 
-The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data.
+The arguments `--matlab-mesh`, `--elmer-mesh`, `--netcdf-mesh`, and `--greenland-mesh` allow to provide different kinds of mesh data.
 EBFM supports the following formats:
 
 For Elmer-based inputs, the argument `--elmer-mesh-crs-epsg` is needed to define the coordinate reference system (CRS)
@@ -180,7 +207,7 @@ Once available, you can either copy or symlink the required files into the
 using the CLI arguments shown above.
 
 
-### Using `reader.py` to amend elevantion data to `examples/greenland_mesh_v0`
+### Using `reader.py` to amend elevation data to `examples/greenland_mesh_v0`
 
 The helper script `reader.py` can be used to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
 
@@ -216,7 +243,7 @@ pip install -e .[performance]
 
 This additionally installs `numba` to run with multiple CPU-threads.
 
-#### Running EBFM with performance optimiuations
+#### Running EBFM with performance optimizations
 
 EBFM now includes several performance improvements and supports several options for performance testing and benchmarking:
 

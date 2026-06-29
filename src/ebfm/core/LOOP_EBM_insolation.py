@@ -52,7 +52,7 @@ def main(grid, time2, OUT):
         9.87 * np.sin(2.0 * np.radians(B)) - 7.53 * np.cos(np.radians(B)) - 1.5 * np.sin(np.radians(B))
     )  # Correction for eccentricity
 
-    Tcor_lon = 4 * (grid["lon"] - 15 * time2["dT_UTC"])  # Correction for longitude within time-zone
+    Tcor_lon = 4 * grid["lon"]  # Correction for longitude within time-zone
     Tcor = Tcor_ecc + Tcor_lon
     LST = time2["TCUR"].hour + time2["TCUR"].minute / 60 + Tcor / 60  # Local Solar Time
     h = 15 * (LST - 12)
@@ -77,14 +77,15 @@ def main(grid, time2, OUT):
 
         # Azimuth (radians)
         cos_elevation = np.cos(elevationangle)
+        azimuth_argument = (
+            np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)
+        ) / cos_elevation
+        azimuth_argument = np.clip(azimuth_argument, -1.0, 1.0)
+
         azimuth = np.where(
             h < 0,
-            np.arccos(
-                (np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)) / cos_elevation
-            ),
-            -np.arccos(
-                (np.cos(h_rad) * np.cos(d_rad) * np.sin(lat_rad) - np.sin(d_rad) * np.cos(lat_rad)) / cos_elevation
-            ),
+            np.arccos(azimuth_argument),
+            -np.arccos(azimuth_argument),
         )
 
         # TODO: CLASSICAL shading could potentially be removed since Matlab meshes now use LUT-based shading and other

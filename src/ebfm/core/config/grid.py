@@ -34,6 +34,7 @@ class GridConfig:
     mesh_arg_dests = {
         GridInputType.ELMER: "elmer_mesh",
         GridInputType.MATLAB: "matlab_mesh",
+        GridInputType.GREENLAND: "greenland_mesh",
     }
 
     # Shading is only supported for some grid types
@@ -55,6 +56,7 @@ class GridConfig:
         assert len(selected_primary_grids) == 1, "Internal error: expected exactly one primary grid option to be set."
 
         matlab_mesh = getattr(args, self.mesh_arg_dests[GridInputType.MATLAB], None)
+        greenland_mesh = getattr(args, self.mesh_arg_dests[GridInputType.GREENLAND], None)
         elmer_mesh = getattr(args, self.mesh_arg_dests[GridInputType.ELMER], None)
 
         self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
@@ -78,6 +80,10 @@ class GridConfig:
         if matlab_mesh:
             self.grid_type = GridInputType.MATLAB
             self.mesh_file = matlab_mesh
+            self.is_unstructured = False
+        elif greenland_mesh:
+            self.grid_type = GridInputType.GREENLAND
+            self.mesh_file = greenland_mesh
             self.is_unstructured = False
         elif args.netcdf_mesh and elmer_mesh:
             self.grid_type = GridInputType.CUSTOM
