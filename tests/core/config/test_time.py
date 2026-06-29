@@ -29,6 +29,26 @@ class TestTimeConfig(unittest.TestCase):
         self.assertEqual(time_config.time_step, isodate.parse_duration(args.time_step))
         self.assertEqual(time_config.calendar.value, args.calendar)
 
+    def test_init_no_tz(self):
+        """
+        Test that default timezone is automatically added if no timezone is given.
+        """
+
+        from ebfm.core.config import DEFAULT_TZ
+
+        args = Namespace(
+            start_time="2024-01-01T00:00:00",
+            end_time="2024-01-02T00:00:00",
+            time_step="PT1H",
+            calendar="proleptic_gregorian",
+        )
+
+        time_config = TimeConfig(args)
+        self.assertEqual(time_config.start_time, datetime.fromisoformat(args.start_time).replace(tzinfo=DEFAULT_TZ))
+        self.assertEqual(time_config.end_time, datetime.fromisoformat(args.end_time).replace(tzinfo=DEFAULT_TZ))
+        self.assertEqual(time_config.time_step, isodate.parse_duration(args.time_step))
+        self.assertEqual(time_config.calendar.value, args.calendar)
+
 
 if __name__ == "__main__":
     unittest.main()
