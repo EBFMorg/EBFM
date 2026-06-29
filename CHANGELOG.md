@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Add support for ISO8601 format for `--time-step`, `--time-start`, and `--time-end`. This is the recommended format and alternatives are deprecated. https://github.com/EBFMorg/EBFM/pull/137
 * Refactor how parser and configuration modules process errors in user input. https://github.com/EBFMorg/EBFM/pull/131
 
 # v0.4.0
