@@ -17,10 +17,12 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+import isodate
+
 import ebfm.core
 from ebfm.core import INIT
 from ebfm.core.comm import mpi_available
-from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, TimeConfig
+from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig
 from ebfm.core.grid import GridInputType
 from ebfm.core.logger import log_levels_map
 
@@ -41,13 +43,13 @@ class CliDefaults(Enum):
     END_TIME = datetime(1979, 1, 2, 0, 0)
     CALENDAR = Calendar.PROLEPTIC_GREGORIAN.value
     FIELD_VALIDATION_LEVEL = FieldValidationLevel.FATAL.value
-    TIME_STEP_SIZE_IN_DAYS = 0.125  # = 0.125 days = 3 hours
+    TIME_STEP_SIZE = "PT3H"  # = 3 hours
     LOG_LEVEL_CONSOLE = "INFO"
     COMPONENT_NAME = "ebfm"
 
     @classmethod
     def default_time_step_size_in_hours(cls) -> float:
-        return cls.TIME_STEP_SIZE_IN_DAYS.value * 24
+        return isodate.parse_duration(cls.TIME_STEP_SIZE.value).total_seconds() / 3600.0
 
 
 def add_coupling_arguments(parser: ArgumentParser) -> None:
@@ -250,26 +252,29 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     time_group.add_argument(
         "--start-time",
         type=str,
-        help=f"Start time of the simulation in format '{TimeConfig.input_time_format_display}' "
-        "(i.e., time at the beginning of the first time step)",
-        default=CliDefaults.START_TIME.value.strftime(TimeConfig.input_time_format),
+        help="Start time of the simulation in ISO8601 format",
+        default=CliDefaults.START_TIME.value.isoformat(),
     )
 
     time_group.add_argument(
         "--end-time",
         type=str,
-        help=f"End time of the simulation in format '{TimeConfig.input_time_format_display}' "
-        "(i.e., time at the end of the last time step)",
-        default=CliDefaults.END_TIME.value.strftime(TimeConfig.input_time_format),
+        help="End time of the simulation in ISO8601 format",
+        default=CliDefaults.END_TIME.value.isoformat(),
     )
+
+    def parse_time_step(value: str) -> float | str:
+        try:
+            return float(value)
+        except ValueError:
+            return value
 
     time_group.add_argument(
         "--time-step",
-        type=float,
-        help=f"Time step of the simulation in days, e.g., {CliDefaults.TIME_STEP_SIZE_IN_DAYS.value} for "
-        f"{CliDefaults.default_time_step_size_in_hours()} hours. Note: The difference between --end-time and "
-        "--start-time must be divisible by --time-step.",
-        default=CliDefaults.TIME_STEP_SIZE_IN_DAYS.value,
+        type=parse_time_step,
+        help="Time step of the simulation in ISO8601 format. "
+        "Note: The difference between --end-time and --start-time must be divisible by --time-step",
+        default=CliDefaults.TIME_STEP_SIZE.value,
     )
 
     time_group.add_argument(

@@ -25,6 +25,55 @@ class Calendar(Enum):
     YEAR_OF_360_DAYS = "year_of_360_days"
 
 
+def _parse_time(time_str: str) -> datetime:
+    """Parse a time string into a datetime object.
+
+    @param[in] time_str Time string to parse
+    @returns Parsed datetime object
+    """
+    dt: datetime
+    try:
+        return datetime.fromisoformat(time_str)
+    except ValueError:
+        try:
+            dt = datetime.strptime(time_str, TimeConfig.input_time_format)
+        except ValueError as e:
+            raise ValueError(
+                f"Time string '{time_str}' is not in a recognized format. "
+                f"Expected ISO 8601 format or '{TimeConfig.input_time_format_display}'."
+            ) from e
+
+    logger.warning(
+        f"Deprecation warning: Time string '{time_str}' is not given in ISO 8601 format. "
+        "Consider using ISO 8601 format for better compatibility. "
+        f"You may use the following input instead: {dt.isoformat()}"
+    )
+
+    return dt
+
+
+def _parse_time_step(time_step_str: str | float) -> timedelta:
+    """Parse a time step string into a timedelta object.
+
+    @param[in] time_step_str Time step string to parse
+    @returns Parsed timedelta object
+    """
+    import isodate
+
+    if isinstance(time_step_str, str):
+        # Parse ISO 8601 duration format (e.g., "PT1H" for 1 hour)
+        return isodate.parse_duration(time_step_str)
+    else:
+        logger.warning(
+            f"Deprecation warning: Time step '{time_step_str}' is not given in ISO 8601 format. "
+            "Consider using ISO 8601 format for better compatibility. "
+            f"You may use the following input instead: {isodate.duration_isoformat(timedelta(days=time_step_str))}"
+        )
+        assert isinstance(time_step_str, (int, float)), "Time step must be a string or a number."
+        assert time_step_str > 0, "Time step must be positive."
+        return timedelta(days=time_step_str)
+
+
 class TimeConfig:
     """
     Time configuration.
@@ -47,12 +96,10 @@ class TimeConfig:
         @param[in] args command line arguments
         """
 
-        self.start_time = datetime.strptime(args.start_time, TimeConfig.input_time_format)
-        self.end_time = datetime.strptime(args.end_time, TimeConfig.input_time_format)
+        self.start_time = _parse_time(args.start_time)
+        self.end_time = _parse_time(args.end_time)
         assert self.start_time < self.end_time, f"Start time {self.start_time} must be before end time {self.end_time}."
-
-        assert args.time_step > 0, "Time step must be positive."
-        self.time_step = timedelta(days=args.time_step)
+        self.time_step = _parse_time_step(args.time_step)
 
         if self.time_step.total_seconds() > SECONDS_PER_DAY:
             logger.warning(

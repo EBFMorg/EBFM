@@ -17,6 +17,7 @@ dependencies = [
     "pandas-stubs >= 2.0",
     "pyproj",
     "scipy",
+    "isodate >= 0.7.2",
 ]
 
 [project.optional-dependencies]
