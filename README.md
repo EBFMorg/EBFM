@@ -73,7 +73,7 @@ If during the installation of EBFM it appears that `yac` is missing, please doub
 ## Running EBFM
 
 ### Test experiments
-After installation, you are able to perform two basic uncoupled simulations, provided you cloned this repository. Every run produces an output file (`/Output/model_output.nc`), which contains daily output and can for example be viewed with tools like Ncview. The first test runs EBFM for all glaciers in Svalbard for 1-Jan-1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing: 
+After installation, you are able to perform two basic uncoupled simulations, provided you cloned this repository. Every run produces an output file (`/Output/model_output.nc`), which contains daily output and can be viewed with tools like Ncview. The first test runs EBFM for all glaciers in Svalbard for 1-Jan-1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing: 
 
 ```sh
 ebfm --matlab-mesh examples/dem_and_mask.mat
