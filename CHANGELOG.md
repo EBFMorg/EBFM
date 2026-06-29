@@ -6,11 +6,11 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
-* Use ISO8601 datetime as suffic for restart files created with `--restart-dir` option. https://github.com/EBFMorg/EBFM/pull/141
+* Assure model time is always in UTC+0, allowing removal of the previously hard-coded (time-zone dependent) parameter dT_UTC. https://github.com/EBFMorg/EBFM/pull/138
+* Use ISO8601 datetime as suffix for restart files created with `--restart-dir` option. https://github.com/EBFMorg/EBFM/pull/141
 
 # v0.5.0
 
-* Assure model time is always in UTC+0, allowing removal of the previously hard-coded (time-zone dependent) parameter dT_UTC. 
 * Add support for ISO8601 format for `--time-step`, `--time-start`, and `--time-end`. This is the recommended format and alternatives are deprecated. https://github.com/EBFMorg/EBFM/pull/137
 * Refactor how parser and configuration modules process errors in user input. https://github.com/EBFMorg/EBFM/pull/131
 
