@@ -67,7 +67,13 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         # candidate for abstract function in Coupler base class?
         # self.initialize_time_frame(coupling_config.start_time, coupling_config.end_time)
-        self.interface.def_datetime(coupling_config.start_time, coupling_config.end_time)
+
+        # required due to YAC's def_datetime() function requiring ISO 8601 format with 'Z' for UTC timezone
+        # see https://gitlab.dkrz.de/YAC/YAC-dev/-/merge_requests/591
+        self.interface.def_datetime(
+            coupling_config.start_time.isoformat().replace("+00:00", "Z"),
+            coupling_config.end_time.isoformat().replace("+00:00", "Z"),
+        )
 
         if coupling_config.coupler_config:
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
