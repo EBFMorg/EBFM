@@ -74,6 +74,11 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             coupling_config.start_time.isoformat().replace("+00:00", "Z"),
             coupling_config.end_time.isoformat().replace("+00:00", "Z"),
         )
+        
+        ## YAC will presumably support "+00:00" in a future release.
+        ## See https://github.com/EBFMorg/EBFM/issues/139
+        # assert tuple(map(int, yac.version().lstrip("v").split("."))) >= (3, 19, 0)
+        # self.interface.def_datetime(coupling_config.start_time, coupling_config.end_time)
 
         if coupling_config.coupler_config:
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
