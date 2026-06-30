@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# develop
+
+* Use ISO8601 datetime as suffic for restart files created with `--restart-dir` option. https://github.com/EBFMorg/EBFM/pull/141
+
 # v0.5.0
 
 * Add support for ISO8601 format for `--time-step`, `--time-start`, and `--time-end`. This is the recommended format and alternatives are deprecated. https://github.com/EBFMorg/EBFM/pull/137
