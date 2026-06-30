@@ -25,6 +25,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def create_restart_file_name(time: datetime) -> str:
     """
     Creates a restart file name based on the given time.
