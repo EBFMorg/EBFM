@@ -22,7 +22,7 @@ import isodate
 import ebfm.core
 from ebfm.core import INIT
 from ebfm.core.comm import mpi_available
-from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ
+from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ, iso8601
 from ebfm.core.grid import GridInputType
 from ebfm.core.logger import log_levels_map
 
