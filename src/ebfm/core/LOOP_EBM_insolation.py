@@ -7,6 +7,8 @@ import datetime
 
 from .grid import ShadingMethod
 
+from .config import DEFAULT_TZ
+
 
 def main(grid, time2, OUT):
     """
@@ -26,7 +28,7 @@ def main(grid, time2, OUT):
     ###########################################################
 
     # Time as a fraction of a year (in radians)
-    start_of_year = datetime.datetime(time2["TCUR"].year, 1, 1)  # January 1 of TCUR's year
+    start_of_year = datetime.datetime(time2["TCUR"].year, 1, 1, tzinfo=DEFAULT_TZ)  # January 1 of TCUR's year
     day_of_year = (time2["TCUR"] - start_of_year).days + (
         time2["TCUR"] - start_of_year
     ).seconds / 86400  # Fractional days
@@ -52,7 +54,7 @@ def main(grid, time2, OUT):
         9.87 * np.sin(2.0 * np.radians(B)) - 7.53 * np.cos(np.radians(B)) - 1.5 * np.sin(np.radians(B))
     )  # Correction for eccentricity
 
-    Tcor_lon = 4 * (grid["lon"] - 15 * time2["dT_UTC"])  # Correction for longitude within time-zone
+    Tcor_lon = 4 * grid["lon"]  # Correction for longitude within time-zone
     Tcor = Tcor_ecc + Tcor_lon
     LST = time2["TCUR"].hour + time2["TCUR"].minute / 60 + Tcor / 60  # Local Solar Time
     h = 15 * (LST - 12)

@@ -18,7 +18,7 @@ from ebfm.core.cli import (
 )
 
 from ebfm.core.comm import mpi_available
-from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig
+from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 
 # Minimal valid args for each primary grid type.
 _MATLAB = ["--matlab-mesh", "mesh.mat"]
@@ -111,11 +111,11 @@ class TestDefaults(unittest.TestCase):
         self.args = parse_cli_args(_MATLAB)
 
     def test_start_time_default(self):
-        expected = CliDefaults.START_TIME.value.isoformat()
+        expected = iso8601(CliDefaults.START_TIME.value)
         self.assertEqual(self.args.start_time, expected)
 
     def test_end_time_default(self):
-        expected = CliDefaults.END_TIME.value.isoformat()
+        expected = iso8601(CliDefaults.END_TIME.value)
         self.assertEqual(self.args.end_time, expected)
 
     def test_time_step_default(self):
