@@ -21,6 +21,18 @@ logger = logging.getLogger(__name__)
 DEFAULT_TZ = isodate.tzinfo.UTC  # Default timezone for time handling (UTC)
 
 
+def iso8601(dt: datetime) -> str:
+    """
+    Converts a datetime object to an ISO 8601 formatted string.
+
+    EBFM prefers defining UTC with the "Z" suffix instead of "+00:00".
+
+    @param[in] dt Datetime object to convert
+    @returns ISO 8601 formatted string
+    """
+    return dt.isoformat().replace("+00:00", "Z")
+
+
 class Calendar(Enum):
     """Enumeration of supported calendar types for time handling."""
 
@@ -40,16 +52,16 @@ def _check_tz(dt: datetime) -> datetime:
         dt_orig = dt
         dt = dt.replace(tzinfo=DEFAULT_TZ)
         logger.warning(
-            f"Time string '{dt_orig.isoformat()}' does not contain timezone information. "
+            f"Time string '{iso8601(dt_orig)}' does not contain timezone information. "
             "Assuming UTC timezone for the parsed datetime object. It is recommended to provide timezone "
-            f"information in ISO 8601 format (i.e., '{isodate.datetime_isoformat(dt.astimezone(DEFAULT_TZ))}' for UTC)."
+            f"information in ISO 8601 format (i.e., '{iso8601(dt.astimezone(DEFAULT_TZ))}' for UTC)."
         )
     if not dt.utcoffset() == DEFAULT_TZ.utcoffset(dt):
-        dt_in_UTC = isodate.datetime_isoformat(dt.astimezone(DEFAULT_TZ))
+        dt_in_UTC = dt.astimezone(DEFAULT_TZ)
         raise ValueError(
-            f"Time string '{dt.isoformat()}' contains non-UTC timezone information {dt.tzinfo}, which is not "
+            f"Time string '{iso8601(dt)}' contains non-UTC timezone information {dt.tzinfo}, which is not "
             "supported. Please provide the time string in ISO 8601 format and, if needed, convert to UTC "
-            f"(i.e., '{dt_in_UTC}')."
+            f"(i.e., '{iso8601(dt_in_UTC)}')."
         )
 
     return dt
@@ -78,7 +90,7 @@ def _parse_time(time_str: str) -> datetime:
     logger.warning(
         f"Deprecation warning: Time string '{time_str}' is not given in ISO 8601 format. "
         "Consider using ISO 8601 format for better compatibility. "
-        f"You may use the following input instead: {dt.isoformat()}"
+        f"You may use the following input instead: {iso8601(dt)}"
     )
 
     dt = _check_tz(dt)
@@ -179,7 +191,7 @@ class TimeConfig:
         import pandas as pd
 
         dt = pd.Timedelta(days=self.time_step_in_days())
-        return dt.isoformat()
+        return iso8601(dt)
 
     def to_dict(self) -> dict:
         """Convert time configuration to a dictionary.

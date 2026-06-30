@@ -247,14 +247,14 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "--start-time",
         type=str,
         help="Start time of the simulation in ISO8601 format",
-        default=CliDefaults.START_TIME.value.isoformat(),
+        default=iso8601(CliDefaults.START_TIME.value),
     )
 
     time_group.add_argument(
         "--end-time",
         type=str,
         help="End time of the simulation in ISO8601 format",
-        default=CliDefaults.END_TIME.value.isoformat(),
+        default=iso8601(CliDefaults.END_TIME.value),
     )
 
     def parse_time_step(value: str) -> float | str:

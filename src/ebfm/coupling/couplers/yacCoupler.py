@@ -13,7 +13,7 @@ from .base import Coupler, Grid, GridDict, CouplingConfig, CouplerErrorCode
 from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
 from ebfm.coupling.fields import YACField
 
-from ebfm.core.config import Calendar
+from ebfm.core.config import Calendar, iso8601
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
@@ -70,12 +70,9 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         # required due to YAC's def_datetime() function requiring ISO 8601 format with 'Z' for UTC timezone
         # see https://gitlab.dkrz.de/YAC/YAC-dev/-/merge_requests/591
-        self.interface.def_datetime(
-            coupling_config.start_time.isoformat().replace("+00:00", "Z"),
-            coupling_config.end_time.isoformat().replace("+00:00", "Z"),
-        )
+        self.interface.def_datetime(iso8601(coupling_config.start_time), iso8601(coupling_config.end_time))
 
-        # YAC will presumably support "+00:00" in a future release.
+        # YAC will presumably support "+00:00" (used natively in datatime) in a future release.
         # See https://github.com/EBFMorg/EBFM/issues/139
         # assert tuple(map(int, yac.version().lstrip("v").split("."))) >= (3, 19, 0)
         # self.interface.def_datetime(coupling_config.start_time, coupling_config.end_time)
