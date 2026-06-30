@@ -37,9 +37,7 @@ def create_restart_file_name(time: datetime) -> str:
         str: The generated restart file name.
     """
     restart_file_prefix = "restart_"
-    restart_file_time_format = "%d-%b-%YT%H:%M"
-
-    return restart_file_prefix + time.strftime(restart_file_time_format) + ".nc"
+    return restart_file_prefix + time.isoformat() + ".nc"
 
 
 def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initialize_from_restart_file: bool):
