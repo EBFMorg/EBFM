@@ -75,11 +75,11 @@ def _parse_time(time_str: str) -> datetime:
     """
     dt: datetime
     try:
-        if tuple(map(int, datetime.__version__.split("."))) < (3, 11):
-            # Python < 3.11 does not support ISO 8601 format with 'Z' suffix for UTC and must be replaced with '+00:00'
-            # for compatibility.
-            if time_str.endswith("Z"):
-                time_str = time_str[:-1] + "+00:00"
+        import sys
+        if sys.version_info < (3, 11) and time_str.endswith("Z"):
+            # Python < 3.11 does not support parsing ISO 8601 timestamps
+            # with a trailing 'Z' UTC designator.
+            time_str = time_str[:-1] + "+00:00"
 
         dt = datetime.fromisoformat(time_str)
         dt = _check_tz(dt)
