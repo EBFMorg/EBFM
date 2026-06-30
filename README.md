@@ -180,7 +180,7 @@ Once available, you can either copy or symlink the required files into the
 using the CLI arguments shown above.
 
 
-### Using `reader.py` to amend elevantion data to `examples/greenland_mesh_v0`
+### Using `reader.py` to amend elevation data to `examples/greenland_mesh_v0`
 
 The helper script `reader.py` can be used to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
 
@@ -203,6 +203,22 @@ The resulting mesh can then be used directly with EBFM similar to the example wi
 ```sh
 ebfm --elmer-mesh examples/greenland_mesh_v0_with_DEM/MESH --elmer-mesh-crs-epsg 3413
 ```
+
+### Working with restart files
+
+You may use restart files with EBFM. To create a restart file at the end of a run, please provide a `--restart-dir`:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart
+```
+
+You can now use the `--restart-init` option to tell EBFM to use the restart file `examples/restart/restart_1979-01-02T00:00:00.nc` that you just created as a starting point:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart --restart-init --start-time 1979-01-02T00:00:00 --end-time 1979-01-03T00:00:00
+```
+
+Note that it is necessary to provide a `--start-time` consistent with the given restart file.
 
 ### Performance and Profiling Runs
 
