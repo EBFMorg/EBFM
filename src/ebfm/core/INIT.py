@@ -236,7 +236,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             )
 
         grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
-        grid["lat"], grid["lon"] = mesh.lat_cells, mesh.lon_cells
+
         logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
             logger.debug("... for grid type CUSTOM.")
@@ -249,9 +249,10 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
             grid["mask"] = (h_cells > min_thickness_glacier).astype(int)
 
+        grid["lat"], grid["lon"] = np.degrees(mesh.lat_cells), np.degrees(mesh.lon_cells)
+
         if "mask" not in grid:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-
         if config.grid_type is GridInputType.ELMERXIOS:
             grid["gpsum"] = grid["z"].shape[0]
         else:

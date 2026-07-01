@@ -10,3 +10,14 @@ Output/*.nc
 Reboot/*.nc
 .coverage
 .tox
+.idea/EBFM_with_YAC.iml
+.idea/inspectionProfiles/profiles_settings.xml
+.idea/misc.xml
+.idea/vcs.xml
+.idea/workspace.xml
+examples/1990_1.nc
+examples/1990_2.nc
+examples/add_mask_field_to_greenland_grid.py
+examples/createLowResGreenlandExperiment.py
+examples/download_CARRA2.py
+examples/preprocess_greenland_forcing_files.py

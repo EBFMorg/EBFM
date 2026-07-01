@@ -83,7 +83,7 @@ class GridConfig:
             self.grid_type = GridInputType.CUSTOM
             self.mesh_file = elmer_mesh
             self.dem_file = args.netcdf_mesh
-            self.is_unstructured = False
+            self.is_unstructured = True
         elif args.netcdf_mesh_unstructured and elmer_mesh:
             self.grid_type = GridInputType.ELMERXIOS
             self.mesh_file = elmer_mesh
@@ -92,7 +92,7 @@ class GridConfig:
         elif elmer_mesh:
             self.grid_type = GridInputType.ELMER
             self.mesh_file = elmer_mesh
-            self.is_unstructured = False
+            self.is_unstructured = True
         else:
             logger.error(
                 f"Invalid grid configuration. EBFM supports the grid types {[t.name for t in GridInputType]}. "
