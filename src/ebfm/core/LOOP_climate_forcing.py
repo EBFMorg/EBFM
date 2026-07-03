@@ -254,7 +254,7 @@ def read_forcing_file(IN, C, time, forcing_file_dir, slice_duration=Duration(mon
             }
         )
 
-        logger.info(f"Done opening vectorized Greenland forcing file {forcing_file}.")
+        logger.info(f"Done opening vectorized forcing file {forcing_file}.")
 
     time_index = int(np.argmin(np.abs(cache["time"] - model_time_seconds)))
 
@@ -272,7 +272,7 @@ def read_forcing_file(IN, C, time, forcing_file_dir, slice_duration=Duration(mon
         }
         cache["window_start"] = window_start
         cache["window_end"] = window_end
-        logger.info(f"Read {time_window_size} time steps from vectorized Greenland forcing file.")
+        logger.info(f"Read {time_window_size} time steps from vectorized forcing file.")
 
     local_time_index = time_index - cache["window_start"]
 
