@@ -44,7 +44,7 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
 
     def test_carra2_mesh_accepted(self):
         args = parse_cli_args(_CARRA2)
-        self.assertEqual(args.elmer_mesh, Path("mesh.nc"))
+        self.assertEqual(args.netcdf_mesh, Path("mesh.nc"))
 
     def test_no_grid_option_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
