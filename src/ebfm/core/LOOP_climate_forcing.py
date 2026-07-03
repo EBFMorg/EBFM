@@ -47,7 +47,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler, config: GridConfig) -> tuple[d
     # SPECIFY/READ METEO FORCING
     ###########################################################
     if not cpl.has_coupling_to("icon_atmo"):
-        if config.grid_type is GridInputType.GREENLAND:
+        if config.grid_type is GridInputType.NETCDF:
             IN = read_Greenland_data(IN, C, time, grid, config)
         else:
             IN = set_random_weather_data(IN, C, time, grid)
@@ -68,7 +68,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler, config: GridConfig) -> tuple[d
     ] * np.exp(C["Ls"] / C["Rv"] * (1.0 / 273.15 - 1.0 / IN["T"])) * (IN["T"] < 273.15)
 
     if (
-        cpl.has_coupling_to("icon_atmo") or config.grid_type is GridInputType.GREENLAND
+        cpl.has_coupling_to("icon_atmo") or config.grid_type is GridInputType.NETCDF
     ):  # q from ICON/CARRA2, calculate VP and RH
         IN["VP"] = IN["q"] * IN["Pres"] / C["eps"]
         IN["RH"][:] = np.clip(IN["VP"] / VPsat, 0.0, 1.0)
