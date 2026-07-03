@@ -327,7 +327,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
 
         else:
-            input_data = read_GREENLAND_grid(config.mesh_file)
+            input_data = read_NETCDF_grid(config.mesh_file)
 
             grid["x_2D"] = input_data["x"]
             grid["y_2D"] = input_data["y"]
@@ -409,7 +409,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             # -----------------------------------------------------------------------------------------------------
             # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
             # NOTE: Only works for grids with E-W and N-S aligned grid cells (e.g. MATLAB grid) and not for
-            # unstructured grids (e.g. Elmer mesh) or grids with rotated grid cells (e.g. Greenland grid).
+            # unstructured grids (e.g. Elmer mesh) or grids with rotated grid cells (e.g. NetCDF Greenland grid).
             # -----------------------------------------------------------------------------------------------------
             grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
             grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
@@ -546,12 +546,12 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def read_GREENLAND_grid(gridfile: Path):
+def read_NETCDF_grid(gridfile: Path):
     """
-    Provides Greenland grid information by reading from an updated Greenland_grid.nc file.
+    Read grid information from an NetCDF (.nc) file with DEM.
 
     Parameters:
-        gridfile: Path to Greenland_grid.nc.
+        gridfile: Path to NetCDF file (.nc).
 
     Returns:
         dict: A dictionary named `input_data` containing:
@@ -563,7 +563,7 @@ def read_GREENLAND_grid(gridfile: Path):
             - 'lat': 2D NumPy array of latitude coordinates.
     """
 
-    logger.info("EBFM: Reading Greenland grid data from NetCDF file...")
+    logger.info("EBFM: Reading grid data from NetCDF file...")
     input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
 
     try:
@@ -573,10 +573,10 @@ def read_GREENLAND_grid(gridfile: Path):
             elif "orog" in ncfile.variables:
                 raw_orography = ncfile.variables["orog"][:]
             else:
-                raise KeyError("Neither `orography` nor `orog` found in Greenland grid file.")
+                raise KeyError(f"Neither `orography` nor `orog` found in NetCDF grid file {gridfile}.")
 
             if "mask" not in ncfile.variables:
-                raise KeyError("Missing `mask` in Greenland grid file.")
+                raise KeyError(f"Missing `mask` in in NetCDF grid file {gridfile}.")
 
             raw_mask = ncfile.variables["mask"][:]
             latitude = np.asarray(ncfile.variables["latitude"][:])
@@ -609,7 +609,7 @@ def read_GREENLAND_grid(gridfile: Path):
             longitude = np.mod(longitude, 360.0)
 
             if not np.any(mask > 0.0):
-                raise ValueError("Greenland mask contains no active cells with `mask > 0`.")
+                raise ValueError(f"Mask of {gridfile} contains no active cells with `mask > 0`.")
 
             lonlat_to_utm24n = Transformer.from_crs("EPSG:4326", "EPSG:32624", always_xy=True)
             x, y = lonlat_to_utm24n.transform(longitude, latitude)
@@ -625,7 +625,7 @@ def read_GREENLAND_grid(gridfile: Path):
         logger.info(f"File not found: {gridfile}")
         raise
     except KeyError as e:
-        logger.info(f"Missing field in NetCDF file: {e}")
+        logger.info(f"Missing field in NetCDF file {gridfile}: {e}")
         raise
 
     return input_data
