@@ -287,7 +287,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-    elif config.grid_type is GridInputType.MATLAB or GridInputType.GREENLAND:  # Read grid and elevations from a file
+    elif config.grid_type is GridInputType.MATLAB or GridInputType.NETCDF:  # Read grid and elevations from a file
         # ---------------------------------------------------------------------
         # Read and process grid information
         # ---------------------------------------------------------------------

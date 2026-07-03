@@ -181,7 +181,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     )
 
     primary_grid_group.add_argument(
-        mesh_opts[GridInputType.GREENLAND],
+        mesh_opts[GridInputType.NETCDF],
         type=Path,
         help="Path to the mesh file and climate data for a test on Greenland. ",
     )
