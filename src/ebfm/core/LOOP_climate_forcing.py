@@ -6,48 +6,14 @@ from isodate import duration_isoformat
 from isodate.duration import Duration
 from netCDF4 import Dataset
 import numpy as np
-from enum import Enum
-from pathlib import Path
 
-from ebfm.coupling import Coupler
-from ebfm.core.config import GridConfig
-from ebfm.core.grid import GridInputType
+from ebfm.core.config import ForcingConfig, ForcingType
 
 from .LOOP_general_functions import is_first_time_step
 
 from ebfm.core import logging
 
 logger = logging.getLogger(__name__)
-
-
-class ForcingType(Enum):
-    """Enumeration of supported meteorological forcing types."""
-
-    RANDOM = "random"
-    CARRA2 = "carra2"
-    ICON = "icon"
-
-
-class ForcingConfig:
-    """Configuration for meteorological forcing."""
-
-    def __init__(self, grid_config: GridConfig, coupler: Coupler):
-        # TODO use args here
-        carra2_forcing = grid_config.grid_type is GridInputType.NETCDF
-        assert not (
-            coupler.has_coupling_to("icon_atmo") and carra2_forcing
-        ), "It is not allowed to use ICON coupling and CARRA2 forcing at the same time."
-
-        if coupler.has_coupling_to("icon_atmo"):
-            self.forcing_type = ForcingType.ICON
-        elif carra2_forcing:
-            # TODO check args.carra2_forcing_dir is not None ; allows to also use --netcdf-mesh with random forcing
-            self.forcing_type = ForcingType.CARRA2
-            self.forcing_files_dir: Path = (
-                grid_config.mesh_file.parent
-            )  # Path to the folder containing NetCDF forcing files with meteorological data
-        else:
-            self.forcing_type = ForcingType.RANDOM
 
 
 def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
@@ -84,8 +50,6 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
             IN = set_random_weather_data(IN, C, time, grid)
         case ForcingType.CARRA2:
             IN = read_forcing_file(IN, C, time, config.forcing_files_dir)
-        case ForcingType.ICON:
-            pass
 
     ###########################################################
     # DERIVED METEOROLOGICAL FIELDS

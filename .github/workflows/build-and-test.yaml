@@ -79,5 +79,7 @@ jobs:
           python3 -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install .
-      - name: Run CARRA2 example
+      - name: Run Greenland example (random forcing)
         run: .venv/bin/ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --start-time 1990-05-01T00:00:00 --end-time 1990-05-02T00:00:00
+      - name: Run Greenland example (CARRA2 forcing)
+        run: .venv/bin/ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-05-01T00:00:00 --end-time 1990-05-02T00:00:00
