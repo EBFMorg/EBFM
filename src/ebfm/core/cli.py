@@ -162,7 +162,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         grid_type: f"--{arg_dest.replace('_', '-')}" for grid_type, arg_dest in GridConfig.mesh_arg_dests.items()
     }
     partitioned_elmer_mesh_opt = "--is-partitioned-elmer-mesh"
-    netcdf_mesh_opt = "--netcdf-mesh"
+    netcdf_dem_mesh_opt = "--netcdf-dem-mesh"
 
     parser.add_argument(
         "--version",
@@ -187,18 +187,18 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     )
 
     input_group.add_argument(
-        netcdf_mesh_opt,
+        netcdf_dem_mesh_opt,
         type=Path,
         help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. "
-        "If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+        "If --netcdf-dem-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
     input_group.add_argument(
-        "--netcdf-mesh-unstructured",
+        "--netcdf-dem-mesh-unstructured",
         type=Path,
         help="Path to the unstructured NetCDF mesh file. "
         f"Optional if using {mesh_opts[GridInputType.ELMER]}. "
-        f"If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+        f"If --netcdf-dem-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
     grid_types_without_shading = set(GridConfig.mesh_arg_dests.keys()) - GridConfig.grid_types_supporting_shading
@@ -385,8 +385,8 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     if args.is_partitioned_elmer_mesh and getattr(args, GridConfig.mesh_arg_dests[GridInputType.ELMER], None) is None:
         parser.error(f"{partitioned_elmer_mesh_opt} requires {mesh_opts[GridInputType.ELMER]}")
 
-    if args.is_partitioned_elmer_mesh and args.netcdf_mesh is None:
-        parser.error(f"{partitioned_elmer_mesh_opt} requires {netcdf_mesh_opt}")
+    if args.is_partitioned_elmer_mesh and args.netcdf_dem_mesh is None:
+        parser.error(f"{partitioned_elmer_mesh_opt} requires {netcdf_dem_mesh_opt}")
 
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
