@@ -8,7 +8,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 * Introduce coarse-resolution (10-km) and fine-resolution (2.5-km) test cases for Greenland forced with meteorological data from CARRA2. https://github.com/EBFMorg/EBFM/pull/128
     * Add feature to use NetCDF meshes with DEM as input (`--netcdf-mesh`)
-    * Add feature to read forcing files from folder (located in parent folder of `--netcdf-mesh`)
+    * Add feature to read forcing files from folder (`--forcing-dir`)
 * Assure model time is always in UTC+0, allowing removal of the previously hard-coded (time-zone dependent) parameter dT_UTC. https://github.com/EBFMorg/EBFM/pull/138
 * Rename `--netcdf-mesh` to `--netcdf-dem-mesh` and `--netcdf-mesh-unstructured` to `--netcdf-dem-mesh-unstructured`. https://github.com/EBFMorg/EBFM/pull/142
 * Use ISO8601 datetime as suffix for restart files created with `--restart-dir` option. https://github.com/EBFMorg/EBFM/pull/141

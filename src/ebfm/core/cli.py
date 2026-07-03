@@ -247,6 +247,12 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         " Required when using --elmer-mesh.",
     )
 
+    input_group.add_argument(
+        "--forcing-dir",
+        type=Path,
+        help="Path to the folder containing NetCDF forcing files with meteorological data.",
+    )
+
     time_group = parser.add_argument_group("time configuration")
 
     time_group.add_argument(

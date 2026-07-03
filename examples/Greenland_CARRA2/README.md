@@ -9,8 +9,8 @@ SPDX-License-Identifier: BSD-3-Clause
 This folder contains
 
 * `grid.nc`: a grid file of Greenland
-* `1990-05-01`: a folder named as a ISO8601 date containing one or more forcing files
-* `1990-05-01/P1M.nc`: the forcing file covering the time period of one month (ISO8601 `P1M`) starting from `1990-05-01`.
+* `forcing`: a folder with forcing files.
+* `forcing/1990-05-01/P1M.nc`: a the forcing file covering the time period of one month (ISO8601 `P1M`) starting from `1990-05-01`.
 
 Additional folders or forcing files that follow the ISO8601 standard may be used to provide additional forcing files for alternative starting dates and/or resolutions.
 
