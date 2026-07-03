@@ -34,8 +34,8 @@ class ForcingConfig:
     def __init__(self, grid_config: GridConfig, coupler: Coupler):
         # TODO use args here
         carra2_forcing = grid_config.grid_type is GridInputType.NETCDF
-        assert (
-            not coupler.has_coupling_to("icon_atmo") and carra2_forcing
+        assert not (
+            coupler.has_coupling_to("icon_atmo") and carra2_forcing
         ), "It is not allowed to use ICON coupling and CARRA2 forcing at the same time."
 
         if coupler.has_coupling_to("icon_atmo"):
