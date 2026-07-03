@@ -8,10 +8,9 @@ SPDX-License-Identifier: BSD-3-Clause
 
 | File                           | Description                                    |
 |------------------------------- | ---------------------------------------------- |
-| `1990_1_one_month.nc`          | TODO                                           |
 | `BedMachineGreenland-v5_lo.nc` | Low-res version of `BedMachineGreenland-v5.nc` |
 | `dem_and_mask.mat`             | MATLAB example grid                            |
-| `Greenland_grid_one_month.nc`  | TODO                                           |
+| `Greenland_CARRA2`             | Folder with grid and forcing data              |
 
 ### How `BedMachineGreenland-v5_lo.nc` was produced
 
@@ -34,6 +33,14 @@ python3 tools/nc_reduce_size.py \
 
 See `tools/README.md` for full documentation of `nc_reduce_size.py`.
 
-### How `1990_1_one_month.nc` and `Greenland_grid_one_month.nc` were produced
+### How grid and forcing files in `Greenland_CARRA2` were produced
+
+Files in `Greenland_CARRA2` are organized in a specific way. Please refer to `Greenland_CARRA2/README.md` for details.
+
+#### Grid files `grid.nc`
+
+TODO
+
+#### Forcing files
 
 TODO
