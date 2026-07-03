@@ -87,7 +87,7 @@ class GridConfig:
             self.grid_type = GridInputType.GREENLAND
             self.mesh_file = greenland_mesh
             self.is_unstructured = False
-        elif args.netcdf_mesh and elmer_mesh:
+        elif args.netcdf_dem_mesh and elmer_mesh:
             self.grid_type = GridInputType.CUSTOM
             self.mesh_file = elmer_mesh
             self.dem_file = args.netcdf_dem_mesh
