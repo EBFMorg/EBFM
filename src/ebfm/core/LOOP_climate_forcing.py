@@ -2,9 +2,12 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 from datetime import timezone
-
+from isodate import duration_isoformat
+from isodate.duration import Duration
 from netCDF4 import Dataset
 import numpy as np
+from enum import Enum
+from pathlib import Path
 
 from ebfm.coupling import Coupler
 from ebfm.core.config import GridConfig
@@ -17,7 +20,37 @@ from ebfm.core import logging
 logger = logging.getLogger(__name__)
 
 
-def main(C, grid, IN, t, time, OUT, cpl: Coupler, config: GridConfig) -> tuple[dict, dict]:
+class ForcingType(Enum):
+    """Enumeration of supported meteorological forcing types."""
+
+    RANDOM = "random"
+    CARRA2 = "carra2"
+    ICON = "icon"
+
+
+class ForcingConfig:
+    """Configuration for meteorological forcing."""
+
+    def __init__(self, grid_config: GridConfig, coupler: Coupler):
+        # TODO use args here
+        carra2_forcing = grid_config.grid_type is GridInputType.NETCDF
+        assert (
+            not coupler.has_coupling_to("icon_atmo") and carra2_forcing
+        ), "It is not allowed to use ICON coupling and CARRA2 forcing at the same time."
+
+        if coupler.has_coupling_to("icon_atmo"):
+            self.forcing_type = ForcingType.ICON
+        elif carra2_forcing:
+            # TODO check args.carra2_forcing_dir is not None ; allows to also use --netcdf-mesh with random forcing
+            self.forcing_type = ForcingType.CARRA2
+            self.forcing_files_dir: Path = (
+                grid_config.mesh_file.parent
+            )  # Path to the folder containing NetCDF forcing files with meteorological data
+        else:
+            self.forcing_type = ForcingType.RANDOM
+
+
+def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
     """
     Meteorological forcing: Specify or read meteorological input and derive
     associated meteorological fields.
@@ -46,11 +79,13 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler, config: GridConfig) -> tuple[d
     ###########################################################
     # SPECIFY/READ METEO FORCING
     ###########################################################
-    if not cpl.has_coupling_to("icon_atmo"):
-        if config.grid_type is GridInputType.NETCDF:
-            IN = read_Greenland_data(IN, C, time, grid, config)
-        else:
+    match config.forcing_type:
+        case ForcingType.RANDOM:
             IN = set_random_weather_data(IN, C, time, grid)
+        case ForcingType.CARRA2:
+            IN = read_forcing_file(IN, C, time, config.forcing_files_dir)
+        case ForcingType.ICON:
+            pass
 
     ###########################################################
     # DERIVED METEOROLOGICAL FIELDS
@@ -67,14 +102,16 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler, config: GridConfig) -> tuple[d
         "VP0"
     ] * np.exp(C["Ls"] / C["Rv"] * (1.0 / 273.15 - 1.0 / IN["T"])) * (IN["T"] < 273.15)
 
-    if (
-        cpl.has_coupling_to("icon_atmo") or config.grid_type is GridInputType.NETCDF
-    ):  # q from ICON/CARRA2, calculate VP and RH
+    if config.forcing_type in (ForcingType.CARRA2, ForcingType.ICON):
+        # q from ICON/CARRA2, calculate VP and RH
         IN["VP"] = IN["q"] * IN["Pres"] / C["eps"]
         IN["RH"][:] = np.clip(IN["VP"] / VPsat, 0.0, 1.0)
-    else:  # RH from input, calculate VP and q
+    elif config.forcing_type is ForcingType.RANDOM:
+        # RH from input, calculate VP and q
         IN["VP"] = IN["RH"] * VPsat
         IN["q"] = IN["RH"] * (VPsat * C["eps"] / IN["Pres"])
+    else:
+        raise ValueError(f"Unsupported forcing type: {config.forcing_type}")
 
     # Air density
     IN["Dair"] = IN["Pres"] / (C["Rd"] * IN["T"])
@@ -109,7 +146,7 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler, config: GridConfig) -> tuple[d
     return IN, OUT
 
 
-def read_Greenland_data(IN, C, time, grid, config: GridConfig):
+def read_forcing_file(IN, C, time, forcing_file_dir, slice_duration=Duration(months=1)):
     """
     Read vectorized meteorological data for the current time-step from a preprocessed NetCDF file.
 
@@ -117,34 +154,14 @@ def read_Greenland_data(IN, C, time, grid, config: GridConfig):
         IN (dict): Meteorological input variables.
         C (dict): Constants for the model.
         time (dict): Time-related variables.
-        grid (dict): Grid information.
-        config (GridConfig): Grid configuration.
+        forcing_file_dir (Path): Path to the base directory containing NetCDF forcing files with meteorological data.
 
     Returns:
         dict: Updated IN dictionary with meteorological data.
     """
-    forcing_dir = config.mesh_file.parent
 
     model_time_utc = time["TCUR"]
     model_time_seconds = model_time_utc.replace(tzinfo=timezone.utc).timestamp()
-
-    def forcing_file_suffix_from_grid_file() -> str:
-        """Return forcing-file suffix implied by the Greenland grid file name."""
-        grid_stem = config.mesh_file.stem
-        marker = "Greenland_grid"
-
-        if grid_stem == marker:
-            return ""
-
-        if grid_stem.startswith(f"{marker}_"):
-            return grid_stem.removeprefix(marker)
-
-        return ""
-
-    file_group = 1 if model_time_utc.month <= 6 else 2
-    forcing_prefix = f"{model_time_utc.year}_{file_group}"
-    forcing_suffix = forcing_file_suffix_from_grid_file()
-    forcing_file = forcing_dir / f"{forcing_prefix}{forcing_suffix}.nc"
 
     forcing_variables = ("C", "T", "Pres", "WS", "P", "q")
 
@@ -153,15 +170,49 @@ def read_Greenland_data(IN, C, time, grid, config: GridConfig):
         if dataset is not None:
             dataset.close()
 
-    if not hasattr(read_Greenland_data, "_cache"):
-        read_Greenland_data._cache = {}
+    if not hasattr(read_forcing_file, "_cache"):
+        read_forcing_file._cache = {}
 
-    cache = read_Greenland_data._cache
+    cache = read_forcing_file._cache
+
+    def quantize_slice_start(current_time, duration: Duration) -> str:
+        """
+        Quantize the current time to the start of the forcing slice based on the specified duration.
+
+        Parameters:
+            current_time (datetime): The current time to be quantized.
+            duration (Duration): The duration of the forcing slice.
+        """
+        current_date = current_time.date()
+
+        if duration.seconds != 0 or duration.microseconds != 0:
+            raise ValueError(f"Unsupported forcing slice duration `{duration}`. " "Sub-daily slices are not supported.")
+
+        years = duration.years or 0
+        months = duration.months or 0
+        days = duration.days or 0
+
+        if years == 1 and months == 0 and days == 0:
+            return current_date.replace(month=1, day=1).isoformat()
+
+        if months == 1 and years == 0 and days == 0:
+            return current_date.replace(day=1).isoformat()
+
+        if months == 0 and years == 0 and days == 1:
+            return current_date.isoformat()
+
+        raise ValueError(
+            f"Unsupported forcing slice duration `{duration}`. "
+            "Only single month/year/day slices are supported (P1Y, P1M, P1D)."
+        )
+
+    current_slice = quantize_slice_start(time["TCUR"], slice_duration)
+    forcing_file = forcing_file_dir / current_slice / (duration_isoformat(slice_duration) + ".nc")
 
     if cache.get("forcing_file") != forcing_file:
         close_cached_datasets(cache)
 
-        logger.info(f"Opening vectorized Greenland forcing file {forcing_file}...")
+        logger.info(f"Opening vectorized forcing file {forcing_file}...")
 
         dataset = Dataset(forcing_file, "r")
         forcing_time = np.asarray(dataset.variables["time"][:], dtype=float)
@@ -170,7 +221,7 @@ def read_Greenland_data(IN, C, time, grid, config: GridConfig):
         for variable_name in forcing_variables:
             if variable_name not in dataset.variables:
                 dataset.close()
-                raise KeyError(f"Missing `{variable_name}` in vectorized Greenland forcing file {forcing_file}.")
+                raise KeyError(f"Missing `{variable_name}` in vectorized forcing file {forcing_file}.")
 
             variable = dataset.variables[variable_name]
 

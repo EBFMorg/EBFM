@@ -86,6 +86,7 @@ class GridConfig:
         elif netcdf_mesh:
             self.grid_type = GridInputType.NETCDF
             self.mesh_file = netcdf_mesh
+            self.dem_file = netcdf_mesh  # netcdf_mesh includes DEM data
             self.is_unstructured = False
         elif args.netcdf_dem_mesh and elmer_mesh:
             self.grid_type = GridInputType.CUSTOM
