@@ -12,8 +12,9 @@ Reboot/*.nc
 .tox
 
 # ignore all files in this folder
-examples/Greenland_CARRA2
+examples/Greenland_CARRA2/*
 # define exceptions (small files for specific case tracked with git LFS)
 !examples/Greenland_CARRA2/README.md
 !examples/Greenland_CARRA2/grid.nc*
 !examples/Greenland_CARRA2/1990-05-01
+!examples/Greenland_CARRA2/1990-05-01/**
