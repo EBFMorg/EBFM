@@ -99,3 +99,8 @@ jobs:
 
     - name: Run example tests with tox
       run: tox -e examples
+
+    # Skip examples-extra because of costly LFS download.
+    # Run in .github/workflows/build-and-test.yaml; stage carra2-example
+    # - name: Run extra example tests with tox
+    #   run: tox -e examples-extra
