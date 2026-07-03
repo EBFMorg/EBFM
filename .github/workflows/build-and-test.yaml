@@ -67,10 +67,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-test
     steps:
-      - name: Checkout EBFM repository (with LFS)
-        uses: actions/checkout@v6
-        with:
-          lfs: true
+      # use cached LFS to avoid downloading all LFS files in the repo (e.g., large example data)
+      - name: Checkout code
+        uses: nschloe/action-cached-lfs-checkout@v1
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
