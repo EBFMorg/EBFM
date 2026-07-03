@@ -39,8 +39,10 @@ jobs:
         run: git --version
       - name: Check EBFM version
         run: .venv/bin/ebfm --version
-      - name: Run example
+      - name: Run MATLAB example
         run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat
+      - name: Run CARRA2 example
+        run: .venv/bin/ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --start-time 1990-05-01T00:00:00 --end-time 1990-05-02T00:00:00
       - name: Run example with restart
         run: |
           .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot
