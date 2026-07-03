@@ -217,11 +217,11 @@ def init_grid(grid: GridDict, io, config: GridConfig):
     grid["has_shading"] = config.use_shading
 
     # Read grid from Elmer, elevations from BedMachine
-    if config.dem_file:
+    if config.dem_file and (config.mesh_file != config.dem_file):
         grid_input_type_supporting_dem = [GridInputType.CUSTOM, GridInputType.ELMERXIOS]
         assert (
             config.grid_type in grid_input_type_supporting_dem
-        ), f"DEM file can only be specified for {grid_input_type_supporting_dem}."
+        ), f"Additional DEM file can only be specified for {grid_input_type_supporting_dem}."
         if config.is_partitioned:
             mesh: Mesh = read_elmer_mesh(
                 mesh_root=config.mesh_file,

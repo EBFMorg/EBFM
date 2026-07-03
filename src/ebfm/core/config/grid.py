@@ -68,7 +68,9 @@ class GridConfig:
         ), "Internal error: partitioned grid configuration requires an Elmer mesh input."
 
         if self.is_partitioned:
-            assert args.netcdf_mesh, "Internal error: partitioned grid configuration requires NetCDF mesh input."
+            assert (
+                args.netcdf_dem_mesh
+            ), "Internal error: partitioned grid configuration requires NetCDF DEM mesh input."
             logger.info("Using partitioned grid...")
             self.partition_id = args.use_part
             logger.info(f"{self.partition_id=}")
@@ -79,15 +81,15 @@ class GridConfig:
             self.grid_type = GridInputType.MATLAB
             self.mesh_file = matlab_mesh
             self.is_unstructured = False
-        elif args.netcdf_mesh and elmer_mesh:
+        elif args.netcdf_dem_mesh and elmer_mesh:
             self.grid_type = GridInputType.CUSTOM
             self.mesh_file = elmer_mesh
-            self.dem_file = args.netcdf_mesh
+            self.dem_file = args.netcdf_dem_mesh
             self.is_unstructured = False
-        elif args.netcdf_mesh_unstructured and elmer_mesh:
+        elif args.netcdf_dem_mesh_unstructured and elmer_mesh:
             self.grid_type = GridInputType.ELMERXIOS
             self.mesh_file = elmer_mesh
-            self.dem_file = args.netcdf_mesh_unstructured
+            self.dem_file = args.netcdf_dem_mesh_unstructured
             self.is_unstructured = True
         elif elmer_mesh:
             self.grid_type = GridInputType.ELMER

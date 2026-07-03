@@ -75,33 +75,33 @@ class TestElmerMeshConstraints(unittest.TestCase):
 
 
 class TestPartitionedMeshConstraints(unittest.TestCase):
-    """--is-partitioned-elmer-mesh requires both --elmer-mesh and --netcdf-mesh."""
+    """--is-partitioned-elmer-mesh requires both --elmer-mesh and --netcdf-dem-mesh."""
 
     def test_partitioned_without_elmer_mesh_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(_MATLAB + ["--is-partitioned-elmer-mesh"])
         self.assertEqual(ctx.exception.code, 2)
 
-    def test_partitioned_without_netcdf_mesh_rejected(self):
+    def test_partitioned_without_netcdf_dem_mesh_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413", "--is-partitioned-elmer-mesh"])
         self.assertEqual(ctx.exception.code, 2)
 
     @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
-    def test_partitioned_with_elmer_and_netcdf_accepted(self):
+    def test_partitioned_with_elmer_and_netcdf_dem_accepted(self):
         args = parse_cli_args(
             [
                 "--elmer-mesh",
                 "mesh/",
                 "--elmer-mesh-crs-epsg",
                 "3413",
-                "--netcdf-mesh",
+                "--netcdf-dem-mesh",
                 "mesh.nc",
                 "--is-partitioned-elmer-mesh",
             ]
         )
         self.assertTrue(args.is_partitioned_elmer_mesh)
-        self.assertEqual(args.netcdf_mesh, Path("mesh.nc"))
+        self.assertEqual(args.netcdf_dem_mesh, Path("mesh.nc"))
 
 
 class TestDefaults(unittest.TestCase):
@@ -143,8 +143,8 @@ class TestDefaults(unittest.TestCase):
         self.assertFalse(self.args.couple_to_elmer_ice)
         self.assertFalse(self.args.couple_to_icon_atmo)
 
-    def test_netcdf_mesh_default_none(self):
-        self.assertIsNone(self.args.netcdf_mesh)
+    def test_netcdf_dem_mesh_default_none(self):
+        self.assertIsNone(self.args.netcdf_dem_mesh)
 
     def test_random_seed_default_none(self):
         self.assertIsNone(self.args.random_seed)
