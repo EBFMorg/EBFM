@@ -223,7 +223,8 @@ def _main_impl():
             IN["Pres"] = data_from_icon["sfcpres"]
 
         # Read/set meteorological forcing
-        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler, grid_config)
+        forcing_config = LOOP_climate_forcing.ForcingConfig(grid_config, coupler)  # use args?
+        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config)
 
         # Run surface energy balance model
         OUT = LOOP_EBM.main(C, OUT, IN, time, grid, coupler)
