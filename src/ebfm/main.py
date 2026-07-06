@@ -195,7 +195,7 @@ def _main_impl():
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
             data_to_icon = {
-                "albedo": OUT["albedo"],
+                "icemask": np.ones_like(grid["x"]),
             }
 
             fallback_values = {

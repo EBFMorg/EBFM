@@ -40,6 +40,13 @@ class IconAtmo(Component):
                 #     exchange_type=ExchangeType.SOURCE,
                 # ),
                 Field(
+                    name="icemask",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Ice mask",
+                    exchange_type=ExchangeType.SOURCE,
+                ),
+                Field(
                     name="pr",
                     coupled_component=self,
                     timestep=timestep,
@@ -127,7 +134,8 @@ class IconAtmo(Component):
         received_data: dict[str, np.ndarray] = {}
 
         # Put data to IconAtmo
-        self._put_if_coupled("albedo", data_to_exchange)
+        # self._put_if_coupled("albedo", data_to_exchange)
+        self._put_if_coupled("icemask", data_to_exchange)
 
         # Get data from IconAtmo
         pr = self._get_if_coupled("pr", transform=self._map_pr_to_ebfm, fallback_values=fallback_values)
