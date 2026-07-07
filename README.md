@@ -80,7 +80,8 @@ ebfm --matlab-mesh examples/dem_and_mask.mat
 
 ### Mesh data
 
-The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data.
+The arguments `--matlab-mesh` and `--elmer-mesh` allow to provide different kinds of mesh data.
+The arguments `--netcdf-dem-mesh` and `--netcdf-dem-mesh-unstructured` allow to add a Digital Elevation Model (DEM) for meshes that come without elevation information.
 EBFM supports the following formats:
 
 For Elmer-based inputs, the argument `--elmer-mesh-crs-epsg` is needed to define the coordinate reference system (CRS)
@@ -115,12 +116,12 @@ Important: For some larger files we are using Git LFS. Please make sure to [inst
 * Elmer Mesh with Elevation data from NetCDF: The Elmer mesh file provides x-y
   coordinate. An additioal NetCDF file is given to provide elevation data for
   these x-y coordinates. Please use the arguments `--elmer-mesh /path/to/your/elmer/mesh`
-  and `--netcdf-mesh /path/to/your/elevation.nc`
+  and `--netcdf-dem-mesh /path/to/your/elevation.nc`
 
   Usage example:
 
   ```sh
-  ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-mesh examples/BedMachineGreenland-v5_lo.nc --elmer-mesh-crs-epsg 3413
+  ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --elmer-mesh-crs-epsg 3413
   ```
 
 Note that an Elmer mesh must be provided in a directory following the structure:
@@ -158,7 +159,7 @@ path/to/your/elmer/mesh
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
 Note: The partitioned mesh is not included in this repository.
@@ -180,7 +181,7 @@ Once available, you can either copy or symlink the required files into the
 using the CLI arguments shown above.
 
 
-### Using `reader.py` to amend elevantion data to `examples/greenland_mesh_v0`
+### Using `reader.py` to amend elevation data to `examples/greenland_mesh_v0`
 
 The helper script `reader.py` can be used to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
 
@@ -204,6 +205,22 @@ The resulting mesh can then be used directly with EBFM similar to the example wi
 ebfm --elmer-mesh examples/greenland_mesh_v0_with_DEM/MESH --elmer-mesh-crs-epsg 3413
 ```
 
+### Working with restart files
+
+You may use restart files with EBFM. To create a restart file at the end of a run, please provide a `--restart-dir`:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart
+```
+
+You can now use the `--restart-init` option to tell EBFM to use the restart file `examples/restart/restart_1979-01-02T00:00:00.nc` that you just created as a starting point:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart --restart-init --start-time 1979-01-02T00:00:00 --end-time 1979-01-03T00:00:00
+```
+
+Note that it is necessary to provide a `--start-time` consistent with the given restart file.
+
 ### Performance and Profiling Runs
 
 #### Installation for Performance Runs
@@ -216,7 +233,7 @@ pip install -e .[performance]
 
 This additionally installs `numba` to run with multiple CPU-threads.
 
-#### Running EBFM with performance optimiuations
+#### Running EBFM with performance optimizations
 
 EBFM now includes several performance improvements and supports several options for performance testing and benchmarking:
 
@@ -300,7 +317,7 @@ Follow the install instructions from above and run the example command for a cou
 ```sh
 mpirun -np 1 ebfm \
   --elmer-mesh $MESHES/greenland_mesh_v0/MESH/partitioning.128/ \
-  --netcdf-mesh $DATA/BedMachineGreenland-v5.nc \
+  --netcdf-dem-mesh $DATA/BedMachineGreenland-v5.nc \
   --is-partitioned-elmer-mesh --use-part 1 \
   --coupler-config $CPL_CONFIG --couple-to-elmer --couple-to-icon \
   : \

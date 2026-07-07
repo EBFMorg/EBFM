@@ -2,12 +2,13 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from mpi4py import MPI
 import sys
 from pathlib import Path
 import logging
 from logging import Logger
 from logging import getLogger  # noqa: F401
+
+from ebfm.core.comm import defaultComm
 
 log_levels_map = {
     "DEBUG": logging.DEBUG,
@@ -30,7 +31,7 @@ default_stdout_individual_log_levels = {
 def setup_logging(
     stdout_log_level=default_stdout_log_level,
     stdout_individual_log_levels=default_stdout_individual_log_levels,
-    comm=MPI.COMM_WORLD,
+    comm=defaultComm,
     file: Path = None,
     file_log_level=default_file_log_level,
     reset_handlers: bool = False,
@@ -40,7 +41,8 @@ def setup_logging(
 
     @param stdout_log_level: Log level for stdout
     @param stdout_individual_log_levels: Dictionary mapping MPI ranks to their desired log levels for console output.
-    @param comm: MPI communicator to use for determining rank and size.
+    @param comm: MPI communicator to use for determining rank and size. If None, comm defaults to MPI.COMM_WORLD
+                 when MPI support is available, or a serial (rank 0, size 1) stub otherwise.
     @param file: Optional path of log file. If None, no file logging is set up. If parallel run with multiple ranks,
                  rank number is appended to filename.
     @param file_log_level: Log level for file logging.

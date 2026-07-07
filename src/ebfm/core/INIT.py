@@ -16,7 +16,7 @@ from datetime import datetime
 from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
-from .config import TimeConfig, GridConfig
+from .config import TimeConfig, GridConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
@@ -37,9 +37,7 @@ def create_restart_file_name(time: datetime) -> str:
         str: The generated restart file name.
     """
     restart_file_prefix = "restart_"
-    restart_file_time_format = "%d-%b-%YT%H:%M"
-
-    return restart_file_prefix + time.strftime(restart_file_time_format) + ".nc"
+    return restart_file_prefix + iso8601(time) + ".nc"
 
 
 def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initialize_from_restart_file: bool):
@@ -219,11 +217,11 @@ def init_grid(grid: GridDict, io, config: GridConfig):
     grid["has_shading"] = config.use_shading
 
     # Read grid from Elmer, elevations from BedMachine
-    if config.dem_file:
+    if config.dem_file and (config.mesh_file != config.dem_file):
         grid_input_type_supporting_dem = [GridInputType.CUSTOM, GridInputType.ELMERXIOS]
         assert (
             config.grid_type in grid_input_type_supporting_dem
-        ), f"DEM file can only be specified for {grid_input_type_supporting_dem}."
+        ), f"Additional DEM file can only be specified for {grid_input_type_supporting_dem}."
         if config.is_partitioned:
             mesh: Mesh = read_elmer_mesh(
                 mesh_root=config.mesh_file,

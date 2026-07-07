@@ -7,6 +7,13 @@ SPDX-License-Identifier: CC-BY-4.0
 # develop
 
 * Rename "h" received from Elmer to "surface_elevation". https://github.com/EBFMorg/EBFM/pull/124.
+* Assure model time is always in UTC+0, allowing removal of the previously hard-coded (time-zone dependent) parameter dT_UTC. https://github.com/EBFMorg/EBFM/pull/138
+* Rename `--netcdf-mesh` to `--netcdf-dem-mesh` and `--netcdf-mesh-unstructured` to `--netcdf-dem-mesh-unstructured`. https://github.com/EBFMorg/EBFM/pull/142
+* Use ISO8601 datetime as suffix for restart files created with `--restart-dir` option. https://github.com/EBFMorg/EBFM/pull/141
+
+# v0.5.0
+
+* Add support for ISO8601 format for `--time-step`, `--time-start`, and `--time-end`. This is the recommended format and alternatives are deprecated. https://github.com/EBFMorg/EBFM/pull/137
 * Refactor how parser and configuration modules process errors in user input. https://github.com/EBFMorg/EBFM/pull/131
 
 # v0.4.0
@@ -31,7 +38,6 @@ SPDX-License-Identifier: CC-BY-4.0
   * Improvements in LOOP_SNOW.py (compaction, heat_conduction, percolation_refreezing_and_storage and layer_merging_and_splitting)
   * Added numba kernels for compaction, heat_conduction and percolation_refreezing_and_storage (in `LOOP_SNOW_kernels.py`) , addresses: https://github.com/EBFMorg/EBFM/issues/55
   * Introduced `compute_backend.py` to manage compute-backend dispatch to separate kernel code from logic. Explicit `if/else` dispatch with a single return per function. Prepares codebase for adding, e.g., GPU offload backends without structural changes.
-* Bug fixes in double depth method in INIT.py and LOOP_SNOW.py (by Ward)
 
 # v0.3.0
 
