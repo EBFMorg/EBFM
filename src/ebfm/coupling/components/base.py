@@ -93,23 +93,28 @@ class Component(ABC):
         """
         from ebfm.coupling.fields.base import ExchangeType
 
-        if self._coupler.has_field(self.name, field_name, ExchangeType.TARGET):
-            data, err = self._coupler.get(self.name, field_name)
-            logger.debug(f"Received data for field '{field_name}' from coupler: {data}")
-            if err:
-                if err is CouplerExitCode.NO_DATA_RECEIVED:
-                    logger.debug(
-                        f"Get for {field_name=} returned exit code ({err=}). "
-                        "No data was received from the other component."
-                    )
-                else:
-                    logger.warning(
-                        f"Get for {field_name=} returned unexpected exit code ({err=}). "
-                        "Please report this to the developers."
-                    )
-            assert data is not None, f"Received data for field '{field_name}' is None. {err}"
-            return transform(data)
-        return None
+        if not self._coupler.has_field(self.name, field_name, ExchangeType.TARGET):
+            logger.debug(f"Field '{field_name}' is not coupled for component '{self.name}', skipping get.")
+            return None
+
+        data, err = self._coupler.get(self.name, field_name)
+
+        if err:
+            if err is CouplerExitCode.NO_DATA_RECEIVED:
+                logger.debug(
+                    f"Get for {field_name=} returned exit code ({err=}). "
+                    "No data was received from the other component."
+                )
+            else:
+                logger.warning(
+                    f"Get for {field_name=} returned unexpected exit code ({err=}). "
+                    "Please report this to the developers."
+                )
+            return None
+
+        assert data is not None, f"Received data for field '{field_name}' is None. {err}"
+        logger.debug(f"Received data for field '{field_name}' from coupler: {data}")
+        return transform(data)
 
     @abstractmethod
     def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
