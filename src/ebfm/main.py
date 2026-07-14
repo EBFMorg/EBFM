@@ -90,6 +90,26 @@ def print_diagnostics(grid, OUT, t):
         diagnostics_logger.info(f"[t={t + 1}] smb_cumulative: {_format_stats(smb_cum)}")
 
 
+def _apply_field(IN, received_data, expected_key, target_ebfm, fallback_strategy):
+    """Assign *expected_key* from *received_data* to IN[*target_ebfm*].
+
+    If the field is absent and a fallback is permitted, logs a warning and
+    uses the configured fallback strategy for the expected field.
+    """
+    if expected_key in received_data:
+        IN[target_ebfm] = received_data[expected_key]
+        return
+    assert (
+        expected_key in fallback_strategy
+    ), f"Expected field '{expected_key}'  missing in received data and no fallback strategy defined."
+    _logger = getLogger(__name__)
+    _logger.warning(
+        f"Expected field '{expected_key}' missing in received data. "
+        f"Using fallback strategy for '{target_ebfm}' in EBFM."
+    )
+    IN[target_ebfm] = fallback_strategy[expected_key](IN)
+
+
 def _main_impl():
     args = parse_cli_args()
 
@@ -198,91 +218,27 @@ def _main_impl():
             logger.debug("Done.")
             logger.debug(f"Received the following data from ICON: {data_from_icon}")
 
-            allow_icon_fallback_for = {"rlds", "clt", "huss", "sfcpres", "sfcwind"}
+            fallback_strategy = {
+                "rlds": lambda IN: IN["LWin"],
+                "clt": lambda IN: IN["C"],
+                "sfcwind": lambda IN: IN["WS"],
+                "huss": lambda IN: IN["T"] * 0.0,
+                "sfcpres": lambda IN: IN["T"] * 0.0 + 101500.0,
+            }
 
             IN["P"] = data_from_icon["pr"]
             IN["snow"] = data_from_icon["pr_snow"]
             IN["SWin"] = data_from_icon["rsds"]
 
-            expected_icon = "rlds"
-            target_ebfm = "LWin"
-            if expected_icon in data_from_icon:
-                IN[target_ebfm] = data_from_icon[expected_icon]
-            else:
-                assert (
-                    expected_icon in allow_icon_fallback_for
-                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
-                logger.warning(
-                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
-                )
-                # fallback will use data already present in IN["LWin"]
-                assert (
-                    target_ebfm in IN
-                ), f"Fallback for '{expected_icon}' requires that IN['{target_ebfm}'] contains data."
-
-            expected_icon = "clt"
-            target_ebfm = "C"
-            if expected_icon in data_from_icon:
-                IN[target_ebfm] = data_from_icon[expected_icon]
-            else:
-                assert (
-                    expected_icon in allow_icon_fallback_for
-                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
-                logger.warning(
-                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
-                )
-                # fallback will use data already present in IN["C"]
-                assert (
-                    target_ebfm in IN
-                ), f"Fallback for '{expected_icon}' requires that IN['{target_ebfm}'] contains data."
-
-            expected_icon = "sfcwind"
-            target_ebfm = "WS"
-            if expected_icon in data_from_icon:
-                IN[target_ebfm] = data_from_icon[expected_icon]
-            else:
-                assert (
-                    expected_icon in allow_icon_fallback_for
-                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
-                logger.warning(
-                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
-                )
-                # fallback will use data already present in IN["WS"]
-                assert (
-                    target_ebfm in IN
-                ), f"Fallback for '{expected_icon}' requires that IN['{target_ebfm}'] contains data."
+            _apply_field(IN, data_from_icon, "rlds", "LWin", fallback_strategy)
+            _apply_field(IN, data_from_icon, "clt", "C", fallback_strategy)
+            _apply_field(IN, data_from_icon, "sfcwind", "WS", fallback_strategy)
 
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
 
-            # Fallback to constants if fields are not coupled (error code set); must be arrays for mask indexing.
-            _T0 = IN["T"] * 0.0
-
-            expected_icon = "huss"
-            target_ebfm = "q"
-            if expected_icon in data_from_icon:
-                IN[target_ebfm] = data_from_icon[expected_icon]
-            else:  # use fallback value
-                assert (
-                    expected_icon in allow_icon_fallback_for
-                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
-                logger.warning(
-                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
-                )
-                IN[target_ebfm] = _T0
-
-            expected_icon = "sfcpres"
-            target_ebfm = "Pres"
-            if expected_icon in data_from_icon:
-                IN[target_ebfm] = data_from_icon[expected_icon]
-            else:  # use fallback value
-                assert (
-                    expected_icon in allow_icon_fallback_for
-                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
-                logger.warning(
-                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
-                )
-                IN[target_ebfm] = _T0 + 101500.0
+            _apply_field(IN, data_from_icon, "huss", "q", fallback_strategy)
+            _apply_field(IN, data_from_icon, "sfcpres", "Pres", fallback_strategy)
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
