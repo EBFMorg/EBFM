@@ -252,7 +252,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             logger.debug(f"No data for field {field.name} from {field.coupled_component.name} received.")
             return None, CouplerExitCode.NO_DATA_RECEIVED
 
-        if action is yac.Action.OUT_OF_BOUNDS:
+        if action is yac.Action.OUT_OF_BOUND:
             logger.warning(
                 f"Received YAC action OUT_OF_BOUNDS for field {field.name} " "from {field.coupled_component.name}."
             )
