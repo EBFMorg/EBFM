@@ -252,6 +252,16 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             logger.debug(f"No data for field {field.name} from {field.coupled_component.name} received.")
             return None, CouplerExitCode.NO_DATA_RECEIVED
 
+        if action is yac.Action.OUT_OF_BOUNDS:
+            logger.warning(
+                f"Received YAC action OUT_OF_BOUNDS for field {field.name} " "from {field.coupled_component.name}."
+            )
+            logger.warning(f"Skipping get and updating field {field.name} to next time step.")
+            field.field_handle.update()
+            logger.warning("Please review your coupling configuration for errors.")
+            logger.debug(f"No data for field {field.name} from {field.coupled_component.name} received.")
+            return None, CouplerExitCode.NO_DATA_RECEIVED
+
         expected_actions = {yac.Action.GET, yac.Action.GET_FOR_RESTART}
 
         assert action in expected_actions, (
@@ -265,6 +275,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             f"Expected data shape ({_COLLECTION_SIZE}, ...), got {data.shape} for field '{field.name}' "
             f"from component '{field.coupled_component.name}'."
         )
+
         return data[_COLLECTION_SIZE - 1], error
 
     def _handle_field_validation_error(self, error_msg: str):
