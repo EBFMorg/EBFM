@@ -243,7 +243,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             error = CouplerExitCode.WRONG_ROLE
 
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name}...")
-        action = field.field_handle.action()
+        action = field.field_handle.action
 
         if action is yac.Action.NONE:
             logger.debug(f"Received YAC action NONE for field {field.name} from {field.coupled_component.name}.")
