@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# develop
+
+* Add general interface for definition of fallback values if a coupled component does not provide expected data for individual fields. https://github.com/EBFMorg/EBFM/pull/146.
+
 # v0.6.1
 
 * Catch invalid values returned by YAC's get and forward info to user. https://github.com/EBFMorg/EBFM/pull/145.
