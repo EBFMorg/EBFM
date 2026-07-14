@@ -198,64 +198,91 @@ def _main_impl():
             logger.debug("Done.")
             logger.debug(f"Received the following data from ICON: {data_from_icon}")
 
-            allow_icon_fallback_for = {"pr_snow", "rlds", "clt", "huss", "sfcpres"}
+            allow_icon_fallback_for = {"rlds", "clt", "huss", "sfcpres", "sfcwind"}
 
             IN["P"] = data_from_icon["pr"]
-
-            expected = "pr_snow"
-            if expected in data_from_icon:
-                IN["snow"] = data_from_icon[expected]
-            else:
-                assert (
-                    expected in allow_icon_fallback_for
-                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
-                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'snow' in EBFM.")
-
+            IN["snow"] = data_from_icon["pr_snow"]
             IN["SWin"] = data_from_icon["rsds"]
 
-            expected = "rlds"
-            if expected in data_from_icon:
-                IN["LWin"] = data_from_icon[expected]
+            expected_icon = "rlds"
+            target_ebfm = "LWin"
+            if expected_icon in data_from_icon:
+                IN[target_ebfm] = data_from_icon[expected_icon]
             else:
                 assert (
-                    expected in allow_icon_fallback_for
-                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
-                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'LWin' in EBFM.")
+                    expected_icon in allow_icon_fallback_for
+                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
+                logger.warning(
+                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
+                )
+                # fallback will use data already present in IN["LWin"]
+                assert (
+                    target_ebfm in IN
+                ), f"Fallback for '{expected_icon}' requires that IN['{target_ebfm}'] contains data."
 
-            expected = "clt"
-            if expected in data_from_icon:
-                IN["C"] = data_from_icon[expected]
+            expected_icon = "clt"
+            target_ebfm = "C"
+            if expected_icon in data_from_icon:
+                IN[target_ebfm] = data_from_icon[expected_icon]
             else:
                 assert (
-                    expected in allow_icon_fallback_for
-                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
-                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'C' in EBFM.")
+                    expected_icon in allow_icon_fallback_for
+                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
+                logger.warning(
+                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
+                )
+                # fallback will use data already present in IN["C"]
+                assert (
+                    target_ebfm in IN
+                ), f"Fallback for '{expected_icon}' requires that IN['{target_ebfm}'] contains data."
 
-            IN["WS"] = data_from_icon["sfcwind"]
+            expected_icon = "sfcwind"
+            target_ebfm = "WS"
+            if expected_icon in data_from_icon:
+                IN[target_ebfm] = data_from_icon[expected_icon]
+            else:
+                assert (
+                    expected_icon in allow_icon_fallback_for
+                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
+                logger.warning(
+                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
+                )
+                # fallback will use data already present in IN["WS"]
+                assert (
+                    target_ebfm in IN
+                ), f"Fallback for '{expected_icon}' requires that IN['{target_ebfm}'] contains data."
+
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
+
             # Fallback to constants if fields are not coupled (error code set); must be arrays for mask indexing.
             _T0 = IN["T"] * 0.0
 
-            expected = "huss"
-            if expected in data_from_icon:
-                IN["q"] = data_from_icon[expected]
+            expected_icon = "huss"
+            target_ebfm = "q"
+            if expected_icon in data_from_icon:
+                IN[target_ebfm] = data_from_icon[expected_icon]
             else:  # use fallback value
                 assert (
-                    expected in allow_icon_fallback_for
-                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
-                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'q' in EBFM.")
-                IN["q"] = _T0
+                    expected_icon in allow_icon_fallback_for
+                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
+                logger.warning(
+                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
+                )
+                IN[target_ebfm] = _T0
 
-            expected = "sfcpres"
-            if expected in data_from_icon:
-                IN["Pres"] = data_from_icon[expected]
+            expected_icon = "sfcpres"
+            target_ebfm = "Pres"
+            if expected_icon in data_from_icon:
+                IN[target_ebfm] = data_from_icon[expected_icon]
             else:  # use fallback value
                 assert (
-                    expected in allow_icon_fallback_for
-                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
-                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'Pres' in EBFM.")
-                IN["Pres"] = _T0 + 101500.0
+                    expected_icon in allow_icon_fallback_for
+                ), f"Coupling to ICON enabled, but expected field '{expected_icon}' missing and no fallback allowed."
+                logger.warning(
+                    f"Expected field '{expected_icon}' missing; using fallback value for '{target_ebfm}' in EBFM."
+                )
+                IN[target_ebfm] = _T0 + 101500.0
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
