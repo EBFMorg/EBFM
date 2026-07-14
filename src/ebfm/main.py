@@ -198,37 +198,63 @@ def _main_impl():
             logger.debug("Done.")
             logger.debug(f"Received the following data from ICON: {data_from_icon}")
 
-            if "pr_snow" in data_from_icon:
-                IN["snow"] = data_from_icon["pr_snow"]
-            else:
-                logger.warning("Field 'pr_snow' not received from ICON; using fallback value for 'snow' in EBFM.")
-
-            if "rsds" in data_from_icon:
-                IN["SWin"] = data_from_icon["rsds"]
-            else:
-                logger.warning("Field 'rsds' not received from ICON; using fallback value for 'SWin' in EBFM.")
-
-            if "rlds" in data_from_icon:
-                IN["LWin"] = data_from_icon["rlds"]
-            else:
-                logger.warning("Field 'rlds' not received from ICON; using fallback value for 'LWin' in EBFM.")
+            allow_icon_fallback_for = {"pr_snow", "rlds", "clt", "huss", "sfcpres"}
 
             IN["P"] = data_from_icon["pr"]
-            IN["C"] = data_from_icon["clt"]
+
+            expected = "pr_snow"
+            if expected in data_from_icon:
+                IN["snow"] = data_from_icon[expected]
+            else:
+                assert (
+                    expected in allow_icon_fallback_for
+                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
+                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'snow' in EBFM.")
+
+            IN["SWin"] = data_from_icon["rsds"]
+
+            expected = "rlds"
+            if expected in data_from_icon:
+                IN["LWin"] = data_from_icon[expected]
+            else:
+                assert (
+                    expected in allow_icon_fallback_for
+                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
+                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'LWin' in EBFM.")
+
+            expected = "clt"
+            if expected in data_from_icon:
+                IN["C"] = data_from_icon[expected]
+            else:
+                assert (
+                    expected in allow_icon_fallback_for
+                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
+                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'C' in EBFM.")
+
             IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
             # Fallback to constants if fields are not coupled (error code set); must be arrays for mask indexing.
             _T0 = IN["T"] * 0.0
 
-            if "huss" in data_from_icon:
-                IN["q"] = data_from_icon["huss"]
+            expected = "huss"
+            if expected in data_from_icon:
+                IN["q"] = data_from_icon[expected]
             else:  # use fallback value
+                assert (
+                    expected in allow_icon_fallback_for
+                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
+                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'q' in EBFM.")
                 IN["q"] = _T0
 
-            if "sfcpres" in data_from_icon:
-                IN["Pres"] = data_from_icon["sfcpres"]
+            expected = "sfcpres"
+            if expected in data_from_icon:
+                IN["Pres"] = data_from_icon[expected]
             else:  # use fallback value
+                assert (
+                    expected in allow_icon_fallback_for
+                ), f"Coupling to ICON is enabled, but expected field '{expected}' missing and no fallback is allowed."
+                logger.warning(f"Expected field '{expected}' missing; using fallback value for 'Pres' in EBFM.")
                 IN["Pres"] = _T0 + 101500.0
 
         # Read/set meteorological forcing
