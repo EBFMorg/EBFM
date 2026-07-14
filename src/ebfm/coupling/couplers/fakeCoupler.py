@@ -10,7 +10,7 @@ import numpy as np
 from ebfm.core import logging
 from ebfm.core.config import CouplingConfig
 
-from .base import Coupler, CouplerErrorCode, Grid, GridDict
+from .base import Coupler, CouplerExitCode, Grid, GridDict
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
 
 logger = logging.getLogger(__name__)
@@ -185,7 +185,7 @@ class FakeCoupler(Coupler):
         for field in field_definitions:
             self.fields.add(field)
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Log and discard outgoing data – no actual transfer is performed.
 
@@ -193,12 +193,12 @@ class FakeCoupler(Coupler):
         @param[in] field_name name of the field to put data to
         @param[in] data data that would be sent to the coupled model
 
-        @returns None (no error)
+        @returns exit code, or None if put successfully completed.
         """
         logger.debug(f"FakeCoupler put: field '{field_name}' -> '{component_name}' (discarded).")
         return None
 
-    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Return a fake array for the requested field.
 
@@ -209,7 +209,7 @@ class FakeCoupler(Coupler):
         @param[in] component_name name of the component to get data from
         @param[in] field_name name of the field to retrieve
 
-        @returns tuple of (fake field data, error code). Error code is always None.
+        @returns tuple of (fake field data, exit code). Exit code is None if get successfully received data.
         """
         key = (component_name, field_name)
         fill_value = self._fake_values.get(key, 0.0)
