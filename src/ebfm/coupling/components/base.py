@@ -8,7 +8,6 @@ from collections.abc import Mapping, Callable
 import numpy as np
 
 from ebfm.core import logging
-from ebfm.coupling.couplers.base import CouplerExitCode
 
 logger = logging.getLogger(__name__)
 
@@ -102,16 +101,7 @@ class Component(ABC):
         data, err = self._coupler.get(self.name, field_name)
 
         if err:
-            if err is CouplerExitCode.NO_DATA_RECEIVED:
-                logger.debug(
-                    f"Get for {field_name=} returned exit code ({err=}). "
-                    "No data was received from the other component."
-                )
-            else:
-                logger.warning(
-                    f"Get for {field_name=} returned unexpected exit code ({err=}). "
-                    "Please report this to the developers."
-                )
+            logger.warning(f"Get for {field_name=} returned exit code ({err=}).")
             return None
 
         assert data is not None, f"Received data for field '{field_name}' is None. {err}"
