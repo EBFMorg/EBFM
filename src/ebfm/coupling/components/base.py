@@ -106,11 +106,11 @@ class Component(ABC):
 
         if err:
             logger.warning(f"Get for {field_name=} returned exit code ({err=}).")
-            if fallback := fallback_values.get(field_name) is not None:
+            if field_name in fallback_values:
                 logger.warning(
                     f"Using fallback value for '{field_name}' as no data was received for this field from {self.name}."
                 )
-                return fallback
+                return fallback_values[field_name]
             return None
 
         assert data is not None, f"Received data for field '{field_name}' is None. {err}"
