@@ -105,11 +105,14 @@ class IconAtmo(Component):
             }
         )
 
-    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def exchange(
+        self, data_to_exchange: Mapping[str, np.ndarray], fallback_values: Mapping[str, np.ndarray] = {}
+    ) -> dict[str, np.ndarray]:
         """
         Exchange data with IconAtmo.
 
         @param[in] data_to_exchange read-only Mapping of field names to data to be sent
+        @param[in] fallback_values optional Mapping of field names to fallback values to use if get fails
 
         @returns dictionary of received field data
         """
@@ -127,40 +130,40 @@ class IconAtmo(Component):
         self._put_if_coupled("albedo", data_to_exchange)
 
         # Get data from IconAtmo
-        pr = self._get_if_coupled("pr", transform=map_pr_to_ebfm)
+        pr = self._get_if_coupled("pr", transform=map_pr_to_ebfm, fallback_values=fallback_values)
         if pr is not None:
             received_data["pr"] = pr
 
         # TODO: check what units are needed for pr_snow in EBFM
-        pr_snow = self._get_if_coupled("pr_snow")
+        pr_snow = self._get_if_coupled("pr_snow", fallback_values=fallback_values)
         if pr_snow is not None:
             received_data["pr_snow"] = pr_snow
 
-        rsds = self._get_if_coupled("rsds")
+        rsds = self._get_if_coupled("rsds", fallback_values=fallback_values)
         if rsds is not None:
             received_data["rsds"] = rsds
 
-        rlds = self._get_if_coupled("rlds")
+        rlds = self._get_if_coupled("rlds", fallback_values=fallback_values)
         if rlds is not None:
             received_data["rlds"] = rlds
 
-        sfcwind = self._get_if_coupled("sfcwind")
+        sfcwind = self._get_if_coupled("sfcwind", fallback_values=fallback_values)
         if sfcwind is not None:
             received_data["sfcwind"] = sfcwind
 
-        clt = self._get_if_coupled("clt")
+        clt = self._get_if_coupled("clt", fallback_values=fallback_values)
         if clt is not None:
             received_data["clt"] = clt
 
-        tas = self._get_if_coupled("tas")
+        tas = self._get_if_coupled("tas", fallback_values=fallback_values)
         if tas is not None:
             received_data["tas"] = tas
 
-        huss = self._get_if_coupled("huss")
+        huss = self._get_if_coupled("huss", fallback_values=fallback_values)
         if huss is not None:
             received_data["huss"] = huss
 
-        sfcpres = self._get_if_coupled("sfcpres")
+        sfcpres = self._get_if_coupled("sfcpres", fallback_values=fallback_values)
         if sfcpres is not None:
             received_data["sfcpres"] = sfcpres
 

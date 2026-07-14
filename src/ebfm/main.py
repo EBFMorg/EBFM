@@ -90,26 +90,6 @@ def print_diagnostics(grid, OUT, t):
         diagnostics_logger.info(f"[t={t + 1}] smb_cumulative: {_format_stats(smb_cum)}")
 
 
-def _apply_field(IN, received_data, expected_key, target_ebfm, fallback_strategy):
-    """Assign *expected_key* from *received_data* to IN[*target_ebfm*].
-
-    If the field is absent and a fallback is permitted, logs a warning and
-    uses the configured fallback strategy for the expected field.
-    """
-    if expected_key in received_data:
-        IN[target_ebfm] = received_data[expected_key]
-        return
-    assert (
-        expected_key in fallback_strategy
-    ), f"Expected field '{expected_key}'  missing in received data and no fallback strategy defined."
-    _logger = getLogger(__name__)
-    _logger.warning(
-        f"Expected field '{expected_key}' missing in received data. "
-        f"Using fallback strategy for '{target_ebfm}' in EBFM."
-    )
-    IN[target_ebfm] = fallback_strategy[expected_key](IN)
-
-
 def _main_impl():
     args = parse_cli_args()
 
@@ -213,32 +193,29 @@ def _main_impl():
                 "albedo": OUT["albedo"],
             }
 
-            data_from_icon = icon_atmo.exchange(data_to_icon)
+            fallback_values = {
+                "rlds": IN["LWin"],
+                "clt": IN["C"],
+                "sfcwind": IN["WS"],
+                "huss": IN["T"] * 0.0,
+                "sfcpres": IN["T"] * 0.0 + 101500.0,
+            }
+
+            data_from_icon = icon_atmo.exchange(data_to_icon, fallback_values)
 
             logger.debug("Done.")
             logger.debug(f"Received the following data from ICON: {data_from_icon}")
 
-            fallback_strategy = {
-                "rlds": lambda IN: IN["LWin"],
-                "clt": lambda IN: IN["C"],
-                "sfcwind": lambda IN: IN["WS"],
-                "huss": lambda IN: IN["T"] * 0.0,
-                "sfcpres": lambda IN: IN["T"] * 0.0 + 101500.0,
-            }
-
             IN["P"] = data_from_icon["pr"]
             IN["snow"] = data_from_icon["pr_snow"]
             IN["SWin"] = data_from_icon["rsds"]
-
-            _apply_field(IN, data_from_icon, "rlds", "LWin", fallback_strategy)
-            _apply_field(IN, data_from_icon, "clt", "C", fallback_strategy)
-            _apply_field(IN, data_from_icon, "sfcwind", "WS", fallback_strategy)
-
+            IN["LWin"] = data_from_icon["rlds"]
+            IN["C"] = data_from_icon["clt"]
+            IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-
-            _apply_field(IN, data_from_icon, "huss", "q", fallback_strategy)
-            _apply_field(IN, data_from_icon, "sfcpres", "Pres", fallback_strategy)
+            IN["q"] = data_from_icon["huss"]
+            IN["Pres"] = data_from_icon["sfcpres"]
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
