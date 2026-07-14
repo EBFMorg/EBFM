@@ -198,10 +198,22 @@ def _main_impl():
             logger.debug("Done.")
             logger.debug(f"Received the following data from ICON: {data_from_icon}")
 
+            if "pr_snow" in data_from_icon:
+                IN["snow"] = data_from_icon["pr_snow"]
+            else:
+                logger.warning("Field 'pr_snow' not received from ICON; using fallback value for 'snow' in EBFM.")
+
+            if "rsds" in data_from_icon:
+                IN["SWin"] = data_from_icon["rsds"]
+            else:
+                logger.warning("Field 'rsds' not received from ICON; using fallback value for 'SWin' in EBFM.")
+
+            if "rlds" in data_from_icon:
+                IN["LWin"] = data_from_icon["rlds"]
+            else:
+                logger.warning("Field 'rlds' not received from ICON; using fallback value for 'LWin' in EBFM.")
+
             IN["P"] = data_from_icon["pr"]
-            IN["snow"] = data_from_icon["pr_snow"]
-            IN["SWin"] = data_from_icon["rsds"]
-            IN["LWin"] = data_from_icon["rlds"]
             IN["C"] = data_from_icon["clt"]
             IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
