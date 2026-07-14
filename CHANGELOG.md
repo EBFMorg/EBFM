@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# v0.6.1
+
+* Catch invalid values returned by YAC's get and forward info to user. https://github.com/EBFMorg/EBFM/pull/145.
+
 # v0.6.0
 
 * Rename "h" received from Elmer to "surface_elevation". https://github.com/EBFMorg/EBFM/pull/124.
