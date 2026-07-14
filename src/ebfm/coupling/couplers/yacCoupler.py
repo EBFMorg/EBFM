@@ -262,7 +262,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             logger.debug(f"No data for field {field.name} from {field.coupled_component.name} received.")
             return None, CouplerExitCode.NO_DATA_RECEIVED
 
-        expected_actions = {yac.Action.GET, yac.Action.GET_FOR_RESTART}
+        expected_actions = {yac.Action.COUPLING, yac.Action.GET_FOR_RESTART}
 
         assert action in expected_actions, (
             f"Expected action {expected_actions} for field '{field.name}' from component "
