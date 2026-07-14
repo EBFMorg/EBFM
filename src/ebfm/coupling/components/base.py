@@ -8,11 +8,13 @@ from collections.abc import Mapping, Callable
 import numpy as np
 
 from ebfm.core import logging
+from ebfm.coupling.couplers.base import CouplerExitCode
 
 logger = logging.getLogger(__name__)
 
+
 if TYPE_CHECKING:
-    from ebfm.coupling.couplers.base import Coupler, CouplerExitCode
+    from ebfm.coupling.couplers.base import Coupler
     from ebfm.coupling.fields.base import FieldSet
 
 
