@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Remove support for Python 3.10. https://github.com/EBFMorg/EBFM/pull/143
 * Add general interface for definition of fallback values if a coupled component does not provide expected data for individual fields. https://github.com/EBFMorg/EBFM/pull/146.
     * The following fields expected from the component "icon_atmo" will use fallback value if they are missing: "rlds", "clt", "sfcwind", "huss", and "sfcpres"
 
