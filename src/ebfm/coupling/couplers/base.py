@@ -78,7 +78,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         logger.debug(f"Active coupled components: {list(self._coupled_components.keys())}")
 
-        self.fields: FieldSet = FieldSet()
+        self._fields: FieldSet = FieldSet()
         self._time: TimeConfig | None = None  # will be set in setup()
 
     @staticmethod
@@ -214,7 +214,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         expected_exchange_type = self._map_exchange_type(exchange_type)
         component = self._coupled_components[component_name]
-        fields = self.fields.filter(
+        fields = self._fields.filter(
             lambda f: f.coupled_component == component
             and f.name == field_name
             and f.exchange_type == expected_exchange_type

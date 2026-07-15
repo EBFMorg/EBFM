@@ -105,6 +105,14 @@ class IconAtmo(Component):
             }
         )
 
+    # We need to convert precipitation received from ICON from kg / m^2 / s
+    # to m w.e. (per EBFM timestep)
+    def _map_pr_to_ebfm(self, precipitation: np.ndarray) -> np.ndarray:
+        mwe_per_second = precipitation * 1e-3
+        mwe_per_day = mwe_per_second * SECONDS_PER_DAY
+        mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
+        return mwe_per_timestep
+
     def exchange(
         self, data_to_exchange: Mapping[str, np.ndarray], fallback_values: Mapping[str, np.ndarray] = {}
     ) -> dict[str, np.ndarray]:
@@ -118,19 +126,11 @@ class IconAtmo(Component):
         """
         received_data: dict[str, np.ndarray] = {}
 
-        # We need to convert precipitation received from ICON from kg / m^2 / s
-        # to m w.e. (per EBFM timestep)
-        def map_pr_to_ebfm(precipitation: np.ndarray) -> np.ndarray:
-            mwe_per_second = precipitation * 1e-3
-            mwe_per_day = mwe_per_second * SECONDS_PER_DAY
-            mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
-            return mwe_per_timestep
-
         # Put data to IconAtmo
         self._put_if_coupled("albedo", data_to_exchange)
 
         # Get data from IconAtmo
-        pr = self._get_if_coupled("pr", transform=map_pr_to_ebfm, fallback_values=fallback_values)
+        pr = self._get_if_coupled("pr", transform=self._map_pr_to_ebfm, fallback_values=fallback_values)
         if pr is not None:
             received_data["pr"] = pr
 

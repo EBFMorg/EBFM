@@ -133,7 +133,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         self.interface.enddef()
 
-        for field in self.fields.all():
+        for field in self._fields.all():
             assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
             logger.debug(f"Performing consistency checks for field '{field.name}'...")
             field.perform_consistency_checks(self.interface, self.component_name, self.field_validation_level)
@@ -160,7 +160,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         component = self._coupled_components[component_name]
 
-        comp_fields = self.fields.filter(lambda f: f.coupled_component == component and f.name == field_name).all()
+        comp_fields = self._fields.filter(lambda f: f.coupled_component == component and f.name == field_name).all()
 
         if len(comp_fields) == 0:
             raise KeyError(f"No field named '{field_name}' found for component '{component_name}'.")
@@ -352,7 +352,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         @param[in] field_definitions FieldDefinitions object containing field definitions for EBFM
         """
 
-        assert self.fields.is_empty(), "Coupling fields have already been constructed."
+        assert self._fields.is_empty(), "Coupling fields have already been constructed."
 
         collection_size = 1  # TODO: Dummy value for now; make configurable if needed
 
@@ -365,12 +365,12 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             yac_field = YACField.from_field(field).construct_yac_field(
                 self.interface, self.component, collection_size, self.cell_centers
             )
-            self.fields.add(yac_field)
+            self._fields.add(yac_field)
 
     def _construct_coupling_post_sync(self):
         # after synchronisation or the end of the definition phase YAC can be queried about various information
 
-        for field in self.fields:
+        for field in self._fields:
             yac_field = field.field_handle
             assert yac_field is not None, f"YAC field handle for '{field.name}' has not been created yet."
             is_defined = self.interface.get_field_is_defined(
