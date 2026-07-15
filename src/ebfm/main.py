@@ -193,7 +193,15 @@ def _main_impl():
                 "albedo": OUT["albedo"],
             }
 
-            data_from_icon = icon_atmo.exchange(data_to_icon)
+            fallback_values = {
+                "rlds": IN["LWin"],
+                "clt": IN["C"],
+                "sfcwind": IN["WS"],
+                "huss": IN["T"] * 0.0,
+                "sfcpres": IN["T"] * 0.0 + 101500.0,
+            }
+
+            data_from_icon = icon_atmo.exchange(data_to_icon, fallback_values)
 
             logger.debug("Done.")
             logger.debug(f"Received the following data from ICON: {data_from_icon}")
@@ -206,18 +214,8 @@ def _main_impl():
             IN["WS"] = data_from_icon["sfcwind"]
             IN["T"] = data_from_icon["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            # Fallback to constants if fields are not coupled (error code set); must be arrays for mask indexing.
-            _T0 = IN["T"] * 0.0
-
-            if "huss" in data_from_icon:
-                IN["q"] = data_from_icon["huss"]
-            else:  # use fallback value
-                IN["q"] = _T0
-
-            if "sfcpres" in data_from_icon:
-                IN["Pres"] = data_from_icon["sfcpres"]
-            else:  # use fallback value
-                IN["Pres"] = _T0 + 101500.0
+            IN["q"] = data_from_icon["huss"]
+            IN["Pres"] = data_from_icon["sfcpres"]
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)

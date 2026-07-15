@@ -84,11 +84,15 @@ class Component(ABC):
                     "Please report this to the developers."
                 )
 
-    def _get_if_coupled(self, field_name: str, transform: Callable = identity) -> np.ndarray | None:
+    def _get_if_coupled(
+        self, field_name: str, transform: Callable = identity, fallback_values: Mapping[str, np.ndarray] = {}
+    ) -> np.ndarray | None:
         """
         Get a target field from the coupler if it is coupled.
 
         @param[in] field_name field name
+        @param[in] transform optional function to apply to the received data (e.g. for unit conversion)
+        @param[in] fallback_values optional dictionary of fallback values to use if get fails
 
         @returns received field data if coupled, otherwise None
         """
@@ -102,6 +106,11 @@ class Component(ABC):
 
         if err:
             logger.warning(f"Get for {field_name=} returned exit code ({err=}).")
+            if field_name in fallback_values:
+                logger.warning(
+                    f"Using fallback value for '{field_name}' as no data was received for this field from {self.name}."
+                )
+                return fallback_values[field_name]
             return None
 
         assert data is not None, f"Received data for field '{field_name}' is None. {err}"
@@ -109,11 +118,14 @@ class Component(ABC):
         return transform(data)
 
     @abstractmethod
-    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def exchange(
+        self, data_to_exchange: Mapping[str, np.ndarray], fallback_values: Mapping[str, np.ndarray] = {}
+    ) -> dict[str, np.ndarray]:
         """
         Exchange of EBFM with this component
 
         @param[in] data_to_exchange read-only Mapping of field names to data to be sent
+        @param[in] fallback_values optional Mapping of field names to fallback values to use if get fails
 
         @returns dictionary of received field data
         """
