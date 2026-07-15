@@ -31,11 +31,13 @@ Examples:
 """
 
 
-class CouplerErrorCode(Enum):
+class CouplerExitCode(Enum):
     """
-    Error codes returned by Coupler.get() and Coupler.put().
+    Exit codes returned by Coupler.get() and Coupler.put().
 
-    A value of None (i.e. no error code) indicates success.
+    Depending on the exit code this can mean a fatal error or that special handling in the user code is necessary.
+
+    A value of None (i.e. no exit code) always indicates success.
     """
 
     WRONG_EXCHANGE_TYPE = "wrong_exchange_type"
@@ -43,6 +45,9 @@ class CouplerErrorCode(Enum):
 
     WRONG_ROLE = "wrong_role"
     """The field's actual role in the coupler config does not match its declared role."""
+
+    NO_DATA_RECEIVED = "no_data_received"
+    """No data was received from the other component at this point in time."""
 
 
 class Coupler(ABC, Generic[CouplerExchangeType]):
@@ -73,7 +78,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         logger.debug(f"Active coupled components: {list(self._coupled_components.keys())}")
 
-        self.fields: FieldSet = FieldSet()
+        self._fields: FieldSet = FieldSet()
         self._time: TimeConfig | None = None  # will be set in setup()
 
     @staticmethod
@@ -170,7 +175,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         raise NotImplementedError("_map_exchange_type must be implemented in subclasses.")
 
     @abstractmethod
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Put data to another component
 
@@ -178,19 +183,19 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         @param[in] field_name name of the field to put data to
         @param[in] data data to be sent
 
-        @returns error code, or None if no error occurred.
+        @returns exit code, or None if put successfully completed.
         """
         raise NotImplementedError("put method must be implemented in subclasses.")
 
     @abstractmethod
-    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Get data from another component
 
         @param[in] component_name name of the component to get data from
         @param[in] field_name name of the field to get data for
 
-        @returns tuple of (field data, error code). Error code is None if no error occurred.
+        @returns tuple of (field data, exit code). Exit code is None if get successfully received data.
         """
         raise NotImplementedError("get method must be implemented in subclasses.")
 
@@ -209,7 +214,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         expected_exchange_type = self._map_exchange_type(exchange_type)
         component = self._coupled_components[component_name]
-        fields = self.fields.filter(
+        fields = self._fields.filter(
             lambda f: f.coupled_component == component
             and f.name == field_name
             and f.exchange_type == expected_exchange_type

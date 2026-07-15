@@ -11,6 +11,7 @@ from ebfm.core import logging
 
 logger = logging.getLogger(__name__)
 
+
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
     from ebfm.coupling.fields.base import FieldSet
@@ -79,36 +80,52 @@ class Component(ABC):
             err = self._coupler.put(self.name, field_name, transform(data_to_exchange[field_name]))
             if err:
                 logger.warning(
-                    f"Put for {field_name=} returned error code ({err=}). Please report this to the developers."
+                    f"Put for {field_name=} returned unexpected exit code ({err=}). "
+                    "Please report this to the developers."
                 )
 
-    def _get_if_coupled(self, field_name: str, transform: Callable = identity) -> np.ndarray | None:
+    def _get_if_coupled(
+        self, field_name: str, transform: Callable = identity, fallback_values: Mapping[str, np.ndarray] = {}
+    ) -> np.ndarray | None:
         """
         Get a target field from the coupler if it is coupled.
 
         @param[in] field_name field name
+        @param[in] transform optional function to apply to the received data (e.g. for unit conversion)
+        @param[in] fallback_values optional dictionary of fallback values to use if get fails
 
         @returns received field data if coupled, otherwise None
         """
         from ebfm.coupling.fields.base import ExchangeType
 
-        if self._coupler.has_field(self.name, field_name, ExchangeType.TARGET):
-            data, err = self._coupler.get(self.name, field_name)
-            logger.debug(f"Received data for field '{field_name}' from coupler: {data}")
-            if err:
+        if not self._coupler.has_field(self.name, field_name, ExchangeType.TARGET):
+            logger.debug(f"Field '{field_name}' is not coupled for component '{self.name}', skipping get.")
+            return None
+
+        data, err = self._coupler.get(self.name, field_name)
+
+        if err:
+            logger.warning(f"Get for {field_name=} returned exit code ({err=}).")
+            if field_name in fallback_values:
                 logger.warning(
-                    f"Get for {field_name=} returned error code ({err=}). Please report this to the developers."
+                    f"Using fallback value for '{field_name}' as no data was received for this field from {self.name}."
                 )
-            assert data is not None, f"Received data for field '{field_name}' is None. {err}"
-            return transform(data)
-        return None
+                return fallback_values[field_name]
+            return None
+
+        assert data is not None, f"Received data for field '{field_name}' is None. {err}"
+        logger.debug(f"Received data for field '{field_name}' from coupler: {data}")
+        return transform(data)
 
     @abstractmethod
-    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def exchange(
+        self, data_to_exchange: Mapping[str, np.ndarray], fallback_values: Mapping[str, np.ndarray] = {}
+    ) -> dict[str, np.ndarray]:
         """
         Exchange of EBFM with this component
 
         @param[in] data_to_exchange read-only Mapping of field names to data to be sent
+        @param[in] fallback_values optional Mapping of field names to fallback values to use if get fails
 
         @returns dictionary of received field data
         """

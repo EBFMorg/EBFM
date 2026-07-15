@@ -10,13 +10,14 @@ import numpy as np
 from ebfm.core import logging
 from ebfm.core.config import CouplingConfig
 
-from .base import Coupler, CouplerErrorCode, Grid, GridDict
+from .base import Coupler, CouplerExitCode, Grid, GridDict
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
+from ebfm.coupling.components import Component, IconAtmo, ElmerIce
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class FakeFieldConfig:
     """
     Configuration for a single fake field returned by FakeCoupler.
@@ -25,14 +26,16 @@ class FakeFieldConfig:
     is requested via :meth:`FakeCoupler.get`.
     """
 
-    component_name: str
-    """Name of the coupled component this field belongs to (e.g. ``"elmer_ice"``)."""
+    """Component this field couples to (e.g. ``"ElmerIce"``)."""
+    coupled_component: "Component"
 
-    field_name: str
-    """Name of the field (e.g. ``"h"``)."""
+    """Name of the field (e.g. ``"surface_elevation"``)."""
+    name: str
 
-    value: float = 0.0
     """Scalar fill value used to construct the returned array."""
+    value: float = 0.0
+
+    exchange_type: GenericExchangeType = GenericExchangeType.TARGET
 
 
 # ---------------------------------------------------------------------------
@@ -42,17 +45,17 @@ class FakeFieldConfig:
 # ---------------------------------------------------------------------------
 _DEFAULT_FAKE_FIELDS: tuple[FakeFieldConfig, ...] = (
     # Elmer/Ice → EBFM
-    FakeFieldConfig("elmer_ice", "h", 1000.0),  # surface height            [m]
+    FakeFieldConfig(ElmerIce(coupler=None), "surface_elevation", 1000.0),  # surface elevation        [m]
     # ICON atmosphere → EBFM
-    FakeFieldConfig("icon_atmo", "pr", 0.0),  # precipitation rate        [kg m-2 s-1]
-    FakeFieldConfig("icon_atmo", "pr_snow", 0.0),  # snowfall rate             [kg m-2 s-1]
-    FakeFieldConfig("icon_atmo", "rsds", 100.0),  # downward SW radiation     [W m-2]
-    FakeFieldConfig("icon_atmo", "rlds", 300.0),  # downward LW radiation     [W m-2]
-    FakeFieldConfig("icon_atmo", "sfcwind", 5.0),  # surface wind speed        [m s-1]
-    FakeFieldConfig("icon_atmo", "clt", 0.5),  # cloud cover               [fraction]
-    FakeFieldConfig("icon_atmo", "tas", 260.0),  # near-surface temperature  [K]
-    FakeFieldConfig("icon_atmo", "huss", 1e-3),  # specific humidity         [kg kg-1]
-    FakeFieldConfig("icon_atmo", "sfcpres", 101325.0),  # surface pressure          [Pa]
+    FakeFieldConfig(IconAtmo(coupler=None), "pr", 0.0),  # precipitation rate        [kg m-2 s-1]
+    FakeFieldConfig(IconAtmo(coupler=None), "pr_snow", 0.0),  # snowfall rate             [kg m-2 s-1]
+    FakeFieldConfig(IconAtmo(coupler=None), "rsds", 100.0),  # downward SW radiation     [W m-2]
+    FakeFieldConfig(IconAtmo(coupler=None), "rlds", 300.0),  # downward LW radiation     [W m-2]
+    FakeFieldConfig(IconAtmo(coupler=None), "sfcwind", 5.0),  # surface wind speed        [m s-1]
+    FakeFieldConfig(IconAtmo(coupler=None), "clt", 0.5),  # cloud cover               [fraction]
+    FakeFieldConfig(IconAtmo(coupler=None), "tas", 260.0),  # near-surface temperature  [K]
+    FakeFieldConfig(IconAtmo(coupler=None), "huss", 1e-3),  # specific humidity         [kg kg-1]
+    FakeFieldConfig(IconAtmo(coupler=None), "sfcpres", 101325.0),  # surface pressure          [Pa]
 )
 
 
@@ -77,12 +80,12 @@ class FakeCoupler(Coupler):
 
         # Or override specific fields
         coupler = FakeCoupler(coupling_config, fake_fields=[
-            FakeFieldConfig("elmer_ice", "h", 500.0),
+            FakeFieldConfig("elmer_ice", "surface_elevation", 500.0),
             FakeFieldConfig("icon_atmo", "tas", 270.0),
         ])
 
         coupler.setup(grid, time)
-        data, err = coupler.get("elmer_ice", "h")   # returns np.full(n_points, 500.0)
+        data, err = coupler.get("elmer_ice", "surface_elevation")   # returns np.full(n_points, 500.0)
         coupler.put("elmer_ice", "smb", smb_data)   # silently discarded
     """
 
@@ -108,7 +111,7 @@ class FakeCoupler(Coupler):
         self._n_points: int = 0
 
         for f in fake_fields:
-            self._fake_values[(f.component_name, f.field_name)] = f.value
+            self._register_fake_values(f)
 
         logger.debug(
             f"FakeCoupler created for component '{coupling_config.component_name}' "
@@ -181,11 +184,25 @@ class FakeCoupler(Coupler):
 
         logger.debug(f"FakeCoupler setup complete ({self._n_points} grid points, no sync performed).")
 
+    def _register_fake_values(self, field_config: FakeFieldConfig):
+        """
+        Add a FakeFieldConfig to the coupler.
+
+        Also sets corresponding fake values returned by the fake coupler.
+
+        @param[in] field_config FakeFieldConfig to add
+        """
+        logger.debug(
+            f"Adding fake field: {field_config.coupled_component.name}.{field_config.name} = {field_config.value}"
+        )
+        key = (field_config.coupled_component.name, field_config.name)
+        self._fake_values[key] = field_config.value
+
     def _add_couples(self, field_definitions: FieldSet):
         for field in field_definitions:
-            self.fields.add(field)
+            self._fields.add(field)
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Log and discard outgoing data – no actual transfer is performed.
 
@@ -193,12 +210,12 @@ class FakeCoupler(Coupler):
         @param[in] field_name name of the field to put data to
         @param[in] data data that would be sent to the coupled model
 
-        @returns None (no error)
+        @returns exit code, or None if put successfully completed.
         """
         logger.debug(f"FakeCoupler put: field '{field_name}' -> '{component_name}' (discarded).")
         return None
 
-    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Return a fake array for the requested field.
 
@@ -209,21 +226,25 @@ class FakeCoupler(Coupler):
         @param[in] component_name name of the component to get data from
         @param[in] field_name name of the field to retrieve
 
-        @returns tuple of (fake field data, error code). Error code is always None.
+        @returns tuple of (fake field data, exit code). Exit code is None if get successfully received data.
         """
         key = (component_name, field_name)
         fill_value = self._fake_values.get(key, 0.0)
+
         if key not in self._fake_values:
+            logger.debug(f"{self._fake_values=}")
+            exit_code = CouplerExitCode.NO_DATA_RECEIVED
             logger.debug(
                 f"FakeCoupler get: no fake value configured for '{field_name}' from "
-                f"'{component_name}', returning zeros."
+                f"'{component_name}', returning {exit_code=}."
             )
+            return None, exit_code
         else:
             logger.debug(
                 f"FakeCoupler get: returning np.full({self._n_points}, {fill_value}) "
                 f"for '{field_name}' from '{component_name}'."
             )
-        return np.full(self._n_points, fill_value), None
+            return np.full(self._n_points, fill_value), None
 
     def finalize(self):
         """

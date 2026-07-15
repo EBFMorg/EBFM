@@ -73,7 +73,7 @@ def main(OUT, io, restartdir: Path):
         "ys": OUT["ys"],
         "timelastsnow_netCDF": OUT["timelastsnow_netCDF"],
         "alb_snow": OUT["alb_snow"],
-        "h": OUT["h"],
+        "surface_elevation": OUT["surface_elevation"],
         "x": OUT["x"],
         "y": OUT["y"],
     }

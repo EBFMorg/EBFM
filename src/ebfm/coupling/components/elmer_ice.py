@@ -54,10 +54,10 @@ class ElmerIce(Component):
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 Field(
-                    name="h",
+                    name="surface_elevation",
                     coupled_component=self,
                     timestep=timestep,
-                    metadata="Surface height (in m)",
+                    metadata="Surface elevation (in m)",
                     exchange_type=ExchangeType.TARGET,
                 ),
                 # Field(
@@ -77,11 +77,14 @@ class ElmerIce(Component):
             }
         )
 
-    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def exchange(
+        self, data_to_exchange: Mapping[str, np.ndarray], fallback_values: Mapping[str, np.ndarray] = {}
+    ) -> dict[str, np.ndarray]:
         """
         Exchange data with Elmer/Ice.
 
         @param[in] data_to_exchange read-only Mapping of field names to data to be sent
+        @param[in] fallback_values optional Mapping of field names to fallback values to use if get fails
 
         @returns dictionary of received field data
         """
@@ -100,15 +103,15 @@ class ElmerIce(Component):
         self._put_if_coupled("runoff", data_to_exchange, transform=map_per_timestep_to_per_year)
 
         # Get data from Elmer/Ice
-        h = self._get_if_coupled("h")
-        if h is not None:
-            received_data["h"] = h
+        surface_elevation = self._get_if_coupled("surface_elevation", fallback_values=fallback_values)
+        if surface_elevation is not None:
+            received_data["surface_elevation"] = surface_elevation
 
-        dhdx = self._get_if_coupled("dhdx")
+        dhdx = self._get_if_coupled("dhdx", fallback_values=fallback_values)
         if dhdx is not None:
             received_data["dhdx"] = dhdx
 
-        dhdy = self._get_if_coupled("dhdy")
+        dhdy = self._get_if_coupled("dhdy", fallback_values=fallback_values)
         if dhdy is not None:
             received_data["dhdy"] = dhdy
 

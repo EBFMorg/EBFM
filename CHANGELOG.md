@@ -7,6 +7,16 @@ SPDX-License-Identifier: CC-BY-4.0
 # develop
 
 * Remove support for Python 3.10. https://github.com/EBFMorg/EBFM/pull/143
+* Add general interface for definition of fallback values if a coupled component does not provide expected data for individual fields. https://github.com/EBFMorg/EBFM/pull/146.
+    * The following fields expected from the component "icon_atmo" will use fallback value if they are missing: "rlds", "clt", "sfcwind", "huss", and "sfcpres"
+
+# v0.6.1
+
+* Catch invalid values returned by YAC's get and forward info to user. https://github.com/EBFMorg/EBFM/pull/145.
+
+# v0.6.0
+
+* Rename "h" received from Elmer to "surface_elevation". https://github.com/EBFMorg/EBFM/pull/124.
 * Assure model time is always in UTC+0, allowing removal of the previously hard-coded (time-zone dependent) parameter dT_UTC. https://github.com/EBFMorg/EBFM/pull/138
 * Rename `--netcdf-mesh` to `--netcdf-dem-mesh` and `--netcdf-mesh-unstructured` to `--netcdf-dem-mesh-unstructured`. https://github.com/EBFMorg/EBFM/pull/142
 * Use ISO8601 datetime as suffix for restart files created with `--restart-dir` option. https://github.com/EBFMorg/EBFM/pull/141
