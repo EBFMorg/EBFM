@@ -784,87 +784,66 @@ def main(C, OUT, IN, dt, grid, phys):
         nsplit = len(grid["split"])
         top_thickness = (2.0**nsplit) * max_subZ
 
-        # Reuse persistent buffers instead of allocating new .copy() arrays
-        shp = OUT["subZ"].shape
-        if "_lm_old_subZ" not in OUT or OUT["_lm_old_subZ"].shape != shp:
-            OUT["_lm_old_subZ"] = np.empty_like(OUT["subZ"])
-            OUT["_lm_old_subD"] = np.empty_like(OUT["subD"])
-            OUT["_lm_old_subW"] = np.empty_like(OUT["subW"])
-            OUT["_lm_old_subT"] = np.empty_like(OUT["subT"])
-            OUT["_lm_old_subS"] = np.empty_like(OUT["subS"])
-
         for n in range(nsplit):  # Iterate through split points
             split = grid["split"][n]
             threshold = (2.0**n) * max_subZ
 
             # Merge Layers (Accumulation Case)
             idx_merge = np.flatnonzero((OUT["subZ"][:, split] <= threshold) & mask1)
-
-            np.copyto(OUT["_lm_old_subZ"], OUT["subZ"])
-            np.copyto(OUT["_lm_old_subD"], OUT["subD"])
-            np.copyto(OUT["_lm_old_subW"], OUT["subW"])
-            np.copyto(OUT["_lm_old_subT"], OUT["subT"])
-            np.copyto(OUT["_lm_old_subS"], OUT["subS"])
-
-            subZ_old = OUT["_lm_old_subZ"]
-            subD_old = OUT["_lm_old_subD"]
-            subW_old = OUT["_lm_old_subW"]
-            subT_old = OUT["_lm_old_subT"]
-            subS_old = OUT["_lm_old_subS"]
-
             if idx_merge.size:
+                # Snapshot only the affected rows. Advanced indexing returns a
+                # fresh copy, so these hold the pre-merge values while we write
+                # OUT in place -- without copying the whole (gpsum, nl) grid.
+                subZ_old = OUT["subZ"][idx_merge]
+                subD_old = OUT["subD"][idx_merge]
+                subW_old = OUT["subW"][idx_merge]
+                subT_old = OUT["subT"][idx_merge]
+                subS_old = OUT["subS"][idx_merge]
+
                 # Update merged layers
-                OUT["subZ"][idx_merge, split - 1] = subZ_old[idx_merge, split - 1] + subZ_old[idx_merge, split]
-                OUT["subW"][idx_merge, split - 1] = subW_old[idx_merge, split - 1] + subW_old[idx_merge, split]
-                OUT["subS"][idx_merge, split - 1] = subS_old[idx_merge, split - 1] + subS_old[idx_merge, split]
+                OUT["subZ"][idx_merge, split - 1] = subZ_old[:, split - 1] + subZ_old[:, split]
+                OUT["subW"][idx_merge, split - 1] = subW_old[:, split - 1] + subW_old[:, split]
+                OUT["subS"][idx_merge, split - 1] = subS_old[:, split - 1] + subS_old[:, split]
 
                 # Compute denominator once and reuse
-                den = subZ_old[idx_merge, split - 1] + subZ_old[idx_merge, split]
+                den = subZ_old[:, split - 1] + subZ_old[:, split]
                 OUT["subD"][idx_merge, split - 1] = (
-                    subZ_old[idx_merge, split - 1] * subD_old[idx_merge, split - 1]
-                    + subZ_old[idx_merge, split] * subD_old[idx_merge, split]
+                    subZ_old[:, split - 1] * subD_old[:, split - 1] + subZ_old[:, split] * subD_old[:, split]
                 ) / den
                 OUT["subT"][idx_merge, split - 1] = (
-                    subZ_old[idx_merge, split - 1] * subT_old[idx_merge, split - 1]
-                    + subZ_old[idx_merge, split] * subT_old[idx_merge, split]
+                    subZ_old[:, split - 1] * subT_old[:, split - 1] + subZ_old[:, split] * subT_old[:, split]
                 ) / den
 
                 # Shift properties up for merged layers
-                OUT["subZ"][idx_merge, split:-1] = subZ_old[idx_merge, split + 1 :]
-                OUT["subW"][idx_merge, split:-1] = subW_old[idx_merge, split + 1 :]
-                OUT["subS"][idx_merge, split:-1] = subS_old[idx_merge, split + 1 :]
-                OUT["subD"][idx_merge, split:-1] = subD_old[idx_merge, split + 1 :]
-                OUT["subT"][idx_merge, split:-1] = subT_old[idx_merge, split + 1 :]
+                OUT["subZ"][idx_merge, split:-1] = subZ_old[:, split + 1 :]
+                OUT["subW"][idx_merge, split:-1] = subW_old[:, split + 1 :]
+                OUT["subS"][idx_merge, split:-1] = subS_old[:, split + 1 :]
+                OUT["subD"][idx_merge, split:-1] = subD_old[:, split + 1 :]
+                OUT["subT"][idx_merge, split:-1] = subT_old[:, split + 1 :]
 
                 # Adjust the newly added layer at the base
                 OUT["subZ"][idx_merge, -1] = top_thickness
-                OUT["subT"][idx_merge, -1] = subT_old[idx_merge, -1]
-                OUT["subD"][idx_merge, -1] = subD_old[idx_merge, -1]
+                OUT["subT"][idx_merge, -1] = subT_old[:, -1]
+                OUT["subD"][idx_merge, -1] = subD_old[:, -1]
                 OUT["subW"][idx_merge, -1] = 0.0
                 OUT["subS"][idx_merge, -1] = 0.0
 
-            # Split Layers (Ablation Case)
+            # Split Layers (Ablation Case). idx_split reflects the post-merge state.
             idx_split = np.flatnonzero((OUT["subZ"][:, split - 2] > threshold) & mask1)
-
-            np.copyto(OUT["_lm_old_subZ"], OUT["subZ"])
-            np.copyto(OUT["_lm_old_subD"], OUT["subD"])
-            np.copyto(OUT["_lm_old_subW"], OUT["subW"])
-            np.copyto(OUT["_lm_old_subT"], OUT["subT"])
-            np.copyto(OUT["_lm_old_subS"], OUT["subS"])
-
-            subZ_old = OUT["_lm_old_subZ"]
-            subD_old = OUT["_lm_old_subD"]
-            subW_old = OUT["_lm_old_subW"]
-            subT_old = OUT["_lm_old_subT"]
-            subS_old = OUT["_lm_old_subS"]
-
             if idx_split.size:
+                # Snapshot only the affected rows (post-merge values).
+                subZ_old = OUT["subZ"][idx_split]
+                subD_old = OUT["subD"][idx_split]
+                subW_old = OUT["subW"][idx_split]
+                subT_old = OUT["subT"][idx_split]
+                subS_old = OUT["subS"][idx_split]
+
                 # Update split layers
                 OUT["subZ"][idx_split, split - 2] *= 0.5
                 OUT["subW"][idx_split, split - 2] *= 0.5
                 OUT["subS"][idx_split, split - 2] *= 0.5
-                OUT["subT"][idx_split, split - 2] = subT_old[idx_split, split - 2]
-                OUT["subD"][idx_split, split - 2] = subD_old[idx_split, split - 2]
+                OUT["subT"][idx_split, split - 2] = subT_old[:, split - 2]
+                OUT["subD"][idx_split, split - 2] = subD_old[:, split - 2]
 
                 OUT["subZ"][idx_split, split - 1] = OUT["subZ"][idx_split, split - 2]
                 OUT["subW"][idx_split, split - 1] = OUT["subW"][idx_split, split - 2]
@@ -873,15 +852,15 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subD"][idx_split, split - 1] = OUT["subD"][idx_split, split - 2]
 
                 # Shift properties down for split layers
-                OUT["subZ"][idx_split, split:] = subZ_old[idx_split, split - 1 : -1]
-                OUT["subW"][idx_split, split:] = subW_old[idx_split, split - 1 : -1]
-                OUT["subS"][idx_split, split:] = subS_old[idx_split, split - 1 : -1]
-                OUT["subT"][idx_split, split:] = subT_old[idx_split, split - 1 : -1]
-                OUT["subD"][idx_split, split:] = subD_old[idx_split, split - 1 : -1]
+                OUT["subZ"][idx_split, split:] = subZ_old[:, split - 1 : -1]
+                OUT["subW"][idx_split, split:] = subW_old[:, split - 1 : -1]
+                OUT["subS"][idx_split, split:] = subS_old[:, split - 1 : -1]
+                OUT["subT"][idx_split, split:] = subT_old[:, split - 1 : -1]
+                OUT["subD"][idx_split, split:] = subD_old[:, split - 1 : -1]
 
                 # Update runoff contributions
-                OUT["runoff_irr_deep"][idx_split] += subW_old[idx_split, -1]
-                OUT["runoff_slush"][idx_split] += subS_old[idx_split, -1]
+                OUT["runoff_irr_deep"][idx_split] += subW_old[:, -1]
+                OUT["runoff_slush"][idx_split] += subS_old[:, -1]
 
         return _SUCCESS
 
