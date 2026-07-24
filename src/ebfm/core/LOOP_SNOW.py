@@ -235,10 +235,6 @@ def main(C, OUT, IN, dt, grid, phys):
         gpsum, nl = grid["gpsum"], grid["nl"]
         Dice, Dfirn = C["Dice"], C["Dfirn"]
 
-        subD_old = OUT["subD"].copy()
-        subZ_old = OUT["subZ"].copy()
-        mliqmax = np.zeros((gpsum, nl))
-
         dt_yearfrac = dt / C["yeardays"]
         dt_seconds = dt * C["dayseconds"]
 
@@ -268,8 +264,6 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subT"],
                 OUT["subW"],
                 OUT["subTmean"],
-                subD_old,
-                subZ_old,
                 IN["logyearsnow"],
                 IN["yearsnow"],
                 IN["WS"],
@@ -296,6 +290,9 @@ def main(C, OUT, IN, dt, grid, phys):
             )
         else:
             # NumPy path
+            subD_old = OUT["subD"].copy()
+            subZ_old = OUT["subZ"].copy()
+            mliqmax = np.zeros((gpsum, nl))
             # ------ FIRN COMPACTION ------ #
             if phys["snow_compaction"] in ["firn_only", "firn+snow"]:
                 # Pre-compute the logical condition based on the snow compaction type
@@ -571,7 +568,6 @@ def main(C, OUT, IN, dt, grid, phys):
         #########################################################
         # Percolation, refreezing and irreducible water storage
         #########################################################
-        subW_old = OUT["subW"].copy()  # Store the old water content
         gpsum, nl = OUT["subT"].shape
 
         if get_backend() == ComputeBackend.NUMBA:
@@ -603,7 +599,6 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subW"],
                 OUT["subS"],
                 OUT["subZ"],
-                subW_old,
                 _avail_W,
                 OUT["_perc_RP"],
                 _runoff_surface,
@@ -633,6 +628,7 @@ def main(C, OUT, IN, dt, grid, phys):
             OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
         else:
             # NumPy path
+            subW_old = OUT["subW"].copy()  # Store the old water content
             # ------ Water Input ------
             avail_W = (
                 OUT["melt"] * 1e3  # Meltwater

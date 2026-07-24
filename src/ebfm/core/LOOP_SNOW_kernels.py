@@ -30,8 +30,6 @@ def _compaction_kernel(
     subT,  # (gpsum, nl)
     subW,  # (gpsum, nl), Output array
     subTmean,  # (gpsum, nl) Output array, updated in-place
-    subD_old,  # (gpsum, nl)
-    subZ_old,  # (gpsum, nl)
     logyearsnow,  # (gpsum, nl)
     yearsnow,  # (gpsum, nl)
     WS,  # (gpsum,)
@@ -67,6 +65,12 @@ def _compaction_kernel(
     """
     gpsum, nl = subD.shape
     for i in prange(gpsum):
+        # Snapshot this column's pre-compaction density and thickness (used for
+        # the layer-thickness update in section 3). Done per-thread here instead
+        # of copying the whole grid on the host before the launch.
+        subD_old = subD[i, :].copy()
+        subZ_old = subZ[i, :].copy()
+
         # ------ 1. FIRN COMPACTION ------ #
         for k in range(nl):
             subTmean[i, k] = subTmean[i, k] * (1.0 - dt_yearfrac) + dt_yearfrac * subT[i, k]
@@ -145,7 +149,7 @@ def _compaction_kernel(
         subW_sum = 0.0
         for k in range(nl):
             if subD[i, k] < Dice:
-                subZ[i, k] = subZ_old[i, k] * subD_old[i, k] / subD[i, k]
+                subZ[i, k] = subZ_old[k] * subD_old[k] / subD[i, k]
                 exp_f = 0.0143 * math.exp(3.3 * (Dice - subD[i, k]) / Dice)
                 denom = 1.0 - exp_f
                 mliqmax_k = subD[i, k] * subZ[i, k] * exp_f / denom * 0.05 * min(Dice - subD[i, k], 20.0)
@@ -155,7 +159,7 @@ def _compaction_kernel(
                 # Ice layer: mliqmax = 0 => clamp subW to zero
                 subW[i, k] = 0.0
             z_sum += subZ[i, k]
-            z_sum_old += subZ_old[i, k]
+            z_sum_old += subZ_old[k]
             subW_sum += subW[i, k]
 
         surfH[i] += z_sum - z_sum_old
@@ -304,7 +308,6 @@ def _percolation_kernel(
     subW,  # (gpsum, nl) Output array, updated in-place
     subS,  # (gpsum, nl) Output array, rewritten
     subZ,  # (gpsum, nl)
-    subW_old,  # (gpsum, nl)
     avail_W,  # (gpsum,)
     RP,  # (gpsum, nl)
     runoff_surface,  # (gpsum,)
@@ -338,6 +341,10 @@ def _percolation_kernel(
     trunoff_factor = 1.0 / (1.0 + dt / Trunoff)
 
     for i in prange(gpsum):
+        # Snapshot this column's pre-percolation water content, instead of
+        # copying the whole grid on the host before the launch.
+        subW_old = subW[i, :].copy()
+
         # ------ Refreezing and Irreducible Water Storage Limits ------
         # Compute refreezing potential (`Wlim`) per layer
         # Compute maximum irreducible water storage (`mliqmax`)
@@ -356,7 +363,7 @@ def _percolation_kernel(
                 mliqmax_k = subD[i, k] * subZ[i, k] * irr_f * 0.05 * min(Dice - subD[i, k], 20.0)
             else:
                 mliqmax_k = 0.0
-            wirr_loc[k] = mliqmax_k - subW_old[i, k]
+            wirr_loc[k] = mliqmax_k - subW_old[k]
 
         # ------ Compute carrot (water-distribution profile) by percolation mode ------
         carrot_loc = np.zeros(nl)
@@ -409,9 +416,9 @@ def _percolation_kernel(
             excess = avail_W_loc - wlim_loc[n]
             if excess < 0.0:
                 excess = 0.0
-            new_subW_n = subW_old[i, n] + min(excess, wirr_loc[n])
+            new_subW_n = subW_old[n] + min(excess, wirr_loc[n])
             subW[i, n] = new_subW_n
-            avail_W_loc -= rp_n + (new_subW_n - subW_old[i, n])
+            avail_W_loc -= rp_n + (new_subW_n - subW_old[n])
             # Temperature and density update after percolating-water refreezing
             cpi_n = 152.2 + 7.122 * subT[i, n]
             subT[i, n] += Lm * rp_n / (subD[i, n] * cpi_n * subZ[i, n])
