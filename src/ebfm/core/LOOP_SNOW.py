@@ -39,6 +39,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
     logger.debug("Starting LOOP_SNOW...")
 
+    @profile
     def snowfall_and_deposition():
         """
         Calculate snowfall and deposition and shift vertical grid accordingly
@@ -132,6 +133,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
         return _SUCCESS
 
+    @profile
     def melt_sublimation():
         """
         Calculate melt and sublimation and shift vertical grid accordingly
@@ -768,6 +770,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
         return _SUCCESS
 
+    @profile
     def layer_merging_and_splitting():
         """
         Layer merging and splitting
@@ -882,6 +885,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
         return _SUCCESS
 
+    @profile
     def runoff():
         ###########################################
         # RUNOFF
