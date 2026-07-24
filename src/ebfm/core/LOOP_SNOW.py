@@ -86,55 +86,59 @@ def main(C, OUT, IN, dt, grid, phys):
             shift = np.minimum(shift_tot, max_subZ)
             shift_tot -= shift
 
-            # Use references instead of unnecessary .copy()
-            subT_old = OUT["subT"].copy()
-            subD_old = OUT["subD"].copy()
-            subW_old = OUT["subW"].copy()
-            subZ_old = OUT["subZ"].copy()
+            # The no-shift branch only touches the top layer, so snapshot just
+            # column 0 (cheap (gpsum,) copies) instead of the whole grid.
+            subZ0_old = OUT["subZ"][:, 0].copy()
+            subT0_old = OUT["subT"][:, 0].copy()
+            subD0_old = OUT["subD"][:, 0].copy()
 
             # Precompute conditions for better performance
-            is_noshift = subZ_old[:, 0] + shift <= max_subZ
+            is_noshift = subZ0_old + shift <= max_subZ
             is_shift = ~is_noshift
 
             # Handle no-shift updates (vectorized)
             OUT["subZ"][is_noshift, 0] += shift[is_noshift]
+            z0_new = OUT["subZ"][is_noshift, 0]
             OUT["subT"][is_noshift, 0] = (
-                subT_old[is_noshift, 0] * subZ_old[is_noshift, 0] / OUT["subZ"][is_noshift, 0]
-                + OUT["Tsurf"][is_noshift] * shift[is_noshift] / OUT["subZ"][is_noshift, 0]
+                subT0_old[is_noshift] * subZ0_old[is_noshift] / z0_new
+                + OUT["Tsurf"][is_noshift] * shift[is_noshift] / z0_new
             )
             OUT["subD"][is_noshift, 0] = (
-                subD_old[is_noshift, 0] * subZ_old[is_noshift, 0] / OUT["subZ"][is_noshift, 0]
-                + OUT["Dfreshsnow"][is_noshift] * shift[is_noshift] / OUT["subZ"][is_noshift, 0]
+                subD0_old[is_noshift] * subZ0_old[is_noshift] / z0_new
+                + OUT["Dfreshsnow"][is_noshift] * shift[is_noshift] / z0_new
             )
 
-            # Handle shifting updates (vectorized)
+            # Handle shifting updates (vectorized). The shift branch needs full
+            # rows, so snapshot only the (usually few) overflowing columns.
             if np.any(is_shift):
-                OUT["subZ"][is_shift, 2 : nl - 1] = subZ_old[is_shift, 1 : nl - 2]
-                OUT["subT"][is_shift, 2 : nl - 1] = subT_old[is_shift, 1 : nl - 2]
-                OUT["subD"][is_shift, 2 : nl - 1] = subD_old[is_shift, 1 : nl - 2]
-                OUT["subW"][is_shift, 2 : nl - 1] = subW_old[is_shift, 1 : nl - 2]
+                idx = np.flatnonzero(is_shift)
+                subZ_old = OUT["subZ"][idx]
+                subT_old = OUT["subT"][idx]
+                subD_old = OUT["subD"][idx]
+                subW_old = OUT["subW"][idx]
 
-                OUT["subZ"][is_shift, 1] = max_subZ
-                OUT["subZ"][is_shift, 0] = (subZ_old[is_shift, 0] + shift[is_shift]) - max_subZ
-                OUT["subT"][is_shift, 1] = (
-                    subT_old[is_shift, 0] * subZ_old[is_shift, 0] / OUT["subZ"][is_shift, 1]
-                    + OUT["Tsurf"][is_shift]
-                    * (OUT["subZ"][is_shift, 1] - subZ_old[is_shift, 0])
-                    / OUT["subZ"][is_shift, 1]
-                )
-                OUT["subT"][is_shift, 0] = OUT["Tsurf"][is_shift]
-                OUT["subD"][is_shift, 1] = (
-                    subD_old[is_shift, 0] * subZ_old[is_shift, 0] / OUT["subZ"][is_shift, 1]
-                    + OUT["Dfreshsnow"][is_shift]
-                    * (OUT["subZ"][is_shift, 1] - subZ_old[is_shift, 0])
-                    / OUT["subZ"][is_shift, 1]
-                )
-                OUT["subD"][is_shift, 0] = OUT["Dfreshsnow"][is_shift]
-                OUT["subW"][is_shift, 1] = subW_old[is_shift, 0]
-                OUT["subW"][is_shift, 0] = 0.0
+                OUT["subZ"][idx, 2 : nl - 1] = subZ_old[:, 1 : nl - 2]
+                OUT["subT"][idx, 2 : nl - 1] = subT_old[:, 1 : nl - 2]
+                OUT["subD"][idx, 2 : nl - 1] = subD_old[:, 1 : nl - 2]
+                OUT["subW"][idx, 2 : nl - 1] = subW_old[:, 1 : nl - 2]
 
-            # Update runoff for shifted layers
-            OUT["runoff_irr_deep"][is_shift] += subW_old[is_shift, nl - 1]
+                OUT["subZ"][idx, 1] = max_subZ
+                OUT["subZ"][idx, 0] = (subZ_old[:, 0] + shift[idx]) - max_subZ
+                OUT["subT"][idx, 1] = (
+                    subT_old[:, 0] * subZ_old[:, 0] / OUT["subZ"][idx, 1]
+                    + OUT["Tsurf"][idx] * (OUT["subZ"][idx, 1] - subZ_old[:, 0]) / OUT["subZ"][idx, 1]
+                )
+                OUT["subT"][idx, 0] = OUT["Tsurf"][idx]
+                OUT["subD"][idx, 1] = (
+                    subD_old[:, 0] * subZ_old[:, 0] / OUT["subZ"][idx, 1]
+                    + OUT["Dfreshsnow"][idx] * (OUT["subZ"][idx, 1] - subZ_old[:, 0]) / OUT["subZ"][idx, 1]
+                )
+                OUT["subD"][idx, 0] = OUT["Dfreshsnow"][idx]
+                OUT["subW"][idx, 1] = subW_old[:, 0]
+                OUT["subW"][idx, 0] = 0.0
+
+                # Update runoff for shifted layers
+                OUT["runoff_irr_deep"][idx] += subW_old[:, nl - 1]
 
         return _SUCCESS
 
@@ -173,45 +177,52 @@ def main(C, OUT, IN, dt, grid, phys):
 
             OUT["surfH"] += shift
 
-            # Save old values for updates
-            subT_old = OUT["subT"].copy()
-            subD_old = OUT["subD"].copy()
-            subW_old = OUT["subW"].copy()
-            subZ_old = OUT["subZ"].copy()
+            nl = grid["nl"]
 
-            # Find no-shift and shift indices
-            i_noshift = np.where(subZ_old[:, 0] + shift > 1e-17)
-            i_shift = np.where(subZ_old[:, 0] + shift <= 1e-17)
+            # The no-shift branch touches only the top layer, so snapshot just
+            # column 0 (cheap (gpsum,) copies) instead of the whole grid.
+            subZ0_old = OUT["subZ"][:, 0].copy()
+            subT0_old = OUT["subT"][:, 0].copy()
+            subD0_old = OUT["subD"][:, 0].copy()
+            subW0_old = OUT["subW"][:, 0].copy()
+
+            noshift = subZ0_old + shift > 1e-17
+            idx_shift = np.flatnonzero(~noshift)
 
             # Handle the no-shift case
-            OUT["subZ"][i_noshift, 0] = subZ_old[i_noshift, 0] + shift[i_noshift]
-            OUT["subT"][i_noshift, 0] = subT_old[i_noshift, 0]
-            OUT["subD"][i_noshift, 0] = subD_old[i_noshift, 0]
-            temp = OUT["subZ"][i_noshift, 0] / subZ_old[i_noshift, 0]
-            OUT["subW"][i_noshift, 0] = subW_old[i_noshift, 0] * temp
+            z0_new = subZ0_old[noshift] + shift[noshift]
+            OUT["subZ"][noshift, 0] = z0_new
+            OUT["subT"][noshift, 0] = subT0_old[noshift]
+            OUT["subD"][noshift, 0] = subD0_old[noshift]
+            temp = z0_new / subZ0_old[noshift]
+            OUT["subW"][noshift, 0] = subW0_old[noshift] * temp
 
-            # Handle the shift case
-            nl = grid["nl"]
-            OUT["subZ"][i_shift, 1 : nl - 2] = subZ_old[i_shift, 2 : nl - 1]
-            OUT["subT"][i_shift, 1 : nl - 2] = subT_old[i_shift, 2 : nl - 1]
-            OUT["subD"][i_shift, 1 : nl - 2] = subD_old[i_shift, 2 : nl - 1]
-            OUT["subW"][i_shift, 1 : nl - 2] = subW_old[i_shift, 2 : nl - 1]
+            # Handle the shift case: snapshot only the shift rows.
+            if idx_shift.size:
+                subZ_old = OUT["subZ"][idx_shift]
+                subT_old = OUT["subT"][idx_shift]
+                subD_old = OUT["subD"][idx_shift]
+                subW_old = OUT["subW"][idx_shift]
 
-            OUT["subZ"][i_shift, 0] = subZ_old[i_shift, 0] + subZ_old[i_shift, 1] + shift[i_shift]
-            OUT["subT"][i_shift, 0] = subT_old[i_shift, 1]
-            OUT["subD"][i_shift, 0] = subD_old[i_shift, 1]
-            temp = OUT["subZ"][i_shift, 0] / subZ_old[i_shift, 1]
-            OUT["subW"][i_shift, 0] = subW_old[i_shift, 1] * temp
-            OUT["subT"][i_shift, nl - 1] = subT_old[i_shift, nl - 1]
-            OUT["subW"][i_shift, nl - 1] = 0.0
+                OUT["subZ"][idx_shift, 1 : nl - 2] = subZ_old[:, 2 : nl - 1]
+                OUT["subT"][idx_shift, 1 : nl - 2] = subT_old[:, 2 : nl - 1]
+                OUT["subD"][idx_shift, 1 : nl - 2] = subD_old[:, 2 : nl - 1]
+                OUT["subW"][idx_shift, 1 : nl - 2] = subW_old[:, 2 : nl - 1]
 
-            # Update the deepest layer properties
-            for idx in i_shift:
+                OUT["subZ"][idx_shift, 0] = subZ_old[:, 0] + subZ_old[:, 1] + shift[idx_shift]
+                OUT["subT"][idx_shift, 0] = subT_old[:, 1]
+                OUT["subD"][idx_shift, 0] = subD_old[:, 1]
+                temp = OUT["subZ"][idx_shift, 0] / subZ_old[:, 1]
+                OUT["subW"][idx_shift, 0] = subW_old[:, 1] * temp
+                OUT["subT"][idx_shift, nl - 1] = subT_old[:, nl - 1]
+                OUT["subW"][idx_shift, nl - 1] = 0.0
+
+                # Update the deepest layer properties (vectorized over shift rows)
                 if grid["doubledepth"] == 1:
-                    OUT["subZ"][idx, nl - 1] = 2.0 ** len(grid["split"]) * grid["max_subZ"]
+                    OUT["subZ"][idx_shift, nl - 1] = 2.0 ** len(grid["split"]) * grid["max_subZ"]
                 else:
-                    OUT["subZ"][idx, nl - 1] = grid["max_subZ"]
-                OUT["subD"][idx, nl - 1] = subD_old[idx, nl - 1]
+                    OUT["subZ"][idx_shift, nl - 1] = grid["max_subZ"]
+                OUT["subD"][idx_shift, nl - 1] = subD_old[:, nl - 1]
 
         return _SUCCESS
 
