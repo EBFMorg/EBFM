@@ -163,6 +163,84 @@ def _compaction_kernel(
 
 
 @njit(parallel=True, cache=True)
+def _heat_conduction_prep_kernel(
+    subD,  # (gpsum, nl)
+    subZ,  # (gpsum, nl)
+    subT,  # (gpsum, nl)
+    kk,  # (gpsum, nl)      out: effective conductivity
+    c_eff,  # (gpsum, nl)      out: volumetric heat capacity
+    kk_sz_top,  # (gpsum,)         out
+    kk_sz_interior,  # (gpsum, nl-2)    out
+    dz1,  # (gpsum,)         out
+    dz2,  # (gpsum, nl-2)    out
+    denom_layer1,  # (gpsum,)         out
+    denom_interior,  # (gpsum, nl-3)    out
+    denom_bottom,  # (gpsum,)         out
+    dt_stab,  # (gpsum,)         out
+    dayseconds,  # scalar
+):
+    """Per-column heat-conduction precompute, parallelized over gpsum.
+
+    Produces the derived arrays (conductivity, heat capacity, interface
+    conductivity-thickness products, squared inter-layer distances, update
+    denominators and the CFL stability step) that _heat_conduction_kernel
+    consumes, directly from the resident subD/subZ/subT without a host-side
+    NumPy round-trip.
+
+    Every expression mirrors the NumPy precompute in
+    LOOP_SNOW.heat_conduction() operation-for-operation (including
+    parenthesization such as ``3.233e-6 * (d * d)`` and ``0.5 * (s * s)``) so
+    the result is bit-identical to the NumPy/host-precompute path.
+    """
+    gpsum, nl = subD.shape
+    for i in prange(gpsum):
+        # Effective conductivity and volumetric heat capacity per layer.
+        for k in range(nl):
+            d = subD[i, k]
+            kk[i, k] = 0.138 - 1.01e-3 * d + 3.233e-6 * (d * d)
+            c_eff[i, k] = d * (152.2 + 7.122 * subT[i, k])
+
+        # dz1 = (subZ[0] + 0.5*subZ[1])**2
+        half1 = subZ[i, 0] + 0.5 * subZ[i, 1]
+        dz1[i] = half1 * half1
+
+        # dz2 = 0.5 * (subZ[k+2] + subZ[k+1])**2
+        for k in range(nl - 2):
+            s = subZ[i, k + 2] + subZ[i, k + 1]
+            dz2[i, k] = 0.5 * (s * s)
+
+        # kk_sz_top = kk[0]*subZ[0] + 0.5*kk[1]*subZ[1]
+        kk_sz_top[i] = kk[i, 0] * subZ[i, 0] + 0.5 * kk[i, 1] * subZ[i, 1]
+
+        # kk_sz_interior[j] = kk[j+1]*subZ[j+1] + kk[j+2]*subZ[j+2]
+        for k in range(nl - 2):
+            kk_sz_interior[i, k] = kk[i, k + 1] * subZ[i, k + 1] + kk[i, k + 2] * subZ[i, k + 2]
+
+        # denom_layer1 = c_eff[1] * (0.5*subZ[0] + 0.5*subZ[1] + 0.25*subZ[2])
+        denom_layer1[i] = c_eff[i, 1] * (0.5 * subZ[i, 0] + 0.5 * subZ[i, 1] + 0.25 * subZ[i, 2])
+
+        # denom_interior[k-2] = c_eff[k] * (0.25*subZ[k-1] + 0.5*subZ[k] + 0.25*subZ[k+1]), k in 2..nl-2
+        for k in range(2, nl - 1):
+            denom_interior[i, k - 2] = c_eff[i, k] * (0.25 * subZ[i, k - 1] + 0.5 * subZ[i, k] + 0.25 * subZ[i, k + 1])
+
+        # denom_bottom = c_eff[-1] * (0.25*subZ[-2] + 0.75*subZ[-1])
+        denom_bottom[i] = c_eff[i, nl - 1] * (0.25 * subZ[i, nl - 2] + 0.75 * subZ[i, nl - 1])
+
+        # dt_stab = 0.5 * min(c_eff[1:]) * min(subZ[1:])**2 / max(kk[1:]) / dayseconds
+        min_ceff = math.inf
+        min_sz = math.inf
+        max_kk = 0.0
+        for k in range(1, nl):
+            if c_eff[i, k] < min_ceff:
+                min_ceff = c_eff[i, k]
+            if subZ[i, k] < min_sz:
+                min_sz = subZ[i, k]
+            if kk[i, k] > max_kk:
+                max_kk = kk[i, k]
+        dt_stab[i] = 0.5 * min_ceff * (min_sz * min_sz) / max_kk / dayseconds
+
+
+@njit(parallel=True, cache=True)
 def _heat_conduction_kernel(
     subT,  # (gpsum, nl) Output array, updated in-place
     Tsurf,  # (gpsum,)
