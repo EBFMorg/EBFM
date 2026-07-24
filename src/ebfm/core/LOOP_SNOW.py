@@ -6,7 +6,12 @@ import numpy as np
 
 from .compute_backend import get_backend, ComputeBackend
 from .constants import SECONDS_PER_HOUR
-from .LOOP_SNOW_kernels import _compaction_kernel, _heat_conduction_kernel, _percolation_kernel
+from .LOOP_SNOW_kernels import (
+    _compaction_kernel,
+    _heat_conduction_kernel,
+    _heat_conduction_prep_kernel,
+    _percolation_kernel,
+)
 
 # line_profiler support: `profile` is injected as a builtin by kernprof.
 # When running normally, fall back to a no-op so the decorator stays in place.
@@ -415,40 +420,39 @@ def main(C, OUT, IN, dt, grid, phys):
         """
         Calculate heat diffusion and update temperatures
         """
-        dz1 = (OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1]) ** 2
-        dz2 = 0.5 * (OUT["subZ"][:, 2:] + OUT["subZ"][:, 1:-1]) ** 2
-        kk = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2  # Effective conductivity
-        c_eff = OUT["subD"] * (152.2 + 7.122 * OUT["subT"])  # Effective heat capacity
-
-        # Stability time step (CFL condition)
-        # Layer 0: surface ghost layer, excluded from CFL condition
-        dt_stab = (
-            0.5
-            * np.min(c_eff[:, 1:], axis=1)
-            * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
-            / np.max(kk[:, 1:], axis=1)
-            / C["dayseconds"]
-        )
-        assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
-
-        # subZ and c_eff do not change
-        # Precompute kk*subZ products once
-        # kk_sz_top: conductivity-thickness product for the top interface
-        # kk_sz_interior: same for all interior interfaces
-        kk_sz_top = kk[:, 0] * OUT["subZ"][:, 0] + 0.5 * kk[:, 1] * OUT["subZ"][:, 1]
-        kk_sz_interior = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
-
-        # Precompute full temperature-update denominators once
-        # denom_layer1: first active layer (layer 0: surface ghost layer overwritten from Tsurf)
-        denom_layer1 = c_eff[:, 1] * (0.5 * OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1] + 0.25 * OUT["subZ"][:, 2])
-        denom_interior = c_eff[:, 2:-1] * (
-            0.25 * OUT["subZ"][:, 1:-2] + 0.5 * OUT["subZ"][:, 2:-1] + 0.25 * OUT["subZ"][:, 3:]
-        )
-        denom_bottom = c_eff[:, -1] * (0.25 * OUT["subZ"][:, -2] + 0.75 * OUT["subZ"][:, -1])
-
         # ------ Heat Conduction Loop ------
         if get_backend() == ComputeBackend.NUMBA:
-            # Numba parallel path: prange(gpsum), each column solved independently.
+            # Numba parallel path: the per-column precompute that the NumPy branch
+            # below does in host NumPy is done in _heat_conduction_prep_kernel
+            # (prange over gpsum); the CFL solve then runs in _heat_conduction_kernel.
+            gpsum, nl = OUT["subT"].shape
+            kk = np.empty((gpsum, nl))
+            c_eff = np.empty((gpsum, nl))
+            kk_sz_top = np.empty(gpsum)
+            kk_sz_interior = np.empty((gpsum, nl - 2))
+            dz1 = np.empty(gpsum)
+            dz2 = np.empty((gpsum, nl - 2))
+            denom_layer1 = np.empty(gpsum)
+            denom_interior = np.empty((gpsum, nl - 3))
+            denom_bottom = np.empty(gpsum)
+            dt_stab = np.empty(gpsum)
+            _heat_conduction_prep_kernel(
+                OUT["subD"],
+                OUT["subZ"],
+                OUT["subT"],
+                kk,
+                c_eff,
+                kk_sz_top,
+                kk_sz_interior,
+                dz1,
+                dz2,
+                denom_layer1,
+                denom_interior,
+                denom_bottom,
+                dt_stab,
+                C["dayseconds"],
+            )
+            assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
             _heat_conduction_kernel(
                 OUT["subT"],
                 OUT["Tsurf"],
@@ -466,7 +470,36 @@ def main(C, OUT, IN, dt, grid, phys):
             )
 
         else:
-            # NumPy path: explicit while-loop with vectorized column updates.
+            # NumPy path: host precompute + explicit while-loop with vectorized
+            # column updates.
+            dz1 = (OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1]) ** 2
+            dz2 = 0.5 * (OUT["subZ"][:, 2:] + OUT["subZ"][:, 1:-1]) ** 2
+            kk = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2  # Effective conductivity
+            c_eff = OUT["subD"] * (152.2 + 7.122 * OUT["subT"])  # Effective heat capacity
+
+            # Stability time step (CFL condition)
+            # Layer 0: surface ghost layer, excluded from CFL condition
+            dt_stab = (
+                0.5
+                * np.min(c_eff[:, 1:], axis=1)
+                * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
+                / np.max(kk[:, 1:], axis=1)
+                / C["dayseconds"]
+            )
+            assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
+
+            # Precompute kk*subZ products and the temperature-update denominators once.
+            # kk_sz_top: conductivity-thickness product for the top interface;
+            # kk_sz_interior: same for all interior interfaces.
+            kk_sz_top = kk[:, 0] * OUT["subZ"][:, 0] + 0.5 * kk[:, 1] * OUT["subZ"][:, 1]
+            kk_sz_interior = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
+            # denom_layer1: first active layer (layer 0: surface ghost layer overwritten from Tsurf)
+            denom_layer1 = c_eff[:, 1] * (0.5 * OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1] + 0.25 * OUT["subZ"][:, 2])
+            denom_interior = c_eff[:, 2:-1] * (
+                0.25 * OUT["subZ"][:, 1:-2] + 0.5 * OUT["subZ"][:, 2:-1] + 0.25 * OUT["subZ"][:, 3:]
+            )
+            denom_bottom = c_eff[:, -1] * (0.25 * OUT["subZ"][:, -2] + 0.75 * OUT["subZ"][:, -1])
+
             tt = np.zeros(grid["gpsum"])
             kdTdz = np.zeros_like(OUT["subT"])
             # Ping-pong buffers:
