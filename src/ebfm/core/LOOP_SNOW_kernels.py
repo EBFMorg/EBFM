@@ -66,8 +66,8 @@ def _compaction_kernel(
     gpsum, nl = subD.shape
     for i in prange(gpsum):
         # Snapshot this column's pre-compaction density and thickness (used for
-        # the layer-thickness update in section 3). Done per-thread here instead
-        # of copying the whole grid on the host before the launch.
+        # the layer-thickness update in section 3). Done per-thread instead
+        # of copying whole grid on the host before launch.
         subD_old = subD[i, :].copy()
         subZ_old = subZ[i, :].copy()
 
@@ -188,13 +188,7 @@ def _heat_conduction_prep_kernel(
     Produces the derived arrays (conductivity, heat capacity, interface
     conductivity-thickness products, squared inter-layer distances, update
     denominators and the CFL stability step) that _heat_conduction_kernel
-    consumes, directly from the resident subD/subZ/subT without a host-side
-    NumPy round-trip.
-
-    Every expression mirrors the NumPy precompute in
-    LOOP_SNOW.heat_conduction() operation-for-operation (including
-    parenthesization such as ``3.233e-6 * (d * d)`` and ``0.5 * (s * s)``) so
-    the result is bit-identical to the NumPy/host-precompute path.
+    needs, directly from subD/subZ/subT (without NumPy).
     """
     gpsum, nl = subD.shape
     for i in prange(gpsum):
@@ -342,7 +336,7 @@ def _percolation_kernel(
 
     for i in prange(gpsum):
         # Snapshot this column's pre-percolation water content, instead of
-        # copying the whole grid on the host before the launch.
+        # copying whole grid on the host before launch.
         subW_old = subW[i, :].copy()
 
         # ------ Refreezing and Irreducible Water Storage Limits ------
