@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Optimize host-side code in `LOOP_SNOW`: fewer full-grid copies and the heat conduction precompute moved into a Numba kernel. Results are unchanged; with `--with-numba` the total runtime drops by ~30% for large meshes. https://github.com/EBFMorg/EBFM/pull/XXX.
 * Add general interface for definition of fallback values if a coupled component does not provide expected data for individual fields. https://github.com/EBFMorg/EBFM/pull/146.
     * The following fields expected from the component "icon_atmo" will use fallback value if they are missing: "rlds", "clt", "sfcwind", "huss", and "sfcpres"
 
