@@ -86,8 +86,7 @@ def main(C, OUT, IN, dt, grid, phys):
             shift = np.minimum(shift_tot, max_subZ)
             shift_tot -= shift
 
-            # The no-shift branch only touches the top layer, so snapshot just
-            # column 0 (cheap (gpsum,) copies) instead of the whole grid.
+            # No-shift branch only touches top layer, only column 0 copied (instead of whole grid).
             subZ0_old = OUT["subZ"][:, 0].copy()
             subT0_old = OUT["subT"][:, 0].copy()
             subD0_old = OUT["subD"][:, 0].copy()
@@ -108,8 +107,8 @@ def main(C, OUT, IN, dt, grid, phys):
                 + OUT["Dfreshsnow"][is_noshift] * shift[is_noshift] / z0_new
             )
 
-            # Handle shifting updates (vectorized). The shift branch needs full
-            # rows, so snapshot only the (usually few) overflowing columns.
+            # Handle shifting updates (vectorized). Shift branch needs full
+            # rows, so copy only the (usually few) overflowing columns.
             if np.any(is_shift):
                 idx = np.flatnonzero(is_shift)
                 subZ_old = OUT["subZ"][idx]
@@ -179,8 +178,7 @@ def main(C, OUT, IN, dt, grid, phys):
 
             nl = grid["nl"]
 
-            # The no-shift branch touches only the top layer, so snapshot just
-            # column 0 (cheap (gpsum,) copies) instead of the whole grid.
+            # No-shift branch only touches top layer, only column 0 copied (instead of whole grid).
             subZ0_old = OUT["subZ"][:, 0].copy()
             subT0_old = OUT["subT"][:, 0].copy()
             subD0_old = OUT["subD"][:, 0].copy()
@@ -197,7 +195,7 @@ def main(C, OUT, IN, dt, grid, phys):
             temp = z0_new / subZ0_old[noshift]
             OUT["subW"][noshift, 0] = subW0_old[noshift] * temp
 
-            # Handle the shift case: snapshot only the shift rows.
+            # Handle the shift case: copy only the shift rows.
             if idx_shift.size:
                 subZ_old = OUT["subZ"][idx_shift]
                 subT_old = OUT["subT"][idx_shift]
@@ -430,9 +428,8 @@ def main(C, OUT, IN, dt, grid, phys):
         """
         # ------ Heat Conduction Loop ------
         if get_backend() == ComputeBackend.NUMBA:
-            # Numba parallel path: the per-column precompute that the NumPy branch
-            # below does in host NumPy is done in _heat_conduction_prep_kernel
-            # (prange over gpsum); the CFL solve then runs in _heat_conduction_kernel.
+            # Numba parallel path
+            # per-column precompute + CFL solve is done in _heat_conduction_prep_kernel
             gpsum, nl = OUT["subT"].shape
             kk = np.empty((gpsum, nl))
             c_eff = np.empty((gpsum, nl))
@@ -496,9 +493,9 @@ def main(C, OUT, IN, dt, grid, phys):
             )
             assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
 
-            # Precompute kk*subZ products and the temperature-update denominators once.
-            # kk_sz_top: conductivity-thickness product for the top interface;
-            # kk_sz_interior: same for all interior interfaces.
+            # Precompute kk*subZ products and the temperature-update denominators once
+            # kk_sz_top: conductivity-thickness product for the top interface
+            # kk_sz_interior: same for all interior interfaces
             kk_sz_top = kk[:, 0] * OUT["subZ"][:, 0] + 0.5 * kk[:, 1] * OUT["subZ"][:, 1]
             kk_sz_interior = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
             # denom_layer1: first active layer (layer 0: surface ghost layer overwritten from Tsurf)
@@ -831,9 +828,9 @@ def main(C, OUT, IN, dt, grid, phys):
             # Merge Layers (Accumulation Case)
             idx_merge = np.flatnonzero((OUT["subZ"][:, split] <= threshold) & mask1)
             if idx_merge.size:
-                # Snapshot only the affected rows. Advanced indexing returns a
-                # fresh copy, so these hold the pre-merge values while we write
-                # OUT in place -- without copying the whole (gpsum, nl) grid.
+                # Snapshot only affected rows. Advanced indexing returns fresh
+                # copy (holds pre-merge values). OUT written in place, without
+                # necessity to copy whole (gpsum, nl) grid.
                 subZ_old = OUT["subZ"][idx_merge]
                 subD_old = OUT["subD"][idx_merge]
                 subW_old = OUT["subW"][idx_merge]
