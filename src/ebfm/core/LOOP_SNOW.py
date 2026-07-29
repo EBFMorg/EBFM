@@ -1013,9 +1013,11 @@ def main(C, OUT, IN, dt: float, grid, phys):
         # state is uploaded once here and downloaded once after percolation,
         # instead of round-tripping in each sub-step.
         # Imported here so only GPU runs pull in numba.cuda.
-        from .LOOP_SNOW_gpu_kernels import SnowDeviceState
+        # The device buffers are allocated once per run and reused; only this
+        # timestep's values are uploaded.
+        from .LOOP_SNOW_gpu_kernels import get_device_state
 
-        gpu_state = SnowDeviceState(
+        gpu_state = get_device_state(
             OUT["subT"],
             OUT["subD"],
             OUT["subZ"],
