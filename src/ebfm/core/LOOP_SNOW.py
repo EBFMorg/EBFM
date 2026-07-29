@@ -14,6 +14,10 @@ from .LOOP_SNOW_kernels import (
     _percolation_kernel,
 )
 
+# SnowDeviceState is imported lazily inside the GPU branch of main() so that
+# NumPy/Numba-only users never trigger the numba.cuda / numba.hip import (and
+# its import-time vendor detection) in LOOP_SNOW_gpu_kernels.
+
 # line_profiler support: `profile` is injected as a builtin by kernprof.
 # When running normally, fall back to a no-op so the decorator stays in place.
 try:
@@ -255,7 +259,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
         return _SUCCESS
 
     @profile
-    def compaction():
+    def compaction(gpu=None):
         """
         Calculate snow and firn compaction and update density and layer thickness
         """
@@ -275,17 +279,34 @@ def main(C, OUT, IN, dt: float, grid, phys):
             else:
                 OUT[_key].fill(0.0)
 
-        # runoff_irr is written by kernel function
-        # ensure it exists before the Numba kernel reads it
+        # runoff_irr is written by the kernel; ensure it exists before it reads.
         _gshape = (gpsum,)
         if "runoff_irr" not in OUT or OUT["runoff_irr"].shape != _gshape:
             OUT["runoff_irr"] = np.zeros(_gshape)
 
-        # Numba parallel path:
-        if get_backend() == ComputeBackend.NUMBA:
+        # Numba / GPU kernel path:
+        backend = get_backend()
+        if backend in (ComputeBackend.NUMBA, ComputeBackend.GPU):
             _mode = {"firn_only": 0, "firn+snow": 1}.get(phys["snow_compaction"], -1)
             if _mode < 0:
                 raise ValueError(f"_compaction_kernel: unknown snow_compaction={phys['snow_compaction']!r}")
+            _tau_drift = 48 * 2 * SECONDS_PER_HOUR
+            if gpu is not None:
+                # GPU: kernel launched on the resident device arrays; the
+                # pre-compaction subD/subZ snapshot is taken on-device.
+                gpu.compaction(
+                    OUT["Dens_destr_metam"],
+                    OUT["Dens_overb_pres"],
+                    OUT["Dens_drift"],
+                    dt_yearfrac,
+                    dt_seconds,
+                    dt,
+                    C,
+                    _tau_drift,
+                    _mode,
+                )
+                return _SUCCESS
+
             _compaction_kernel(
                 OUT["subD"],
                 OUT["subZ"],
@@ -313,7 +334,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
                 C["Ec"],
                 C["Eg"],
                 C["dayseconds"],
-                48 * 2 * SECONDS_PER_HOUR,
+                _tau_drift,
                 _mode,
             )
         else:
@@ -453,10 +474,17 @@ def main(C, OUT, IN, dt: float, grid, phys):
         return _SUCCESS
 
     @profile
-    def heat_conduction():
+    def heat_conduction(gpu=None):
         """
         Calculate heat diffusion and update temperatures
         """
+        if gpu is not None:
+            # GPU: the prep / solve / boundary-clip kernels run on the resident
+            # device arrays, so the host precompute and post-clip below are done
+            # on-device (subK / subCeff are returned in download()).
+            gpu.heat_conduction(dt, C)
+            return _SUCCESS
+
         # ------ Heat Conduction Loop ------
         if get_backend() == ComputeBackend.NUMBA:
             # Numba parallel path
@@ -605,14 +633,15 @@ def main(C, OUT, IN, dt: float, grid, phys):
         return _SUCCESS
 
     @profile
-    def percolation_refreezing_and_storage():
+    def percolation_refreezing_and_storage(gpu=None):
         #########################################################
         # Percolation, refreezing and irreducible water storage
         #########################################################
         gpsum, nl = OUT["subT"].shape
 
-        if get_backend() == ComputeBackend.NUMBA:
-            # Numba parallel path:
+        backend = get_backend()
+        if backend in (ComputeBackend.NUMBA, ComputeBackend.GPU):
+            # Numba / GPU kernel path:
             _p_mode = {"bucket": 0, "normal": 1, "linear": 2, "uniform": 3}.get(phys["percolation"], -1)
             if _p_mode < 0:
                 raise ValueError(f"_percolation_kernel: unknown percolation={phys['percolation']!r}")
@@ -620,6 +649,12 @@ def main(C, OUT, IN, dt: float, grid, phys):
                 OUT["melt"] * 1e3 + IN["rain"] * 1e3 + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * 1e3,
                 0.0,
             )
+            if gpu is not None:
+                # GPU: kernel launched on the resident device arrays; the
+                # post-heat subW snapshot is taken on-device.
+                gpu.percolation(_avail_W, C, _p_mode, dt)
+                return _SUCCESS
+
             # Ensure persistent arrays are allocated
             _rp_shape = OUT["subZ"].shape
             if "_perc_RP" not in OUT or OUT["_perc_RP"].shape != _rp_shape:
@@ -979,9 +1014,38 @@ def main(C, OUT, IN, dt: float, grid, phys):
 
     snowfall_and_deposition()
     melt_sublimation()
-    compaction()
-    heat_conduction()
-    percolation_refreezing_and_storage()
+    if get_backend() == ComputeBackend.GPU:
+        # Resident-state core: subT/subD/subZ/subW/subS stay on the device
+        # across compaction -> heat conduction -> percolation. The subsurface
+        # state is uploaded once here and downloaded once after percolation,
+        # instead of round-tripping in each sub-step. The three functions run
+        # their usual host-side glue and dispatch their kernel launches to the
+        # device state; results match the NumPy/Numba paths.
+        # Imported here (not at module top) so only GPU runs pull in numba.cuda.
+        from .LOOP_SNOW_gpu_kernels import SnowDeviceState
+
+        gpu_state = SnowDeviceState(
+            OUT["subT"],
+            OUT["subD"],
+            OUT["subZ"],
+            OUT["subW"],
+            OUT["subS"],
+            OUT["subTmean"],
+            OUT["surfH"],
+            IN["logyearsnow"],
+            IN["yearsnow"],
+            IN["WS"],
+            OUT["Tsurf"],
+            OUT["sumWinit"],
+        )
+        compaction(gpu_state)
+        heat_conduction(gpu_state)
+        percolation_refreezing_and_storage(gpu_state)
+        gpu_state.download(OUT)
+    else:
+        compaction()
+        heat_conduction()
+        percolation_refreezing_and_storage()
     layer_merging_and_splitting()
     runoff()
     OUT["T_ice"] = OUT["subT"][:, -1]
