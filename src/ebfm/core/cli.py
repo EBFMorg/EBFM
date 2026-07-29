@@ -376,6 +376,30 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         help=("Enable the parallel Numba kernel. " "Requires numba; install via: pip install 'ebfm[performance]'. "),
     )
 
+    performance_group.add_argument(
+        "--with-gpu",
+        action="store_true",
+        default=False,
+        help=(
+            "Offload the kernels (compaction, heat conduction, percolation) to a GPU "
+            "via numba.cuda (NVIDIA) or numba.hip (AMD). Mutually exclusive with --with-numba. "
+            "Requires numba with GPU support; install via: pip install 'ebfm[gpu]' and load the "
+            "CUDA/ROCm toolkit on the compute node."
+        ),
+    )
+
+    performance_group.add_argument(
+        "--gpu-vendor",
+        type=str,
+        choices=("auto", "nvidia", "amd"),
+        default="auto",
+        help=(
+            "GPU vendor to target when using --with-gpu. 'auto' detects the installed numba GPU "
+            "stack (numba.cuda for NVIDIA, numba.hip for AMD); 'nvidia'/'amd' additionally guard "
+            "against a mismatch with the detected stack."
+        ),
+    )
+
     # Add args for features requiring 'import coupling'
     add_coupling_arguments(parser)
 
@@ -390,6 +414,12 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
 
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
+
+    if args.with_numba and args.with_gpu:
+        parser.error("--with-numba and --with-gpu are mutually exclusive.")
+
+    if args.gpu_vendor != "auto" and not args.with_gpu:
+        parser.error("--gpu-vendor requires --with-gpu.")
 
     if not hasattr(args, "local_group_label"):
         args.local_group_label = args.component_name

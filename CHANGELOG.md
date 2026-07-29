@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Introduce `--with-gpu` to offload the kernels compaction, heat conduction, percolation to a GPU via `numba.cuda` (NVIDIA) or `numba.hip` (AMD), with `--gpu-vendor {auto,nvidia,amd}` to select/guard the vendor. Mutually exclusive with `--with-numba`. Install via `pip install ebfm[gpu]`.
 * Further optimizations in CPU/host-side code in `LOOP_SNOW.py`: fewer full-grid copies, heat conduction precompute moved into Numba kernel. https://github.com/EBFMorg/EBFM/pull/147.
 * The `performance` extra no longer installs `mpi4py`: Numba parallelises with threads inside a single process and does not require MPI. Use `EBFM[performance,mpi]` to combine both. https://github.com/EBFMorg/EBFM/pull/147.
 * Add general interface for definition of fallback values if a coupled component does not provide expected data for individual fields. https://github.com/EBFMorg/EBFM/pull/146.
