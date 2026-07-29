@@ -32,13 +32,18 @@ are never launched.
 """
 
 import math
+import os
 
 import numpy as np
 
 from .compute_backend import cuda
 
 # Threads per block used for all 1-D column-parallel launches.
-_TPB = 128
+#
+# The best value is device- and kernel-dependent (these kernels are large, so
+# register pressure can limit occupancy). Override for experiments with
+# EBFM_GPU_TPB, e.g. EBFM_GPU_TPB=256.
+_TPB = int(os.environ.get("EBFM_GPU_TPB", "128"))
 
 
 def _blocks(gpsum: int) -> int:
@@ -584,47 +589,42 @@ def _heat_boundary_clip_kernel_gpu(subT, Tsurf, subZ, T0):
 
 
 class SnowDeviceState:
-    """GPU-resident subsurface state for one LOOP_SNOW step.
+    """GPU-resident subsurface state for LOOP_SNOW.
 
-    Uploads the resident arrays and this step's inputs on construction, exposes
-    compaction() / heat_conduction() / percolation() that launch their kernels
-    against the resident device arrays, and download() to copy every result
-    back into the OUT dict in one shot.
+    Allocates all device buffers once for a given grid shape. Each timestep
+    upload() refreshes the resident arrays and this step's inputs,
+    compaction() / heat_conduction() / percolation() launch their kernels
+    against those buffers, and download() copies every result back into the
+    OUT dict in one shot.
+
+    The instance is reused across timesteps (see get_device_state), so the
+    device allocations happen once per run instead of once per timestep.
     """
 
-    def __init__(
-        self,
-        subT,
-        subD,
-        subZ,
-        subW,
-        subS,
-        subTmean,
-        surfH,
-        logyearsnow,
-        yearsnow,
-        WS,
-        Tsurf,
-        sumWinit,
-    ):
-        gpsum, nl = subD.shape
+    def __init__(self, gpsum, nl):
+        self.shape = (gpsum, nl)
         self.blocks = _blocks(gpsum)
 
-        # Resident state (read/write; copied back in download()).
-        self.subT = cuda.to_device(subT)
-        self.subD = cuda.to_device(subD)
-        self.subZ = cuda.to_device(subZ)
-        self.subW = cuda.to_device(subW)
-        self.subS = cuda.to_device(subS)
-        self.subTmean = cuda.to_device(subTmean)
-        self.surfH = cuda.to_device(surfH)
+        # Resident state (read/write; refreshed in upload, read back in download).
+        self.subT = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.subD = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.subZ = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.subW = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.subS = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.subTmean = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.surfH = cuda.device_array((gpsum,), dtype=np.float64)
 
         # Per-step inputs (read-only on the device).
-        self.logyearsnow = cuda.to_device(logyearsnow)
-        self.yearsnow = cuda.to_device(yearsnow)
-        self.WS = cuda.to_device(WS)
-        self.Tsurf = cuda.to_device(Tsurf)
-        self.sumWinit = cuda.to_device(sumWinit)
+        self.logyearsnow = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.yearsnow = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.WS = cuda.device_array((gpsum,), dtype=np.float64)
+        self.Tsurf = cuda.device_array((gpsum,), dtype=np.float64)
+        self.sumWinit = cuda.device_array((gpsum,), dtype=np.float64)
+
+        # Dens_* diagnostics, refreshed from the host zeros each step.
+        self.Dens_destr_metam = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.Dens_overb_pres = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.Dens_drift = cuda.device_array((gpsum, nl), dtype=np.float64)
 
         # Conductivity / heat capacity filled by the heat-conduction prep kernel
         # and kept resident so download() returns subK/subCeff matching NumPy.
@@ -640,12 +640,6 @@ class SnowDeviceState:
         self.refr_I = cuda.device_array((gpsum,), dtype=np.float64)
         self.slushw = cuda.device_array((gpsum,), dtype=np.float64)
         self.irrw = cuda.device_array((gpsum,), dtype=np.float64)
-
-        # Dens_* diagnostics: uploaded in compaction() as host zeros so that
-        # firn_only mode (where the kernel does not touch them) stays zero.
-        self.Dens_destr_metam = None
-        self.Dens_overb_pres = None
-        self.Dens_drift = None
 
         # Device-only scratch (never touches the host).
         self._subD_old = cuda.device_array((gpsum, nl), dtype=np.float64)
@@ -667,6 +661,35 @@ class SnowDeviceState:
         self._carrot_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
         self._slushspace_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
 
+    def upload(
+        self,
+        subT,
+        subD,
+        subZ,
+        subW,
+        subS,
+        subTmean,
+        surfH,
+        logyearsnow,
+        yearsnow,
+        WS,
+        Tsurf,
+        sumWinit,
+    ):
+        """Refresh the device buffers with this timestep's host state."""
+        self.subT.copy_to_device(subT)
+        self.subD.copy_to_device(subD)
+        self.subZ.copy_to_device(subZ)
+        self.subW.copy_to_device(subW)
+        self.subS.copy_to_device(subS)
+        self.subTmean.copy_to_device(subTmean)
+        self.surfH.copy_to_device(surfH)
+        self.logyearsnow.copy_to_device(logyearsnow)
+        self.yearsnow.copy_to_device(yearsnow)
+        self.WS.copy_to_device(WS)
+        self.Tsurf.copy_to_device(Tsurf)
+        self.sumWinit.copy_to_device(sumWinit)
+
     def compaction(
         self,
         Dens_destr_metam,
@@ -681,9 +704,9 @@ class SnowDeviceState:
     ):
         """Launch the compaction kernel on the resident arrays."""
         # Upload host-zeroed diagnostics; firn_only leaves them untouched.
-        self.Dens_destr_metam = cuda.to_device(Dens_destr_metam)
-        self.Dens_overb_pres = cuda.to_device(Dens_overb_pres)
-        self.Dens_drift = cuda.to_device(Dens_drift)
+        self.Dens_destr_metam.copy_to_device(Dens_destr_metam)
+        self.Dens_overb_pres.copy_to_device(Dens_overb_pres)
+        self.Dens_drift.copy_to_device(Dens_drift)
 
         # Snapshot pre-compaction subD/subZ on-device (host path does .copy()).
         self._subD_old.copy_to_device(self.subD)
@@ -831,6 +854,60 @@ class SnowDeviceState:
         self.kk.copy_to_host(OUT["subK"])
         self.c_eff.copy_to_host(OUT["subCeff"])
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
+
+
+# ---------------------------------------------------------------------------
+# Cached device state
+#
+# The device buffers depend only on the grid shape, so one SnowDeviceState is
+# allocated per run and reused for every timestep. Re-creating it each step
+# would re-allocate ~25 device arrays, and cudaMalloc/cudaFree serialise
+# against the compute stream.
+#
+# Module-level state mirrors how compute_backend.py keeps the active backend.
+# ---------------------------------------------------------------------------
+
+_device_state = None
+
+
+def get_device_state(
+    subT,
+    subD,
+    subZ,
+    subW,
+    subS,
+    subTmean,
+    surfH,
+    logyearsnow,
+    yearsnow,
+    WS,
+    Tsurf,
+    sumWinit,
+):
+    """Return the cached SnowDeviceState, refreshed with the current host state.
+
+    Allocates on the first call (or if the grid shape changed) and uploads this
+    timestep's arrays into the existing device buffers on every call.
+    """
+    global _device_state
+    if _device_state is None or _device_state.shape != subD.shape:
+        gpsum, nl = subD.shape
+        _device_state = SnowDeviceState(gpsum, nl)
+    _device_state.upload(
+        subT,
+        subD,
+        subZ,
+        subW,
+        subS,
+        subTmean,
+        surfH,
+        logyearsnow,
+        yearsnow,
+        WS,
+        Tsurf,
+        sumWinit,
+    )
+    return _device_state
 
 
 # ===========================================================================

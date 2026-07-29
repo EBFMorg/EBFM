@@ -975,9 +975,11 @@ def main(C, OUT, IN, dt, grid, phys):
         # their usual host-side glue and dispatch their kernel launches to the
         # device state; results match the NumPy/Numba paths.
         # Imported here (not at module top) so only GPU runs pull in numba.cuda.
-        from .LOOP_SNOW_gpu_kernels import SnowDeviceState
+        # The device buffers are allocated once per run and reused; only this
+        # timestep's values are uploaded.
+        from .LOOP_SNOW_gpu_kernels import get_device_state
 
-        gpu_state = SnowDeviceState(
+        gpu_state = get_device_state(
             OUT["subT"],
             OUT["subD"],
             OUT["subZ"],
