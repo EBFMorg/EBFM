@@ -136,93 +136,93 @@ def _compaction_kernel_gpu(
 ):
     """GPU equivalent of _compaction_kernel. One CUDA thread per grid column."""
     i = cuda.grid(1)
-    if i >= subD.shape[0]:
+    if i >= subD.shape[1]:
         return
-    nl = subD.shape[1]
+    nl = subD.shape[0]
 
     # ------ 1. FIRN COMPACTION ------ #
     for k in range(nl):
-        subTmean[i, k] = subTmean[i, k] * (1.0 - dt_yearfrac) + dt_yearfrac * subT[i, k]
-        cond_firn_k = (compaction_mode == 0) or (subD[i, k] >= Dfirn)
+        subTmean[k, i] = subTmean[k, i] * (1.0 - dt_yearfrac) + dt_yearfrac * subT[k, i]
+        cond_firn_k = (compaction_mode == 0) or (subD[k, i] >= Dfirn)
         if cond_firn_k:
-            if subD[i, k] < 550.0:
-                grav_const = 0.07 * _fmax(1.435 - 0.151 * logyearsnow[i, k], 0.25)
+            if subD[k, i] < 550.0:
+                grav_const = 0.07 * _fmax(1.435 - 0.151 * logyearsnow[k, i], 0.25)
             else:
-                grav_const = 0.03 * _fmax(2.366 - 0.293 * logyearsnow[i, k], 0.25)
-            temp_factor = math.exp(-Ec / (rd * subT[i, k]) + Eg / (rd * subTmean[i, k]))
-            firn_inc = dt_yearfrac * grav_const * yearsnow[i, k] * g * (Dice - subD[i, k]) * temp_factor
-            subD[i, k] += firn_inc
+                grav_const = 0.03 * _fmax(2.366 - 0.293 * logyearsnow[k, i], 0.25)
+            temp_factor = math.exp(-Ec / (rd * subT[k, i]) + Eg / (rd * subTmean[k, i]))
+            firn_inc = dt_yearfrac * grav_const * yearsnow[k, i] * g * (Dice - subD[k, i]) * temp_factor
+            subD[k, i] += firn_inc
 
     # ------ 2. SEASONAL SNOW COMPACTION ------ #
     if compaction_mode == 1:  # firn+snow
         # Capture pre-DM snow mask
         for k in range(nl):
-            was_snow_ws[i, k] = subD[i, k] < Dfirn
+            was_snow_ws[k, i] = subD[k, i] < Dfirn
 
         # ------ 2.1 DESTRUCTIVE METAMORPHISM ------ #
         for k in range(nl):
-            if was_snow_ws[i, k]:
-                cc1 = math.exp(-0.046 * _fmax(subD[i, k] - 175.0, 0.0))
-                cc2 = 1.0 + (1.0 if subW[i, k] != 0.0 else 0.0)
-                temp_exp = math.exp(0.04 * (subT[i, k] - T0))
-                snow_inc = cc1 * cc2 * 2.777e-6 * temp_exp * dt_seconds * subD[i, k]
-                subD[i, k] = _fmin(subD[i, k] + snow_inc, Dice)
-                Dens_destr_metam[i, k] = snow_inc
+            if was_snow_ws[k, i]:
+                cc1 = math.exp(-0.046 * _fmax(subD[k, i] - 175.0, 0.0))
+                cc2 = 1.0 + (1.0 if subW[k, i] != 0.0 else 0.0)
+                temp_exp = math.exp(0.04 * (subT[k, i] - T0))
+                snow_inc = cc1 * cc2 * 2.777e-6 * temp_exp * dt_seconds * subD[k, i]
+                subD[k, i] = _fmin(subD[k, i] + snow_inc, Dice)
+                Dens_destr_metam[k, i] = snow_inc
             else:
-                Dens_destr_metam[i, k] = 0.0
+                Dens_destr_metam[k, i] = 0.0
 
         # ------ 2.2 OVERBURDEN PRESSURE ------ #
-        psload_ws[i, 0] = 0.5 * subD[i, 0] * subZ[i, 0] * g
+        psload_ws[0, i] = 0.5 * subD[0, i] * subZ[0, i] * g
         for k in range(1, nl):
-            xm = subD[i, k - 1] * subZ[i, k - 1] * g
-            xk = subD[i, k] * subZ[i, k] * g
-            psload_ws[i, k] = psload_ws[i, k - 1] + 0.5 * (xm + xk)
+            xm = subD[k - 1, i] * subZ[k - 1, i] * g
+            xk = subD[k, i] * subZ[k, i] * g
+            psload_ws[k, i] = psload_ws[k - 1, i] + 0.5 * (xm + xk)
 
         for k in range(nl):
-            Dens_overb_pres[i, k] = 0.0
-            if was_snow_ws[i, k]:
-                cc7 = 4.0 * 7.62237e6 / 250.0 * subD[i, k] / (1.0 + 60.0 * subW[i, k] / (Dwater * subZ[i, k]))
-                visc = cc7 * math.exp(0.1 * (T0 - subT[i, k]) + 0.023 * subD[i, k])
-                overb_inc = dt * dayseconds * subD[i, k] * psload_ws[i, k] / visc
-                subD[i, k] = _fmin(subD[i, k] + overb_inc, Dice)
-                Dens_overb_pres[i, k] = dt * dayseconds * subD[i, k] * psload_ws[i, k] / visc
+            Dens_overb_pres[k, i] = 0.0
+            if was_snow_ws[k, i]:
+                cc7 = 4.0 * 7.62237e6 / 250.0 * subD[k, i] / (1.0 + 60.0 * subW[k, i] / (Dwater * subZ[k, i]))
+                visc = cc7 * math.exp(0.1 * (T0 - subT[k, i]) + 0.023 * subD[k, i])
+                overb_inc = dt * dayseconds * subD[k, i] * psload_ws[k, i] / visc
+                subD[k, i] = _fmin(subD[k, i] + overb_inc, Dice)
+                Dens_overb_pres[k, i] = dt * dayseconds * subD[k, i] * psload_ws[k, i] / visc
 
         # ------ 2.3 DRIFTING SNOW ------ #
         z_i_k = 0.0
         for k in range(nl):
-            d_k = _fmax(subD[i, k], 50.0)
+            d_k = _fmax(subD[k, i], 50.0)
             mo_k = -0.069 + 0.66 * (1.25 - 0.0042 * (d_k - 50.0))
             si_k = -2.868 * math.exp(-0.085 * WS[i]) + 1.0 + mo_k
             gamma_k = _fmax(0.0, si_k * math.exp(-z_i_k / 0.1))
-            Dens_drift[i, k] = 0.0
-            if si_k > 0.0 and subD[i, k] < Dfirn:
+            Dens_drift[k, i] = 0.0
+            if si_k > 0.0 and subD[k, i] < Dfirn:
                 tau_i_k = tau_drift / gamma_k
-                drift_inc = dt_seconds * _fmax(350.0 - subD[i, k], 0.0) / tau_i_k
-                subD[i, k] = _fmin(subD[i, k] + drift_inc, Dice)
-                Dens_drift[i, k] = drift_inc
-            z_i_k += subZ[i, k] * (3.25 - si_k)
+                drift_inc = dt_seconds * _fmax(350.0 - subD[k, i], 0.0) / tau_i_k
+                subD[k, i] = _fmin(subD[k, i] + drift_inc, Dice)
+                Dens_drift[k, i] = drift_inc
+            z_i_k += subZ[k, i] * (3.25 - si_k)
 
     # ------ 3. UPDATE LAYER THICKNESS & SURFACE HEIGHT ------ #
     z_sum = 0.0
     z_sum_old = 0.0
     subW_sum = 0.0
     for k in range(nl):
-        # subZ is only read in sections 1-2, so subZ[i, k] still holds the
+        # subZ is only read in sections 1-2, so subZ[k, i] still holds the
         # pre-compaction thickness here. Take it before overwriting it below;
         # no separate subZ_old array is needed.
-        z_old_k = subZ[i, k]
-        if subD[i, k] < Dice:
-            subZ[i, k] = z_old_k * subD_old[i, k] / subD[i, k]
-            exp_f = 0.0143 * math.exp(3.3 * (Dice - subD[i, k]) / Dice)
+        z_old_k = subZ[k, i]
+        if subD[k, i] < Dice:
+            subZ[k, i] = z_old_k * subD_old[k, i] / subD[k, i]
+            exp_f = 0.0143 * math.exp(3.3 * (Dice - subD[k, i]) / Dice)
             denom = 1.0 - exp_f
-            mliqmax_k = subD[i, k] * subZ[i, k] * exp_f / denom * 0.05 * _fmin(Dice - subD[i, k], 20.0)
-            if subW[i, k] > mliqmax_k:
-                subW[i, k] = mliqmax_k
+            mliqmax_k = subD[k, i] * subZ[k, i] * exp_f / denom * 0.05 * _fmin(Dice - subD[k, i], 20.0)
+            if subW[k, i] > mliqmax_k:
+                subW[k, i] = mliqmax_k
         else:
-            subW[i, k] = 0.0
-        z_sum += subZ[i, k]
+            subW[k, i] = 0.0
+        z_sum += subZ[k, i]
         z_sum_old += z_old_k
-        subW_sum += subW[i, k]
+        subW_sum += subW[k, i]
 
     surfH[i] += z_sum - z_sum_old
     runoff_irr[i] = sumWinit[i] - subW_sum
@@ -248,13 +248,13 @@ def _heat_conduction_kernel_gpu(
 ):
     """GPU equivalent of _heat_conduction_kernel. One CUDA thread per grid column."""
     i = cuda.grid(1)
-    if i >= subT.shape[0]:
+    if i >= subT.shape[1]:
         return
-    nl = subT.shape[1]
+    nl = subT.shape[0]
 
     for k in range(nl):
-        T_loc_ws[i, k] = subT[i, k]
-        kdTdz_ws[i, k] = 0.0
+        T_loc_ws[k, i] = subT[k, i]
+        kdTdz_ws[k, i] = 0.0
 
     tt_i = 0.0
     while tt_i < dt:
@@ -265,18 +265,18 @@ def _heat_conduction_kernel_gpu(
         C_day_dt = dayseconds * dt_temp_i
 
         # Freeze fluxes from current T_loc
-        kdTdz_ws[i, 1] = kk_sz_top[i] * (T_loc_ws[i, 1] - Tsurf[i]) / dz1[i]
+        kdTdz_ws[1, i] = kk_sz_top[i] * (T_loc_ws[1, i] - Tsurf[i]) / dz1[i]
         for k in range(2, nl):
-            kdTdz_ws[i, k] = kk_sz_interior[i, k - 2] * (T_loc_ws[i, k] - T_loc_ws[i, k - 1]) / dz2[i, k - 2]
+            kdTdz_ws[k, i] = kk_sz_interior[k - 2, i] * (T_loc_ws[k, i] - T_loc_ws[k - 1, i]) / dz2[k - 2, i]
 
         # Update T_loc in-place
-        T_loc_ws[i, 1] += C_day_dt * (kdTdz_ws[i, 2] - kdTdz_ws[i, 1]) / denom_layer1[i]
+        T_loc_ws[1, i] += C_day_dt * (kdTdz_ws[2, i] - kdTdz_ws[1, i]) / denom_layer1[i]
         for k in range(2, nl - 1):
-            T_loc_ws[i, k] += C_day_dt * (kdTdz_ws[i, k + 1] - kdTdz_ws[i, k]) / denom_interior[i, k - 2]
-        T_loc_ws[i, nl - 1] += C_day_dt * (geothermal_flux - kdTdz_ws[i, nl - 1]) / denom_bottom[i]
+            T_loc_ws[k, i] += C_day_dt * (kdTdz_ws[k + 1, i] - kdTdz_ws[k, i]) / denom_interior[k - 2, i]
+        T_loc_ws[nl - 1, i] += C_day_dt * (geothermal_flux - kdTdz_ws[nl - 1, i]) / denom_bottom[i]
 
     for k in range(nl):
-        subT[i, k] = T_loc_ws[i, k]
+        subT[k, i] = T_loc_ws[k, i]
 
 
 @cuda.jit
@@ -310,9 +310,9 @@ def _percolation_kernel_gpu(
 ):
     """GPU equivalent of _percolation_kernel. One CUDA thread per grid column."""
     i = cuda.grid(1)
-    if i >= subT.shape[0]:
+    if i >= subT.shape[1]:
         return
-    nl = subT.shape[1]
+    nl = subT.shape[0]
 
     sigma2_2 = 2.0 * (perc_depth / 3.0) ** 2
     norm_coeff = 2.0 / (perc_depth / 3.0) / math.sqrt(2.0 * math.pi)
@@ -320,62 +320,62 @@ def _percolation_kernel_gpu(
 
     # ------ Refreezing and Irreducible Water Storage Limits ------ #
     for k in range(nl):
-        cpi_k = 152.2 + 7.122 * subT[i, k]
-        c1_k = cpi_k * subD[i, k] * subZ[i, k] * (T0 - subT[i, k]) / Lm
-        c2_k = subZ[i, k] * (1.0 - subD[i, k] / Dice) * Dice
-        wlim_ws[i, k] = _fmax(_fmin(c1_k, c2_k), 0.0)
-        if subD[i, k] < Dice - 1.0:
-            factor_k = 3.3 * (Dice - subD[i, k]) / Dice
+        cpi_k = 152.2 + 7.122 * subT[k, i]
+        c1_k = cpi_k * subD[k, i] * subZ[k, i] * (T0 - subT[k, i]) / Lm
+        c2_k = subZ[k, i] * (1.0 - subD[k, i] / Dice) * Dice
+        wlim_ws[k, i] = _fmax(_fmin(c1_k, c2_k), 0.0)
+        if subD[k, i] < Dice - 1.0:
+            factor_k = 3.3 * (Dice - subD[k, i]) / Dice
             exp_f = math.exp(factor_k)
             irr_f = 0.0143 * exp_f / (1.0 - 0.0143 * exp_f)
-            mliqmax_k = subD[i, k] * subZ[i, k] * irr_f * 0.05 * _fmin(Dice - subD[i, k], 20.0)
+            mliqmax_k = subD[k, i] * subZ[k, i] * irr_f * 0.05 * _fmin(Dice - subD[k, i], 20.0)
         else:
             mliqmax_k = 0.0
-        wirr_ws[i, k] = mliqmax_k - subW[i, k]
+        wirr_ws[k, i] = mliqmax_k - subW[k, i]
 
     # ------ Carrot (water-distribution profile) ------ #
     if percolation_mode == 0:
-        carrot_ws[i, 0] = 1.0
+        carrot_ws[0, i] = 1.0
         for k in range(1, nl):
-            carrot_ws[i, k] = 0.0
+            carrot_ws[k, i] = 0.0
     else:
         depth = 0.0
         for k in range(nl):
-            zz_k = depth + 0.5 * subZ[i, k]
+            zz_k = depth + 0.5 * subZ[k, i]
             if percolation_mode == 1:
-                carrot_ws[i, k] = norm_coeff * math.exp(-(zz_k * zz_k) / sigma2_2)
+                carrot_ws[k, i] = norm_coeff * math.exp(-(zz_k * zz_k) / sigma2_2)
             elif percolation_mode == 2:
                 v = 2.0 * (perc_depth - zz_k) / (perc_depth * perc_depth)
-                carrot_ws[i, k] = v if v > 0.0 else 0.0
-            depth += subZ[i, k]
+                carrot_ws[k, i] = v if v > 0.0 else 0.0
+            depth += subZ[k, i]
 
     s = 0.0
     for k in range(nl):
-        carrot_ws[i, k] *= subZ[i, k]
-        s += carrot_ws[i, k]
+        carrot_ws[k, i] *= subZ[k, i]
+        s += carrot_ws[k, i]
     avail_W_i = avail_W[i]
     for k in range(nl):
-        carrot_ws[i, k] = carrot_ws[i, k] / s * avail_W_i
+        carrot_ws[k, i] = carrot_ws[k, i] / s * avail_W_i
 
     # ------ Percolation: refreezing + irreducible storage ------ #
     avail_W_loc = 0.0
     rp_sum = 0.0
     for n in range(nl):
-        avail_W_loc += carrot_ws[i, n]
-        rp_n = _fmin(avail_W_loc, wlim_ws[i, n])
-        RP[i, n] = rp_n
-        excess = avail_W_loc - wlim_ws[i, n]
+        avail_W_loc += carrot_ws[n, i]
+        rp_n = _fmin(avail_W_loc, wlim_ws[n, i])
+        RP[n, i] = rp_n
+        excess = avail_W_loc - wlim_ws[n, i]
         if excess < 0.0:
             excess = 0.0
-        # subW[i, n] still holds the pre-percolation value at this point; read
+        # subW[n, i] still holds the pre-percolation value at this point; read
         # it before overwriting, so no separate subW_old array is needed.
-        w_old_n = subW[i, n]
-        new_subW_n = w_old_n + _fmin(excess, wirr_ws[i, n])
-        subW[i, n] = new_subW_n
+        w_old_n = subW[n, i]
+        new_subW_n = w_old_n + _fmin(excess, wirr_ws[n, i])
+        subW[n, i] = new_subW_n
         avail_W_loc -= rp_n + (new_subW_n - w_old_n)
-        cpi_n = 152.2 + 7.122 * subT[i, n]
-        subT[i, n] += Lm * rp_n / (subD[i, n] * cpi_n * subZ[i, n])
-        subD[i, n] += rp_n / subZ[i, n]
+        cpi_n = 152.2 + 7.122 * subT[n, i]
+        subT[n, i] += Lm * rp_n / (subD[n, i] * cpi_n * subZ[n, i])
+        subD[n, i] += rp_n / subZ[n, i]
         rp_sum += rp_n
 
     avail_W[i] = avail_W_loc
@@ -383,15 +383,15 @@ def _percolation_kernel_gpu(
     # ------ Slush water storage ------ #
     total_slushspace = 0.0
     for k in range(nl):
-        ss_k = subZ[i, k] * (1.0 - subD[i, k] / Dice) * Dwater - subW[i, k]
+        ss_k = subZ[k, i] * (1.0 - subD[k, i] / Dice) * Dwater - subW[k, i]
         if ss_k < 0.0:
             ss_k = 0.0
-        slushspace_ws[i, k] = ss_k
+        slushspace_ws[k, i] = ss_k
         total_slushspace += ss_k
 
     old_slush_sum = 0.0
     for k in range(nl):
-        old_slush_sum += subS[i, k]
+        old_slush_sum += subS[k, i]
     avail_W_slush = avail_W_loc + old_slush_sum
 
     surf_ro = avail_W_slush - total_slushspace
@@ -403,49 +403,49 @@ def _percolation_kernel_gpu(
         avail_S = 0.0
 
     for n in range(nl - 1, -1, -1):
-        fill = avail_S if avail_S < slushspace_ws[i, n] else slushspace_ws[i, n]
-        subS[i, n] = fill
+        fill = avail_S if avail_S < slushspace_ws[n, i] else slushspace_ws[n, i]
+        subS[n, i] = fill
         avail_S -= fill
 
     # ------ Slush refreezing ------ #
     rs_sum = 0.0
     for k in range(nl):
-        cpi_k = 152.2 + 7.122 * subT[i, k]
-        c1_k = cpi_k * subD[i, k] * subZ[i, k] * (T0 - subT[i, k]) / Lm
-        c2_k = subZ[i, k] * (1.0 - subD[i, k] / Dice) * Dice
+        cpi_k = 152.2 + 7.122 * subT[k, i]
+        c1_k = cpi_k * subD[k, i] * subZ[k, i] * (T0 - subT[k, i]) / Lm
+        c2_k = subZ[k, i] * (1.0 - subD[k, i] / Dice) * Dice
         wlim_k = _fmin(c1_k, c2_k)
         rs_k = 0.0
-        if subS[i, k] > 0.0 and subT[i, k] < T0:
-            rs_k = subS[i, k] if subS[i, k] < wlim_k else wlim_k
+        if subS[k, i] > 0.0 and subT[k, i] < T0:
+            rs_k = subS[k, i] if subS[k, i] < wlim_k else wlim_k
             if rs_k < 0.0:
                 rs_k = 0.0
-        subS[i, k] -= rs_k
-        subT[i, k] += (Lm * rs_k) / (subD[i, k] * cpi_k * subZ[i, k])
-        subD[i, k] += rs_k / subZ[i, k]
+        subS[k, i] -= rs_k
+        subT[k, i] += (Lm * rs_k) / (subD[k, i] * cpi_k * subZ[k, i])
+        subD[k, i] += rs_k / subZ[k, i]
         rs_sum += rs_k
 
     # ------ Irreducible water refreezing ------ #
     ri_sum = 0.0
     for k in range(nl):
-        cpi_k = 152.2 + 7.122 * subT[i, k]
-        c1_k = cpi_k * subD[i, k] * subZ[i, k] * (T0 - subT[i, k]) / Lm
-        c2_k = subZ[i, k] * (1.0 - subD[i, k] / Dice) * Dice
+        cpi_k = 152.2 + 7.122 * subT[k, i]
+        c1_k = cpi_k * subD[k, i] * subZ[k, i] * (T0 - subT[k, i]) / Lm
+        c2_k = subZ[k, i] * (1.0 - subD[k, i] / Dice) * Dice
         wlim_k = _fmin(c1_k, c2_k)
         ri_k = 0.0
-        if subW[i, k] > 0.0 and subT[i, k] < T0:
-            ri_k = subW[i, k] if subW[i, k] < wlim_k else wlim_k
+        if subW[k, i] > 0.0 and subT[k, i] < T0:
+            ri_k = subW[k, i] if subW[k, i] < wlim_k else wlim_k
             if ri_k < 0.0:
                 ri_k = 0.0
-        subW[i, k] -= ri_k
-        subT[i, k] += (Lm * ri_k) / (subD[i, k] * cpi_k * subZ[i, k])
-        subD[i, k] += ri_k / subZ[i, k]
+        subW[k, i] -= ri_k
+        subT[k, i] += (Lm * ri_k) / (subD[k, i] * cpi_k * subZ[k, i])
+        subD[k, i] += ri_k / subZ[k, i]
         ri_sum += ri_k
 
     slushw_i = 0.0
     irrw_i = 0.0
     for k in range(nl):
-        slushw_i += subS[i, k]
-        irrw_i += subW[i, k]
+        slushw_i += subS[k, i]
+        irrw_i += subW[k, i]
     refr_P[i] = 1e-3 * rp_sum
     refr_S[i] = 1e-3 * rs_sum
     refr_I[i] = 1e-3 * ri_sum
@@ -478,53 +478,53 @@ def _heat_conduction_prep_kernel_gpu(
     to the NumPy path in LOOP_SNOW.heat_conduction() for --dump-reference parity.
     """
     i = cuda.grid(1)
-    if i >= subD.shape[0]:
+    if i >= subD.shape[1]:
         return
-    nl = subD.shape[1]
+    nl = subD.shape[0]
 
     # Effective conductivity and volumetric heat capacity per layer.
     for k in range(nl):
-        d = subD[i, k]
-        kk[i, k] = 0.138 - 1.01e-3 * d + 3.233e-6 * d * d
-        c_eff[i, k] = d * (152.2 + 7.122 * subT[i, k])
+        d = subD[k, i]
+        kk[k, i] = 0.138 - 1.01e-3 * d + 3.233e-6 * d * d
+        c_eff[k, i] = d * (152.2 + 7.122 * subT[k, i])
 
     # dz1 = (subZ[0] + 0.5*subZ[1])**2
-    half1 = subZ[i, 0] + 0.5 * subZ[i, 1]
+    half1 = subZ[0, i] + 0.5 * subZ[1, i]
     dz1[i] = half1 * half1
 
     # dz2 = 0.5 * (subZ[k+2] + subZ[k+1])**2   (NumPy: 0.5*(a+b)**2, NOT (0.5*(a+b))**2)
     for k in range(nl - 2):
-        s = subZ[i, k + 2] + subZ[i, k + 1]
-        dz2[i, k] = 0.5 * s * s
+        s = subZ[k + 2, i] + subZ[k + 1, i]
+        dz2[k, i] = 0.5 * s * s
 
     # kk_sz_top = kk[0]*subZ[0] + 0.5*kk[1]*subZ[1]
-    kk_sz_top[i] = kk[i, 0] * subZ[i, 0] + 0.5 * kk[i, 1] * subZ[i, 1]
+    kk_sz_top[i] = kk[0, i] * subZ[0, i] + 0.5 * kk[1, i] * subZ[1, i]
 
     # kk_sz_interior[j] = kk[j+1]*subZ[j+1] + kk[j+2]*subZ[j+2]
     for k in range(nl - 2):
-        kk_sz_interior[i, k] = kk[i, k + 1] * subZ[i, k + 1] + kk[i, k + 2] * subZ[i, k + 2]
+        kk_sz_interior[k, i] = kk[k + 1, i] * subZ[k + 1, i] + kk[k + 2, i] * subZ[k + 2, i]
 
     # denom_layer1 = c_eff[1] * (0.5*subZ[0] + 0.5*subZ[1] + 0.25*subZ[2])
-    denom_layer1[i] = c_eff[i, 1] * (0.5 * subZ[i, 0] + 0.5 * subZ[i, 1] + 0.25 * subZ[i, 2])
+    denom_layer1[i] = c_eff[1, i] * (0.5 * subZ[0, i] + 0.5 * subZ[1, i] + 0.25 * subZ[2, i])
 
     # denom_interior[k-2] = c_eff[k] * (0.25*subZ[k-1] + 0.5*subZ[k] + 0.25*subZ[k+1]) for k in 2..nl-2
     for k in range(2, nl - 1):
-        denom_interior[i, k - 2] = c_eff[i, k] * (0.25 * subZ[i, k - 1] + 0.5 * subZ[i, k] + 0.25 * subZ[i, k + 1])
+        denom_interior[k - 2, i] = c_eff[k, i] * (0.25 * subZ[k - 1, i] + 0.5 * subZ[k, i] + 0.25 * subZ[k + 1, i])
 
     # denom_bottom = c_eff[-1] * (0.25*subZ[-2] + 0.75*subZ[-1])
-    denom_bottom[i] = c_eff[i, nl - 1] * (0.25 * subZ[i, nl - 2] + 0.75 * subZ[i, nl - 1])
+    denom_bottom[i] = c_eff[nl - 1, i] * (0.25 * subZ[nl - 2, i] + 0.75 * subZ[nl - 1, i])
 
     # dt_stab = 0.5 * min(c_eff[1:]) * min(subZ[1:])**2 / max(kk[1:]) / dayseconds
     min_ceff = math.inf
     min_sz = math.inf
     max_kk = 0.0
     for k in range(1, nl):
-        if c_eff[i, k] < min_ceff:
-            min_ceff = c_eff[i, k]
-        if subZ[i, k] < min_sz:
-            min_sz = subZ[i, k]
-        if kk[i, k] > max_kk:
-            max_kk = kk[i, k]
+        if c_eff[k, i] < min_ceff:
+            min_ceff = c_eff[k, i]
+        if subZ[k, i] < min_sz:
+            min_sz = subZ[k, i]
+        if kk[k, i] > max_kk:
+            max_kk = kk[k, i]
     dt_stab[i] = 0.5 * min_ceff * (min_sz * min_sz) / max_kk / dayseconds
 
 
@@ -537,14 +537,44 @@ def _heat_boundary_clip_kernel_gpu(subT, Tsurf, subZ, T0):
         np.clip(subT, None, T0, out=subT)
     """
     i = cuda.grid(1)
-    if i >= subT.shape[0]:
+    if i >= subT.shape[1]:
         return
-    nl = subT.shape[1]
+    nl = subT.shape[0]
 
-    subT[i, 0] = Tsurf[i] + (subT[i, 1] - Tsurf[i]) / (subZ[i, 0] + 0.5 * subZ[i, 1]) * 0.5 * subZ[i, 0]
+    subT[0, i] = Tsurf[i] + (subT[1, i] - Tsurf[i]) / (subZ[0, i] + 0.5 * subZ[1, i]) * 0.5 * subZ[0, i]
     for k in range(nl):
-        if subT[i, k] > T0:
-            subT[i, k] = T0
+        if subT[k, i] > T0:
+            subT[k, i] = T0
+
+
+@cuda.jit
+def _to_layer_major_kernel_gpu(src, dst):
+    """(gpsum, nl) -> (nl, gpsum). One thread per column."""
+    i = cuda.grid(1)
+    if i >= src.shape[0]:
+        return
+    for k in range(src.shape[1]):
+        dst[k, i] = src[i, k]
+
+
+@cuda.jit
+def _to_grid_major_kernel_gpu(src, dst):
+    """(nl, gpsum) -> (gpsum, nl). One thread per column."""
+    i = cuda.grid(1)
+    if i >= dst.shape[0]:
+        return
+    for k in range(dst.shape[1]):
+        dst[i, k] = src[k, i]
+
+
+@cuda.jit
+def _zero_kernel_gpu(arr):
+    """Zero a (nl, gpsum) array in place. One thread per column."""
+    i = cuda.grid(1)
+    if i >= arr.shape[1]:
+        return
+    for k in range(arr.shape[0]):
+        arr[k, i] = 0.0
 
 
 # ===========================================================================
@@ -588,31 +618,41 @@ class SnowDeviceState:
         self.shape = (gpsum, nl)
         self.blocks = _blocks(gpsum)
 
+        # Host-layout staging buffer. Transfers keep the host's (gpsum, nl)
+        # layout; a transpose kernel converts to/from the layer-major (nl,
+        # gpsum) layout the compute kernels use, so consecutive threads read
+        # consecutive addresses. Transposing on the device costs a single
+        # extra pass and avoids a per-step host-side transpose.
+        self._stage = cuda.device_array((gpsum, nl), dtype=np.float64)
+        # Percolation water input, refreshed each step (was re-allocated with
+        # cuda.to_device on every call).
+        self._avail_W = cuda.device_array((gpsum,), dtype=np.float64)
+
         # Resident state (read/write; refreshed in upload, read back in download).
-        self.subT = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self.subD = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self.subZ = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self.subW = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self.subS = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self.subTmean = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.subT = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self.subD = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self.subZ = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self.subW = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self.subS = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self.subTmean = cuda.device_array((nl, gpsum), dtype=np.float64)
         self.surfH = cuda.device_array((gpsum,), dtype=np.float64)
 
         # Per-step inputs (read-only on the device).
-        self.logyearsnow = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self.yearsnow = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.logyearsnow = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self.yearsnow = cuda.device_array((nl, gpsum), dtype=np.float64)
         self.WS = cuda.device_array((gpsum,), dtype=np.float64)
         self.Tsurf = cuda.device_array((gpsum,), dtype=np.float64)
         self.sumWinit = cuda.device_array((gpsum,), dtype=np.float64)
 
         # Dens_* diagnostics, refreshed from the host zeros each step.
-        self.Dens_destr_metam = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self.Dens_overb_pres = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self.Dens_drift = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.Dens_destr_metam = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self.Dens_overb_pres = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self.Dens_drift = cuda.device_array((nl, gpsum), dtype=np.float64)
 
         # Conductivity / heat capacity filled by the heat-conduction prep kernel
         # and kept resident so download() returns subK/subCeff matching NumPy.
-        self.kk = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self.c_eff = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self.kk = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self.c_eff = cuda.device_array((nl, gpsum), dtype=np.float64)
 
         # Write-only column outputs (allocated, never uploaded).
         self.runoff_irr = cuda.device_array((gpsum,), dtype=np.float64)
@@ -625,24 +665,24 @@ class SnowDeviceState:
         self.irrw = cuda.device_array((gpsum,), dtype=np.float64)
 
         # Device-only scratch (never touches the host).
-        self._subD_old = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self._was_snow_ws = cuda.device_array((gpsum, nl), dtype=np.bool_)
-        self._psload_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self._subD_old = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self._was_snow_ws = cuda.device_array((nl, gpsum), dtype=np.bool_)
+        self._psload_ws = cuda.device_array((nl, gpsum), dtype=np.float64)
         self._kk_sz_top = cuda.device_array((gpsum,), dtype=np.float64)
-        self._kk_sz_interior = cuda.device_array((gpsum, nl - 2), dtype=np.float64)
+        self._kk_sz_interior = cuda.device_array((nl - 2, gpsum), dtype=np.float64)
         self._dz1 = cuda.device_array((gpsum,), dtype=np.float64)
-        self._dz2 = cuda.device_array((gpsum, nl - 2), dtype=np.float64)
+        self._dz2 = cuda.device_array((nl - 2, gpsum), dtype=np.float64)
         self._denom_layer1 = cuda.device_array((gpsum,), dtype=np.float64)
-        self._denom_interior = cuda.device_array((gpsum, nl - 3), dtype=np.float64)
+        self._denom_interior = cuda.device_array((nl - 3, gpsum), dtype=np.float64)
         self._denom_bottom = cuda.device_array((gpsum,), dtype=np.float64)
         self._dt_stab = cuda.device_array((gpsum,), dtype=np.float64)
-        self._T_loc_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self._kdTdz_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self._RP = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self._wlim_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self._wirr_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self._carrot_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self._slushspace_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
+        self._T_loc_ws = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self._kdTdz_ws = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self._RP = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self._wlim_ws = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self._wirr_ws = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self._carrot_ws = cuda.device_array((nl, gpsum), dtype=np.float64)
+        self._slushspace_ws = cuda.device_array((nl, gpsum), dtype=np.float64)
 
     def upload(
         self,
@@ -660,24 +700,32 @@ class SnowDeviceState:
         sumWinit,
     ):
         """Refresh the device buffers with this timestep's host state."""
-        self.subT.copy_to_device(subT)
-        self.subD.copy_to_device(subD)
-        self.subZ.copy_to_device(subZ)
-        self.subW.copy_to_device(subW)
-        self.subS.copy_to_device(subS)
-        self.subTmean.copy_to_device(subTmean)
+        self._upload_2d(self.subT, subT)
+        self._upload_2d(self.subD, subD)
+        self._upload_2d(self.subZ, subZ)
+        self._upload_2d(self.subW, subW)
+        self._upload_2d(self.subS, subS)
+        self._upload_2d(self.subTmean, subTmean)
+        self._upload_2d(self.logyearsnow, logyearsnow)
+        self._upload_2d(self.yearsnow, yearsnow)
+        # 1-D per-column arrays need no transpose.
         self.surfH.copy_to_device(surfH)
-        self.logyearsnow.copy_to_device(logyearsnow)
-        self.yearsnow.copy_to_device(yearsnow)
         self.WS.copy_to_device(WS)
         self.Tsurf.copy_to_device(Tsurf)
         self.sumWinit.copy_to_device(sumWinit)
 
+    def _upload_2d(self, dst, host_arr):
+        """Host (gpsum, nl) -> device (nl, gpsum) via the staging buffer."""
+        self._stage.copy_to_device(host_arr)
+        _to_layer_major_kernel_gpu[self.blocks, _TPB](self._stage, dst)
+
+    def _download_2d(self, src, host_arr):
+        """Device (nl, gpsum) -> host (gpsum, nl) via the staging buffer."""
+        _to_grid_major_kernel_gpu[self.blocks, _TPB](src, self._stage)
+        self._stage.copy_to_host(host_arr)
+
     def compaction(
         self,
-        Dens_destr_metam,
-        Dens_overb_pres,
-        Dens_drift,
         dt_yearfrac,
         dt_seconds,
         dt,
@@ -686,10 +734,12 @@ class SnowDeviceState:
         mode,
     ):
         """Launch the compaction kernel on the resident arrays."""
-        # Upload host-zeroed diagnostics; firn_only leaves them untouched.
-        self.Dens_destr_metam.copy_to_device(Dens_destr_metam)
-        self.Dens_overb_pres.copy_to_device(Dens_overb_pres)
-        self.Dens_drift.copy_to_device(Dens_drift)
+        # The kernel only writes the Dens_* diagnostics in firn+snow mode, so
+        # they must start at zero. Zero them on the device rather than uploading
+        # host zeros (3 full grids per timestep of pure PCIe traffic).
+        _zero_kernel_gpu[self.blocks, _TPB](self.Dens_destr_metam)
+        _zero_kernel_gpu[self.blocks, _TPB](self.Dens_overb_pres)
+        _zero_kernel_gpu[self.blocks, _TPB](self.Dens_drift)
 
         # Snapshot pre-compaction subD/subZ on-device (host path does .copy()).
         self._subD_old.copy_to_device(self.subD)
@@ -772,7 +822,7 @@ class SnowDeviceState:
 
     def percolation(self, avail_W, C, perc_mode, dt):
         """Launch the percolation kernel on the resident arrays."""
-        d_avail_W = cuda.to_device(avail_W)
+        self._avail_W.copy_to_device(avail_W)
         # Snapshot post-heat subW on-device (host path does subW.copy()).
         _percolation_kernel_gpu[self.blocks, _TPB](
             self.subT,
@@ -780,7 +830,7 @@ class SnowDeviceState:
             self.subW,
             self.subS,
             self.subZ,
-            d_avail_W,
+            self._avail_W,
             self._RP,
             self.runoff_surface,
             self.runoff_slush,
@@ -806,16 +856,16 @@ class SnowDeviceState:
     def download(self, OUT):
         """Copy the resident state and every output back into OUT (once)."""
         # Resident state: written back in place, preserving array identity.
-        self.subT.copy_to_host(OUT["subT"])
-        self.subD.copy_to_host(OUT["subD"])
-        self.subZ.copy_to_host(OUT["subZ"])
-        self.subW.copy_to_host(OUT["subW"])
-        self.subS.copy_to_host(OUT["subS"])
-        self.subTmean.copy_to_host(OUT["subTmean"])
+        self._download_2d(self.subT, OUT["subT"])
+        self._download_2d(self.subD, OUT["subD"])
+        self._download_2d(self.subZ, OUT["subZ"])
+        self._download_2d(self.subW, OUT["subW"])
+        self._download_2d(self.subS, OUT["subS"])
+        self._download_2d(self.subTmean, OUT["subTmean"])
         self.surfH.copy_to_host(OUT["surfH"])
-        self.Dens_destr_metam.copy_to_host(OUT["Dens_destr_metam"])
-        self.Dens_overb_pres.copy_to_host(OUT["Dens_overb_pres"])
-        self.Dens_drift.copy_to_host(OUT["Dens_drift"])
+        self._download_2d(self.Dens_destr_metam, OUT["Dens_destr_metam"])
+        self._download_2d(self.Dens_overb_pres, OUT["Dens_overb_pres"])
+        self._download_2d(self.Dens_drift, OUT["Dens_drift"])
         self.runoff_irr.copy_to_host(OUT["runoff_irr"])
 
         # Percolation outputs. refr_* already carry the 1e-3 factor from the
@@ -834,8 +884,8 @@ class SnowDeviceState:
         # values. cpi is a diagnostic recomputed from the final subT; as in the
         # per-call GPU path this differs from NumPy only at the last refreezing
         # sub-step and is not consumed downstream.
-        self.kk.copy_to_host(OUT["subK"])
-        self.c_eff.copy_to_host(OUT["subCeff"])
+        self._download_2d(self.kk, OUT["subK"])
+        self._download_2d(self.c_eff, OUT["subCeff"])
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
 
 

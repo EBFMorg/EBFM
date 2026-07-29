@@ -294,9 +294,6 @@ def main(C, OUT, IN, dt: float, grid, phys):
                 # GPU: kernel launched on the resident device arrays. The
                 # pre-compaction subD/subZ snapshot is taken on-device.
                 gpu.compaction(
-                    OUT["Dens_destr_metam"],
-                    OUT["Dens_overb_pres"],
-                    OUT["Dens_drift"],
                     dt_yearfrac,
                     dt_seconds,
                     dt,
