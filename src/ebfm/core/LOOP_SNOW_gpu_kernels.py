@@ -107,7 +107,6 @@ def _compaction_kernel_gpu(
     subW,
     subTmean,
     subD_old,
-    subZ_old,
     logyearsnow,
     yearsnow,
     WS,
@@ -207,8 +206,12 @@ def _compaction_kernel_gpu(
     z_sum_old = 0.0
     subW_sum = 0.0
     for k in range(nl):
+        # subZ is only read in sections 1-2, so subZ[i, k] still holds the
+        # pre-compaction thickness here. Take it before overwriting it below;
+        # no separate subZ_old array is needed.
+        z_old_k = subZ[i, k]
         if subD[i, k] < Dice:
-            subZ[i, k] = subZ_old[i, k] * subD_old[i, k] / subD[i, k]
+            subZ[i, k] = z_old_k * subD_old[i, k] / subD[i, k]
             exp_f = 0.0143 * math.exp(3.3 * (Dice - subD[i, k]) / Dice)
             denom = 1.0 - exp_f
             mliqmax_k = subD[i, k] * subZ[i, k] * exp_f / denom * 0.05 * _fmin(Dice - subD[i, k], 20.0)
@@ -217,7 +220,7 @@ def _compaction_kernel_gpu(
         else:
             subW[i, k] = 0.0
         z_sum += subZ[i, k]
-        z_sum_old += subZ_old[i, k]
+        z_sum_old += z_old_k
         subW_sum += subW[i, k]
 
     surfH[i] += z_sum - z_sum_old
@@ -282,7 +285,6 @@ def _percolation_kernel_gpu(
     subW,
     subS,
     subZ,
-    subW_old,
     avail_W,
     RP,
     runoff_surface,
@@ -328,7 +330,7 @@ def _percolation_kernel_gpu(
             mliqmax_k = subD[i, k] * subZ[i, k] * irr_f * 0.05 * _fmin(Dice - subD[i, k], 20.0)
         else:
             mliqmax_k = 0.0
-        wirr_ws[i, k] = mliqmax_k - subW_old[i, k]
+        wirr_ws[i, k] = mliqmax_k - subW[i, k]
 
     # ------ Carrot (water-distribution profile) ------ #
     if percolation_mode == 0:
@@ -377,9 +379,12 @@ def _percolation_kernel_gpu(
         excess = avail_W_loc - wlim_ws[i, n]
         if excess < 0.0:
             excess = 0.0
-        new_subW_n = subW_old[i, n] + _fmin(excess, wirr_ws[i, n])
+        # subW[i, n] still holds the pre-percolation value at this point; read
+        # it before overwriting, so no separate subW_old array is needed.
+        w_old_n = subW[i, n]
+        new_subW_n = w_old_n + _fmin(excess, wirr_ws[i, n])
         subW[i, n] = new_subW_n
-        avail_W_loc -= rp_n + (new_subW_n - subW_old[i, n])
+        avail_W_loc -= rp_n + (new_subW_n - w_old_n)
         cpi_n = 152.2 + 7.122 * subT[i, n]
         subT[i, n] += Lm * rp_n / (subD[i, n] * cpi_n * subZ[i, n])
         subD[i, n] += rp_n / subZ[i, n]
@@ -644,8 +649,6 @@ class SnowDeviceState:
 
         # Device-only scratch (never touches the host).
         self._subD_old = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self._subZ_old = cuda.device_array((gpsum, nl), dtype=np.float64)
-        self._subW_old = cuda.device_array((gpsum, nl), dtype=np.float64)
         self._was_snow_ws = cuda.device_array((gpsum, nl), dtype=np.bool_)
         self._psload_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
         self._kk_sz_top = cuda.device_array((gpsum,), dtype=np.float64)
@@ -684,7 +687,6 @@ class SnowDeviceState:
 
         # Snapshot pre-compaction subD/subZ on-device (host path does .copy()).
         self._subD_old.copy_to_device(self.subD)
-        self._subZ_old.copy_to_device(self.subZ)
 
         _compaction_kernel_gpu[self.blocks, _TPB](
             self.subD,
@@ -693,7 +695,6 @@ class SnowDeviceState:
             self.subW,
             self.subTmean,
             self._subD_old,
-            self._subZ_old,
             self.logyearsnow,
             self.yearsnow,
             self.WS,
@@ -767,14 +768,12 @@ class SnowDeviceState:
         """Launch the percolation kernel on the resident arrays."""
         d_avail_W = cuda.to_device(avail_W)
         # Snapshot post-heat subW on-device (host path does subW.copy()).
-        self._subW_old.copy_to_device(self.subW)
         _percolation_kernel_gpu[self.blocks, _TPB](
             self.subT,
             self.subD,
             self.subW,
             self.subS,
             self.subZ,
-            self._subW_old,
             d_avail_W,
             self._RP,
             self.runoff_surface,
