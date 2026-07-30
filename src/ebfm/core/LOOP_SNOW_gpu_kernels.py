@@ -108,8 +108,8 @@ def _compaction_kernel_gpu(
     subW,
     subTmean,
     subD_old,
-    logyearsnow,
-    yearsnow,
+    logyearsnow,  # (gpsum,) - layer-invariant on the host, so kept 1-D here
+    yearsnow,  # (gpsum,)
     WS,
     Dens_destr_metam,
     Dens_overb_pres,
@@ -146,11 +146,11 @@ def _compaction_kernel_gpu(
         cond_firn_k = (compaction_mode == 0) or (subD[k, i] >= Dfirn)
         if cond_firn_k:
             if subD[k, i] < 550.0:
-                grav_const = 0.07 * _fmax(1.435 - 0.151 * logyearsnow[k, i], 0.25)
+                grav_const = 0.07 * _fmax(1.435 - 0.151 * logyearsnow[i], 0.25)
             else:
-                grav_const = 0.03 * _fmax(2.366 - 0.293 * logyearsnow[k, i], 0.25)
+                grav_const = 0.03 * _fmax(2.366 - 0.293 * logyearsnow[i], 0.25)
             temp_factor = math.exp(-Ec / (rd * subT[k, i]) + Eg / (rd * subTmean[k, i]))
-            firn_inc = dt_yearfrac * grav_const * yearsnow[k, i] * g * (Dice - subD[k, i]) * temp_factor
+            firn_inc = dt_yearfrac * grav_const * yearsnow[i] * g * (Dice - subD[k, i]) * temp_factor
             subD[k, i] += firn_inc
 
     # ------ 2. SEASONAL SNOW COMPACTION ------ #
@@ -638,8 +638,11 @@ class SnowDeviceState:
         self.surfH = cuda.device_array((gpsum,), dtype=np.float64)
 
         # Per-step inputs (read-only on the device).
-        self.logyearsnow = cuda.device_array((nl, gpsum), dtype=np.float64)
-        self.yearsnow = cuda.device_array((nl, gpsum), dtype=np.float64)
+        # logyearsnow / yearsnow are np.tile(x[:, None], (1, nl)) on the host,
+        # i.e. identical for every layer. Keep only the (gpsum,) vector on the
+        # device: 3 MB per step instead of 149 MB.
+        self.logyearsnow = cuda.device_array((gpsum,), dtype=np.float64)
+        self.yearsnow = cuda.device_array((gpsum,), dtype=np.float64)
         self.WS = cuda.device_array((gpsum,), dtype=np.float64)
         self.Tsurf = cuda.device_array((gpsum,), dtype=np.float64)
         self.sumWinit = cuda.device_array((gpsum,), dtype=np.float64)
@@ -706,8 +709,9 @@ class SnowDeviceState:
         self._upload_2d(self.subW, subW)
         self._upload_2d(self.subS, subS)
         self._upload_2d(self.subTmean, subTmean)
-        self._upload_2d(self.logyearsnow, logyearsnow)
-        self._upload_2d(self.yearsnow, yearsnow)
+        # Layer-invariant: upload a single column instead of the tiled grid.
+        self.logyearsnow.copy_to_device(np.ascontiguousarray(logyearsnow[:, 0]))
+        self.yearsnow.copy_to_device(np.ascontiguousarray(yearsnow[:, 0]))
         # 1-D per-column arrays need no transpose.
         self.surfH.copy_to_device(surfH)
         self.WS.copy_to_device(WS)
@@ -879,13 +883,10 @@ class SnowDeviceState:
         OUT["irrw"] = self.irrw.copy_to_host()
         OUT["refr"] = OUT["refr_P"] + OUT["refr_S"] + OUT["refr_I"]
 
-        # subK / subCeff are the post-compaction conductivity and heat capacity
-        # (from the prep kernel), matching the NumPy path's pre-heat-solve
-        # values. cpi is a diagnostic recomputed from the final subT; as in the
-        # per-call GPU path this differs from NumPy only at the last refreezing
-        # sub-step and is not consumed downstream.
-        self._download_2d(self.kk, OUT["subK"])
-        self._download_2d(self.c_eff, OUT["subCeff"])
+        # subK / subCeff stay on the device: they are allocated in INIT but
+        # never read anywhere else in EBFM, and they are not part of
+        # --dump-reference, so copying them back is 2 full grids per timestep
+        # of pure waste. cpi is likewise a diagnostic nothing consumes.
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
 
 

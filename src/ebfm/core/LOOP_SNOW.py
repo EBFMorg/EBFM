@@ -271,11 +271,13 @@ def main(C, OUT, IN, dt: float, grid, phys):
 
         # Pre-zero diagnostic arrays once
         # Avoids np.zeros_like allocation for each array on every timestep.
+        # On the GPU path the kernel zeroes them on the device, so only the
+        # host buffers (download targets) have to exist here.
         _dshape = OUT["subD"].shape
         for _key in ("Dens_destr_metam", "Dens_overb_pres", "Dens_drift"):
             if _key not in OUT or OUT[_key].shape != _dshape:
                 OUT[_key] = np.zeros(_dshape)
-            else:
+            elif gpu is None:
                 OUT[_key].fill(0.0)
 
         # runoff_irr is written by the kernel. Ensure it exists before it reads.
