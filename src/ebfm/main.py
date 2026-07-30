@@ -283,6 +283,7 @@ def _main_impl():
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
     if not grid["is_partitioned"]:
+        LOOP_SNOW.flush_gpu_diagnostics(OUT)
         FINAL_create_restart_file.main(OUT, io, args.restart_dir)
     else:
         logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
@@ -290,6 +291,7 @@ def _main_impl():
     logger.info("Time loop completed.")
 
     if args.dump_reference:
+        LOOP_SNOW.flush_gpu_diagnostics(OUT)
         dump_reference(logger, OUT, args.dump_reference)
 
     coupler.finalize()

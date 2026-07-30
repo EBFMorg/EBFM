@@ -624,6 +624,10 @@ class SnowDeviceState:
         # consecutive addresses. Transposing on the device costs a single
         # extra pass and avoids a per-step host-side transpose.
         self._stage = cuda.device_array((gpsum, nl), dtype=np.float64)
+        # subTmean is read-modify-written only by compaction (device side); no
+        # host code touches it during the time loop. Upload it once and keep it
+        # resident, otherwise a stale host copy would overwrite the device one.
+        self._subTmean_uploaded = False
         # Percolation water input, refreshed each step (was re-allocated with
         # cuda.to_device on every call).
         self._avail_W = cuda.device_array((gpsum,), dtype=np.float64)
@@ -708,7 +712,9 @@ class SnowDeviceState:
         self._upload_2d(self.subZ, subZ)
         self._upload_2d(self.subW, subW)
         self._upload_2d(self.subS, subS)
-        self._upload_2d(self.subTmean, subTmean)
+        if not self._subTmean_uploaded:
+            self._upload_2d(self.subTmean, subTmean)
+            self._subTmean_uploaded = True
         # Layer-invariant: upload a single column instead of the tiled grid.
         self.logyearsnow.copy_to_device(np.ascontiguousarray(logyearsnow[:, 0]))
         self.yearsnow.copy_to_device(np.ascontiguousarray(yearsnow[:, 0]))
@@ -865,11 +871,7 @@ class SnowDeviceState:
         self._download_2d(self.subZ, OUT["subZ"])
         self._download_2d(self.subW, OUT["subW"])
         self._download_2d(self.subS, OUT["subS"])
-        self._download_2d(self.subTmean, OUT["subTmean"])
         self.surfH.copy_to_host(OUT["surfH"])
-        self._download_2d(self.Dens_destr_metam, OUT["Dens_destr_metam"])
-        self._download_2d(self.Dens_overb_pres, OUT["Dens_overb_pres"])
-        self._download_2d(self.Dens_drift, OUT["Dens_drift"])
         self.runoff_irr.copy_to_host(OUT["runoff_irr"])
 
         # Percolation outputs. refr_* already carry the 1e-3 factor from the
@@ -883,13 +885,23 @@ class SnowDeviceState:
         OUT["irrw"] = self.irrw.copy_to_host()
         OUT["refr"] = OUT["refr_P"] + OUT["refr_S"] + OUT["refr_I"]
 
-        # subK / subCeff are the post-compaction conductivity and heat capacity
-        # from the prep kernel, matching the values the NumPy path stores before
-        # the heat solve. Copied back so the GPU path leaves the same diagnostics
-        # in OUT as the NumPy and Numba paths.
+        OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
+
+    def download_diagnostics(self, OUT):
+        """Copy the device-resident diagnostics back into OUT.
+
+        subTmean, Dens_* and subK / subCeff are not read by any host code during
+        the time loop, so they stay on the device and are only flushed when the
+        values are actually needed: writing output, dumping a reference
+        snapshot, or creating a restart file. That removes six full grids per
+        timestep from the download path.
+        """
+        self._download_2d(self.subTmean, OUT["subTmean"])
+        self._download_2d(self.Dens_destr_metam, OUT["Dens_destr_metam"])
+        self._download_2d(self.Dens_overb_pres, OUT["Dens_overb_pres"])
+        self._download_2d(self.Dens_drift, OUT["Dens_drift"])
         self._download_2d(self.kk, OUT["subK"])
         self._download_2d(self.c_eff, OUT["subCeff"])
-        OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
 
 
 # ---------------------------------------------------------------------------
@@ -904,6 +916,12 @@ class SnowDeviceState:
 # ---------------------------------------------------------------------------
 
 _device_state = None
+
+
+def flush_device_diagnostics(OUT):
+    """Flush the device-resident diagnostics into OUT, if a GPU state exists."""
+    if _device_state is not None:
+        _device_state.download_diagnostics(OUT)
 
 
 def get_device_state(
