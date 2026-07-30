@@ -883,10 +883,12 @@ class SnowDeviceState:
         OUT["irrw"] = self.irrw.copy_to_host()
         OUT["refr"] = OUT["refr_P"] + OUT["refr_S"] + OUT["refr_I"]
 
-        # subK / subCeff stay on the device: they are allocated in INIT but
-        # never read anywhere else in EBFM, and they are not part of
-        # --dump-reference, so copying them back is 2 full grids per timestep
-        # of pure waste. cpi is likewise a diagnostic nothing consumes.
+        # subK / subCeff are the post-compaction conductivity and heat capacity
+        # from the prep kernel, matching the values the NumPy path stores before
+        # the heat solve. Copied back so the GPU path leaves the same diagnostics
+        # in OUT as the NumPy and Numba paths.
+        self._download_2d(self.kk, OUT["subK"])
+        self._download_2d(self.c_eff, OUT["subCeff"])
         OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
 
 
