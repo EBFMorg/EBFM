@@ -31,6 +31,35 @@ _SUCCESS = True
 logger = logging.getLogger(__name__)
 
 
+def flush_gpu_diagnostics(OUT):
+    """
+    Copy device-resident diagnostics back into OUT.
+
+    On the GPU backend these fields stay on the device during the time loop,
+    because no host code reads them there:
+
+        subTmean, Dens_destr_metam, Dens_overb_pres, Dens_drift, subK, subCeff
+
+    Call this before the values are actually used: creating a restart file or
+    dumping a reference snapshot. No-op for the NumPy and Numba backends.
+
+    NOTE: if new code starts reading any of the fields listed above, it must
+    call this first, otherwise it will see stale values on the GPU backend.
+    Do not call it once per timestep (e.g. next to LOOP_write_to_file, which
+    does not read these fields) -- that would copy six full grids per step and
+    defeat the purpose.
+
+    Parameters:
+        OUT (dict): Output variables to update in place.
+    """
+    if get_backend() != ComputeBackend.GPU:
+        return
+
+    from .LOOP_SNOW_gpu_kernels import flush_device_diagnostics
+
+    flush_device_diagnostics(OUT)
+
+
 def main(C, OUT, IN, dt, grid, phys):
     """
     Implementation of the multi-layer snow and firn model
