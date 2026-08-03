@@ -52,7 +52,13 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
         LWin = LOOP_EBM_LWin.main(C, IN)
 
     SWout, OUT = LOOP_EBM_SWout.main(C, time2, OUT, SWin)
-    GHF_k = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2
+    # Only the top two layers enter GHF_C, and LOOP_EBM_GHF ignores GHF_k
+    # entirely, so the effective conductivity is evaluated on those two layers
+    # instead of the whole subsurface grid. Same values, and it lets the GPU
+    # backend keep subD resident on the device: LOOP_SNOW copies back only the
+    # layers read here (see LOOP_SNOW.sync_gpu_state).
+    subD_top = OUT["subD"][:, :2]
+    GHF_k = 0.138 - 1.01e-3 * subD_top + 3.233e-6 * subD_top**2
     GHF_C = (GHF_k[:, 0] * OUT["subZ"][:, 0] + 0.5 * GHF_k[:, 1] * OUT["subZ"][:, 1]) / (
         OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1]
     ) ** 2

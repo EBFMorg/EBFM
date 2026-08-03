@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# develop
+
+* `LOOP_EBM` evaluates the GHF conductivity on the top two subsurface layers instead of the whole grid (only those enter `GHF_C`), and `LOOP_write_to_file` reads `sample`-type variables only on the timesteps that record one. Both are bit-identical for every backend.
+
 # v0.7.0
 
 * Moved performance and profiling sections out of `README.md` into `docs/Performance.md`, together with the GPU setup and CUDA runtime troubleshooting entry. https://github.com/EBFMorg/EBFM/pull/161

@@ -9,6 +9,16 @@ from netCDF4 import Dataset, date2num
 from .LOOP_general_functions import is_first_time_step, is_final_time_step
 
 
+def is_sample_step(io, t) -> bool:
+    """Return True on the timesteps where "sample"-type variables are recorded.
+
+    Exposed so callers can prepare state that is only needed then -- on the GPU
+    backend main() uses it to decide when the device-resident subsurface grids
+    have to be copied back (LOOP_SNOW.sync_gpu_state).
+    """
+    return (t + 1 + io["freqout"] // 2) % io["freqout"] == 0
+
+
 def main(OUTFILE, io, OUT, grid, t, time):
     # Specify variables to be written
     if is_first_time_step(t):
@@ -56,21 +66,23 @@ def main(OUTFILE, io, OUT, grid, t, time):
         varname, var_type = entry[0], entry[2]
         # "shade" is written as a fraction but sourced from the boolean OUT["is_shaded"]
         source_key = "is_shaded" if varname == "shade" else varname
-        temp_long = np.float64(OUT[source_key])
 
-        # Initialize TEMP storage
+        # Initialize TEMP storage (shape only, so no value is read here)
         if t % io["freqout"] == 0:
             OUTFILE.setdefault("TEMP", {})
-            OUTFILE["TEMP"][varname] = np.zeros_like(temp_long)
+            OUTFILE["TEMP"][varname] = np.zeros(np.shape(OUT[source_key]), dtype=np.float64)
 
-        # Handle type: sample, mean, or sum
+        # Handle type: sample, mean, or sum.
+        # "sample" variables -- which include the full subsurface grids -- are
+        # read only on the step they are recorded on, instead of being copied
+        # every timestep and thrown away.
         if var_type == "sample":
-            if (t + 1 + io["freqout"] // 2) % io["freqout"] == 0:  # TODO: correct?
-                OUTFILE["TEMP"][varname] = temp_long
+            if is_sample_step(io, t):  # TODO: correct?
+                OUTFILE["TEMP"][varname] = np.float64(OUT[source_key])
         elif var_type == "mean":
-            OUTFILE["TEMP"][varname] += temp_long / io["freqout"]
+            OUTFILE["TEMP"][varname] += np.float64(OUT[source_key]) / io["freqout"]
         elif var_type == "sum":
-            OUTFILE["TEMP"][varname] += temp_long
+            OUTFILE["TEMP"][varname] += np.float64(OUT[source_key])
 
     def save_binary_files():
         """
