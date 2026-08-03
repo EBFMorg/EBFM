@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* `--with-gpu` now runs all of `LOOP_SNOW` on the device: `snowfall_and_deposition`, `melt_sublimation` and `layer_merging_and_splitting` have CUDA kernels too, so the subsurface state (`subT`, `subD`, `subZ`, `subW`, `subS`, `subTmean`, `surfH`) is uploaded once per run and stays resident across timesteps instead of round-tripping twice per timestep. Per-step transfers are now the `(gpsum,)` forcing and result vectors plus the few layers host code reads in between; the full grids move only for a netCDF sample, the restart file and `--dump-reference`. `LOOP_SNOW.sync_gpu_state()` copies them back on demand and replaces `flush_gpu_diagnostics()`.
 * `LOOP_EBM` evaluates the GHF conductivity on the top two subsurface layers instead of the whole grid (only those enter `GHF_C`), and `LOOP_write_to_file` reads `sample`-type variables only on the timesteps that record one. Both are bit-identical for every backend.
 
 # v0.7.0

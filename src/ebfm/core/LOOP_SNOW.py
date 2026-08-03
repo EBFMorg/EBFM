@@ -35,23 +35,29 @@ _MIN_LAYER_THICKNESS = 1e-17
 logger = logging.getLogger(__name__)
 
 
-def flush_gpu_diagnostics(OUT):
+def sync_gpu_state(OUT):
     """
-    Copy device-resident diagnostics back into OUT.
+    Copy the device-resident subsurface state back into OUT.
 
-    On the GPU backend these fields stay on the device during the time loop,
-    because no host code reads them there:
+    On the GPU backend LOOP_SNOW runs entirely on the device and the state
+    stays there across timesteps, so between two LOOP_SNOW calls these OUT
+    entries are stale:
 
-        subTmean, Dens_destr_metam, Dens_overb_pres, Dens_drift, subK, subCeff
+        subT, subD, subZ, subW, subS   (except the layers listed below)
+        subTmean, subK, subCeff
+        Dens_destr_metam, Dens_overb_pres, Dens_drift
+        sumWinit, Dfreshsnow, Dfreshsnow_T, Dfreshsnow_W, cpi
 
-    Call this before the values are actually used: creating a restart file or
-    dumping a reference snapshot. No-op for the NumPy and Numba backends.
+    What *is* kept current every timestep is only what host code reads before
+    the next LOOP_SNOW call: subD[:, :2], subZ[:, :2], subT[:, 1], T_ice,
+    surfH, all_ice_column and the (gpsum,) runoff / refreezing vectors.
 
-    NOTE: if new code starts reading any of the fields listed above, it must
-    call this first, otherwise it will see stale values on the GPU backend.
-    Do not call it once per timestep (e.g. next to LOOP_write_to_file, which
-    does not read these fields) -- that would copy six full grids per step and
-    defeat the purpose.
+    Call this before any full-grid read -- writing a netCDF sample, creating a
+    restart file, dumping a reference snapshot. No-op for the NumPy and Numba
+    backends.
+
+    NOTE: this copies eleven full grids, so do not call it unconditionally once
+    per timestep -- that would undo the residency it exists to support.
 
     Parameters:
         OUT (dict): Output variables to update in place.
@@ -59,9 +65,9 @@ def flush_gpu_diagnostics(OUT):
     if get_backend() != ComputeBackend.GPU:
         return
 
-    from .LOOP_SNOW_gpu_kernels import flush_device_diagnostics
+    from .LOOP_SNOW_gpu_kernels import sync_device_state
 
-    flush_device_diagnostics(OUT)
+    sync_device_state(OUT)
 
 
 def main(C, OUT, IN, dt: float, grid, phys):
@@ -92,8 +98,15 @@ def main(C, OUT, IN, dt: float, grid, phys):
 
     logger.debug("Starting LOOP_SNOW...")
 
+    def _compaction_mode():
+        """Numeric snow_compaction selector shared by the Numba and GPU kernels."""
+        mode = {"firn_only": 0, "firn+snow": 1}.get(phys["snow_compaction"], -1)
+        if mode < 0:
+            raise ValueError(f"unknown snow_compaction={phys['snow_compaction']!r}")
+        return mode
+
     @profile
-    def snowfall_and_deposition():
+    def snowfall_and_deposition(gpu=None):
         """
         Calculate snowfall and deposition and shift vertical grid accordingly
         """
@@ -101,6 +114,13 @@ def main(C, OUT, IN, dt: float, grid, phys):
         max_subZ = grid["max_subZ"]
         gpsum = grid["gpsum"]
         nl = grid["nl"]
+
+        if gpu is not None:
+            # GPU: fresh-snow density and the grid shift run on the resident
+            # device arrays; the shift loop is driven from here via a 4-byte
+            # device flag (see SnowDeviceState.snowfall_and_deposition).
+            gpu.snowfall_and_deposition(C, grid, _compaction_mode())
+            return _SUCCESS
 
         # Fresh snow density calculations
         if phys["snow_compaction"] == "firn+snow":
@@ -197,10 +217,20 @@ def main(C, OUT, IN, dt: float, grid, phys):
         return _SUCCESS
 
     @profile
-    def melt_sublimation():
+    def melt_sublimation(gpu=None):
         """
         Calculate melt and sublimation and shift vertical grid accordingly
         """
+
+        if gpu is not None:
+            # GPU: mass removal and the grid shift run on the resident device
+            # arrays; sumWinit is produced there for compaction to consume.
+            if grid["doubledepth"] == 1:
+                bottom_thickness = 2.0 ** len(grid["split"]) * grid["max_subZ"]
+            else:
+                bottom_thickness = grid["max_subZ"]
+            gpu.melt_sublimation(bottom_thickness)
+            return _SUCCESS
 
         # Initialize variables
         OUT["sumWinit"] = np.sum(OUT["subW"], axis=1)
@@ -317,9 +347,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
         # Numba / GPU kernel path:
         backend = get_backend()
         if backend in (ComputeBackend.NUMBA, ComputeBackend.GPU):
-            _mode = {"firn_only": 0, "firn+snow": 1}.get(phys["snow_compaction"], -1)
-            if _mode < 0:
-                raise ValueError(f"_compaction_kernel: unknown snow_compaction={phys['snow_compaction']!r}")
+            _mode = _compaction_mode()
             _tau_drift = 48 * 2 * SECONDS_PER_HOUR
             if gpu is not None:
                 # GPU: kernel launched on the resident device arrays. The
@@ -910,7 +938,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
         return _SUCCESS
 
     @profile
-    def layer_merging_and_splitting():
+    def layer_merging_and_splitting(gpu=None):
         """
         Layer merging and splitting
         """
@@ -922,6 +950,12 @@ def main(C, OUT, IN, dt: float, grid, phys):
         mask1 = grid["mask"] == 1
         nsplit = len(grid["split"])
         top_thickness = (2.0**nsplit) * max_subZ
+
+        if gpu is not None:
+            # GPU: one thread per column walks the split levels itself, so the
+            # np.flatnonzero index sets and the five row snapshots disappear.
+            gpu.layer_merging_and_splitting(max_subZ, top_thickness)
+            return _SUCCESS
 
         for n in range(nsplit):  # Iterate through split points
             split = grid["split"][n]
@@ -1033,40 +1067,35 @@ def main(C, OUT, IN, dt: float, grid, phys):
 
         return _SUCCESS
 
-    snowfall_and_deposition()
-    melt_sublimation()
     if get_backend() == ComputeBackend.GPU:
-        # Resident-state core: subT/subD/subZ/subW/subS stay on the device
-        # across compaction -> heat conduction -> percolation. The subsurface
-        # state is uploaded once here and downloaded once after percolation,
-        # instead of round-tripping in each sub-step.
+        # Fully resident core: subT/subD/subZ/subW/subS/subTmean/surfH live on
+        # the device for the whole run. Every compute sub-step below dispatches
+        # its kernel launches to the device state, so nothing round-trips
+        # between sub-steps and nothing is re-uploaded between timesteps. Each
+        # function keeps its usual host-side glue, so results match the
+        # NumPy/Numba paths.
         # Imported here so only GPU runs pull in numba.cuda.
-        # The device buffers are allocated once per run and reused; only this
-        # timestep's values are uploaded.
         from .LOOP_SNOW_gpu_kernels import get_device_state
 
-        gpu_state = get_device_state(
-            OUT["subT"],
-            OUT["subD"],
-            OUT["subZ"],
-            OUT["subW"],
-            OUT["subS"],
-            OUT["subTmean"],
-            OUT["surfH"],
-            IN["logyearsnow"],
-            IN["yearsnow"],
-            IN["WS"],
-            OUT["Tsurf"],
-            OUT["sumWinit"],
-        )
+        gpu_state = get_device_state(OUT, IN, grid)
+        snowfall_and_deposition(gpu_state)
+        melt_sublimation(gpu_state)
         compaction(gpu_state)
         heat_conduction(gpu_state)
         percolation_refreezing_and_storage(gpu_state)
-        gpu_state.download(OUT)
-    else:
-        compaction()
-        heat_conduction()
-        percolation_refreezing_and_storage()
+        layer_merging_and_splitting(gpu_state)
+        # Only the (gpsum,) vectors and the few layers the host reads before
+        # the next LOOP_SNOW call come back; see download_boundary(). It also
+        # sets OUT["T_ice"] straight from the deepest device layer.
+        gpu_state.download_boundary(OUT, C["Dice"])
+        runoff()
+        return OUT
+
+    snowfall_and_deposition()
+    melt_sublimation()
+    compaction()
+    heat_conduction()
+    percolation_refreezing_and_storage()
     layer_merging_and_splitting()
     runoff()
     OUT["T_ice"] = OUT["subT"][:, -1]
