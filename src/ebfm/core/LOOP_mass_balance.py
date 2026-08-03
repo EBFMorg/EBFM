@@ -39,6 +39,12 @@ def main(OUT, IN, C):
 
     # Snow mass
     OUT["snowmass"] = np.maximum(OUT["snowmass"] + OUT["smb"], 0)
-    OUT["snowmass"][np.all(OUT["subD"] >= C["Dice"], axis=1)] = 0
+    # On the GPU backend subD stays resident on the device across timesteps, so
+    # LOOP_SNOW hands the column-wise reduction over ready-made rather than
+    # having the host pull the whole density grid back for it.
+    all_ice = OUT.get("all_ice_column")
+    if all_ice is None:
+        all_ice = np.all(OUT["subD"] >= C["Dice"], axis=1)
+    OUT["snowmass"][all_ice] = 0
 
     return OUT
