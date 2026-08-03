@@ -134,8 +134,7 @@ class IconAtmo(Component):
         if pr is not None:
             received_data["pr"] = pr
 
-        # TODO: check what units are needed for pr_snow in EBFM
-        pr_snow = self._get_if_coupled("pr_snow", fallback_values=fallback_values)
+        pr_snow = self._get_if_coupled("pr_snow", transform=self._map_pr_to_ebfm, fallback_values=fallback_values)
         if pr_snow is not None:
             received_data["pr_snow"] = pr_snow
 

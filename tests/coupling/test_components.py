@@ -91,7 +91,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         self.assertIsNotNone(data_from_icon)
         expected_pr = icon_atmo._map_pr_to_ebfm(np.full(self.grid_dict["x"].shape, pr_fake_field.value))
         self.assertTrue(np.array_equal(data_from_icon["pr"], expected_pr))
-        expected_pr_snow = np.full(self.grid_dict["x"].shape, pr_snow_fake_field.value)
+        expected_pr_snow = icon_atmo._map_pr_to_ebfm(np.full(self.grid_dict["x"].shape, pr_snow_fake_field.value))
         self.assertTrue(np.array_equal(data_from_icon["pr_snow"], expected_pr_snow))
 
     def test_fallback_values(self):
