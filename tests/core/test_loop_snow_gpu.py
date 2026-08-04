@@ -94,7 +94,11 @@ def _make_case(gpsum=48, nl=50, seed=7):
     OUT["moist_condensation"] = rng.uniform(0.0, 1e-4, gpsum)
     OUT["moist_evaporation"] = rng.uniform(0.0, 1e-4, gpsum)
     OUT["runoff_irr_deep_mean"] = rng.uniform(0.0, 1.0, gpsum)
-    OUT["sumWinit"] = np.zeros(gpsum)
+    # Deliberately NOT seeded here: "sumWinit", "cpi", "Dens_*" and "runoff_irr"
+    # are not created by INIT either -- LOOP_SNOW produces them. Seeding them
+    # would hide a backend that only ever writes *into* an existing host array,
+    # which is how the GPU path once failed with KeyError on the first
+    # sync_gpu_state() of a real run.
 
     IN = {}
     IN["T"] = C["T0"] - rng.uniform(-5.0, 25.0, gpsum)

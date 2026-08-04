@@ -1470,7 +1470,12 @@ class SnowDeviceState:
                 OUT[key] = host
             self._download_2d(src, host)
 
-        self.sumWinit.copy_to_host(OUT["sumWinit"])
+        # Assign, do not copy into an existing array: on the GPU path nothing
+        # creates OUT["sumWinit"] beforehand. INIT does not allocate it and the
+        # NumPy melt_sublimation that would have is exactly what the device
+        # kernel replaced, so copy_to_host(OUT["sumWinit"]) raised KeyError on
+        # the first sync of every real run.
+        OUT["sumWinit"] = self.sumWinit.copy_to_host()
         OUT["Dfreshsnow"] = self.Dfreshsnow.copy_to_host()
         OUT["Dfreshsnow_T"] = self.Dfreshsnow_T.copy_to_host()
         OUT["Dfreshsnow_W"] = self.Dfreshsnow_W.copy_to_host()
