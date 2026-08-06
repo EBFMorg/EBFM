@@ -170,6 +170,7 @@ def _main_impl():
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, init_with_restart_file=args.restart_init)
 
+    # TODO: move up because the yac_init introduces a barrier for all other components
     coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
     coupler = coupler_cls(coupling_config=coupling_config)
 
