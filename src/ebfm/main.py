@@ -115,6 +115,9 @@ def _main_impl():
     else:
         ebfm_comm = ebfm.core.comm.defaultComm
 
+    coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
+    coupler = coupler_cls(coupling_config=coupling_config)
+
     # Reconfigure logging for (now available) EBFM communicator.
     setup_logging(
         stdout_log_level=log_levels_map[args.log_level_console],
@@ -169,9 +172,6 @@ def _main_impl():
     grid = INIT.init_grid(grid, io, grid_config)
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, init_with_restart_file=args.restart_init)
-
-    coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
-    coupler = coupler_cls(coupling_config=coupling_config)
 
     coupler.setup(grid, time_config)
 

@@ -9,6 +9,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * Fixed bug in icon_to_atmo.py to convert pr_snow units to mwe per timestep (rather than using kg m-2 s-1). https://github.com/EBFMorg/EBFM/pull/149
 * Add general interface for definition of fallback values if a coupled component does not provide expected data for individual fields. https://github.com/EBFMorg/EBFM/pull/146.
     * The following fields expected from the component "icon_atmo" will use fallback value if they are missing: "rlds", "clt", "sfcwind", "huss", and "sfcpres"
+* Shift coupler init to beginning of execution to reduce wait time for other components. https://github.com/EBFMorg/EBFM/pull/151
 
 # v0.6.1
 
