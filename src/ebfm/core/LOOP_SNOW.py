@@ -493,7 +493,8 @@ def main(C, OUT, IN, dt: float, grid, phys):
 
                 # Integer indices of still-active columns
                 idx = np.flatnonzero(dt_local > 0)
-                assert idx.size > 0, "no cells left where local time stepping has to be performed. Unexpected here."
+                # See https://github.com/EBFMorg/EBFM/pull/154
+                # assert idx.size > 0, "no cells left where local time stepping has to be performed. Unexpected!"
 
                 kdTdz[idx, 1] = kk_sz_top[idx] * (T_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
                 kdTdz[idx, 2:] = kk_sz_interior[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
