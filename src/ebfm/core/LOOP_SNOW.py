@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .compute_backend import get_backend, ComputeBackend
 from .constants import SECONDS_PER_HOUR
@@ -23,6 +24,10 @@ except NameError:
 from ebfm.core import logging
 
 _SUCCESS = True
+
+# Layer thicknesses (m) below this count as zero, i.e. the layer is melted away.
+# Adapted from initial commit 42c0113
+_MIN_LAYER_THICKNESS = 1e-17
 
 logger = logging.getLogger(__name__)
 
@@ -83,61 +88,68 @@ def main(C, OUT, IN, dt, grid, phys):
 
         # Main processing loop: Run until all shifts are handled
         while np.any(shift_tot > 0):
-            shift = np.minimum(shift_tot, max_subZ)
-            shift_tot -= shift
+            # Fresh snow thickness (m) deposited in this pass, at most one full layer
+            shift_amount = np.minimum(shift_tot, max_subZ)
+            shift_tot -= shift_amount
 
             # No-shift branch only touches top layer, only column 0 copied (instead of whole grid).
-            subZ0_old = OUT["subZ"][:, 0].copy()
-            subT0_old = OUT["subT"][:, 0].copy()
-            subD0_old = OUT["subD"][:, 0].copy()
+            subZ_top_old = OUT["subZ"][:, 0].copy()
+            subT_top_old = OUT["subT"][:, 0].copy()
+            subD_top_old = OUT["subD"][:, 0].copy()
 
-            # Precompute conditions for better performance
-            is_noshift = subZ0_old + shift <= max_subZ
-            is_shift = ~is_noshift
+            # A "grid shift" moves the layer indices: an overfull top layer becomes
+            # layer 1, deeper layers move down, the overflow starts a new top layer.
+            no_grid_shift: NDArray[np.bool_] = subZ_top_old + shift_amount <= max_subZ
+            needs_grid_shift: NDArray[np.bool_] = ~no_grid_shift
+            # Index into the grid with indices, not with the masks, reason: NumPy
+            # re-scans the full mask on every indexing operation, flatnonzero pays that
+            # scan once and each later access then costs only the affected rows.
+            idx_noshift: NDArray[np.intp] = np.flatnonzero(no_grid_shift)
+            idx_shift: NDArray[np.intp] = np.flatnonzero(needs_grid_shift)
 
             # Handle no-shift updates (vectorized)
-            OUT["subZ"][is_noshift, 0] += shift[is_noshift]
-            z0_new = OUT["subZ"][is_noshift, 0]
-            OUT["subT"][is_noshift, 0] = (
-                subT0_old[is_noshift] * subZ0_old[is_noshift] / z0_new
-                + OUT["Tsurf"][is_noshift] * shift[is_noshift] / z0_new
+            OUT["subZ"][idx_noshift, 0] += shift_amount[idx_noshift]
+            subZ_top_new = OUT["subZ"][idx_noshift, 0]
+            OUT["subT"][idx_noshift, 0] = (
+                subT_top_old[idx_noshift] * subZ_top_old[idx_noshift] / subZ_top_new
+                + OUT["Tsurf"][idx_noshift] * shift_amount[idx_noshift] / subZ_top_new
             )
-            OUT["subD"][is_noshift, 0] = (
-                subD0_old[is_noshift] * subZ0_old[is_noshift] / z0_new
-                + OUT["Dfreshsnow"][is_noshift] * shift[is_noshift] / z0_new
+            OUT["subD"][idx_noshift, 0] = (
+                subD_top_old[idx_noshift] * subZ_top_old[idx_noshift] / subZ_top_new
+                + OUT["Dfreshsnow"][idx_noshift] * shift_amount[idx_noshift] / subZ_top_new
             )
 
             # Handle shifting updates (vectorized). Shift branch needs full
             # rows, so copy only the (usually few) overflowing columns.
-            if np.any(is_shift):
-                idx = np.flatnonzero(is_shift)
-                subZ_old = OUT["subZ"][idx]
-                subT_old = OUT["subT"][idx]
-                subD_old = OUT["subD"][idx]
-                subW_old = OUT["subW"][idx]
+            if idx_shift.size:
+                subZ_old = OUT["subZ"][idx_shift]
+                subT_old = OUT["subT"][idx_shift]
+                subD_old = OUT["subD"][idx_shift]
+                subW_old = OUT["subW"][idx_shift]
 
-                OUT["subZ"][idx, 2 : nl - 1] = subZ_old[:, 1 : nl - 2]
-                OUT["subT"][idx, 2 : nl - 1] = subT_old[:, 1 : nl - 2]
-                OUT["subD"][idx, 2 : nl - 1] = subD_old[:, 1 : nl - 2]
-                OUT["subW"][idx, 2 : nl - 1] = subW_old[:, 1 : nl - 2]
+                OUT["subZ"][idx_shift, 2 : nl - 1] = subZ_old[:, 1 : nl - 2]
+                OUT["subT"][idx_shift, 2 : nl - 1] = subT_old[:, 1 : nl - 2]
+                OUT["subD"][idx_shift, 2 : nl - 1] = subD_old[:, 1 : nl - 2]
+                OUT["subW"][idx_shift, 2 : nl - 1] = subW_old[:, 1 : nl - 2]
 
-                OUT["subZ"][idx, 1] = max_subZ
-                OUT["subZ"][idx, 0] = (subZ_old[:, 0] + shift[idx]) - max_subZ
-                OUT["subT"][idx, 1] = (
-                    subT_old[:, 0] * subZ_old[:, 0] / OUT["subZ"][idx, 1]
-                    + OUT["Tsurf"][idx] * (OUT["subZ"][idx, 1] - subZ_old[:, 0]) / OUT["subZ"][idx, 1]
+                OUT["subZ"][idx_shift, 1] = max_subZ
+                OUT["subZ"][idx_shift, 0] = (subZ_old[:, 0] + shift_amount[idx_shift]) - max_subZ
+                subZ_layer1_new = OUT["subZ"][idx_shift, 1]
+                OUT["subT"][idx_shift, 1] = (
+                    subT_old[:, 0] * subZ_old[:, 0] / subZ_layer1_new
+                    + OUT["Tsurf"][idx_shift] * (subZ_layer1_new - subZ_old[:, 0]) / subZ_layer1_new
                 )
-                OUT["subT"][idx, 0] = OUT["Tsurf"][idx]
-                OUT["subD"][idx, 1] = (
-                    subD_old[:, 0] * subZ_old[:, 0] / OUT["subZ"][idx, 1]
-                    + OUT["Dfreshsnow"][idx] * (OUT["subZ"][idx, 1] - subZ_old[:, 0]) / OUT["subZ"][idx, 1]
+                OUT["subT"][idx_shift, 0] = OUT["Tsurf"][idx_shift]
+                OUT["subD"][idx_shift, 1] = (
+                    subD_old[:, 0] * subZ_old[:, 0] / subZ_layer1_new
+                    + OUT["Dfreshsnow"][idx_shift] * (subZ_layer1_new - subZ_old[:, 0]) / subZ_layer1_new
                 )
-                OUT["subD"][idx, 0] = OUT["Dfreshsnow"][idx]
-                OUT["subW"][idx, 1] = subW_old[:, 0]
-                OUT["subW"][idx, 0] = 0.0
+                OUT["subD"][idx_shift, 0] = OUT["Dfreshsnow"][idx_shift]
+                OUT["subW"][idx_shift, 1] = subW_old[:, 0]
+                OUT["subW"][idx_shift, 0] = 0.0
 
                 # Update runoff for shifted layers
-                OUT["runoff_irr_deep"][idx] += subW_old[:, nl - 1]
+                OUT["runoff_irr_deep"][idx_shift] += subW_old[:, nl - 1]
 
         return _SUCCESS
 
@@ -171,29 +183,35 @@ def main(C, OUT, IN, dt, grid, phys):
 
         # While there are shifts required
         while np.any(shift_tot < 0):
-            shift = np.maximum(shift_tot, -OUT["subZ"][:, 1])
-            shift_tot -= shift
+            # Thickness (m, negative) removed in this pass, at most the top two layers
+            shift_amount = np.maximum(shift_tot, -OUT["subZ"][:, 1])
+            shift_tot -= shift_amount
 
-            OUT["surfH"] += shift
+            OUT["surfH"] += shift_amount
 
             nl = grid["nl"]
 
             # No-shift branch only touches top layer, only column 0 copied (instead of whole grid).
-            subZ0_old = OUT["subZ"][:, 0].copy()
-            subT0_old = OUT["subT"][:, 0].copy()
-            subD0_old = OUT["subD"][:, 0].copy()
-            subW0_old = OUT["subW"][:, 0].copy()
+            subZ_top_old = OUT["subZ"][:, 0].copy()
+            subT_top_old = OUT["subT"][:, 0].copy()
+            subD_top_old = OUT["subD"][:, 0].copy()
+            subW_top_old = OUT["subW"][:, 0].copy()
 
-            noshift = subZ0_old + shift > 1e-17
-            idx_shift = np.flatnonzero(~noshift)
+            # A "grid shift" moves the layer indices: a fully melted top layer is
+            # dropped, layer 1 becomes the new top layer, deeper layers move up.
+            # See snowfall_and_deposition() for explanation of the indexing strategy.
+            no_grid_shift: NDArray[np.bool_] = subZ_top_old + shift_amount > _MIN_LAYER_THICKNESS
+            needs_grid_shift: NDArray[np.bool_] = ~no_grid_shift
+            idx_noshift: NDArray[np.intp] = np.flatnonzero(no_grid_shift)
+            idx_shift: NDArray[np.intp] = np.flatnonzero(needs_grid_shift)
 
             # Handle the no-shift case
-            z0_new = subZ0_old[noshift] + shift[noshift]
-            OUT["subZ"][noshift, 0] = z0_new
-            OUT["subT"][noshift, 0] = subT0_old[noshift]
-            OUT["subD"][noshift, 0] = subD0_old[noshift]
-            temp = z0_new / subZ0_old[noshift]
-            OUT["subW"][noshift, 0] = subW0_old[noshift] * temp
+            subZ_top_new = subZ_top_old[idx_noshift] + shift_amount[idx_noshift]
+            OUT["subZ"][idx_noshift, 0] = subZ_top_new
+            OUT["subT"][idx_noshift, 0] = subT_top_old[idx_noshift]
+            OUT["subD"][idx_noshift, 0] = subD_top_old[idx_noshift]
+            # Liquid water scales with the remaining fraction of the top layer
+            OUT["subW"][idx_noshift, 0] = subW_top_old[idx_noshift] * (subZ_top_new / subZ_top_old[idx_noshift])
 
             # Handle the shift case: copy only the shift rows.
             if idx_shift.size:
@@ -207,11 +225,12 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subD"][idx_shift, 1 : nl - 2] = subD_old[:, 2 : nl - 1]
                 OUT["subW"][idx_shift, 1 : nl - 2] = subW_old[:, 2 : nl - 1]
 
-                OUT["subZ"][idx_shift, 0] = subZ_old[:, 0] + subZ_old[:, 1] + shift[idx_shift]
+                subZ_top_new = subZ_old[:, 0] + subZ_old[:, 1] + shift_amount[idx_shift]
+                OUT["subZ"][idx_shift, 0] = subZ_top_new
                 OUT["subT"][idx_shift, 0] = subT_old[:, 1]
                 OUT["subD"][idx_shift, 0] = subD_old[:, 1]
-                temp = OUT["subZ"][idx_shift, 0] / subZ_old[:, 1]
-                OUT["subW"][idx_shift, 0] = subW_old[:, 1] * temp
+                # Liquid water scales with the remaining fraction of the former layer 1
+                OUT["subW"][idx_shift, 0] = subW_old[:, 1] * (subZ_top_new / subZ_old[:, 1])
                 OUT["subT"][idx_shift, nl - 1] = subT_old[:, nl - 1]
                 OUT["subW"][idx_shift, nl - 1] = 0.0
 
@@ -290,7 +309,6 @@ def main(C, OUT, IN, dt, grid, phys):
             # NumPy path
             subD_old = OUT["subD"].copy()
             subZ_old = OUT["subZ"].copy()
-            mliqmax = np.zeros((gpsum, nl))
             # ------ FIRN COMPACTION ------ #
             if phys["snow_compaction"] in ["firn_only", "firn+snow"]:
                 # Pre-compute the logical condition based on the snow compaction type
@@ -402,7 +420,9 @@ def main(C, OUT, IN, dt, grid, phys):
             # Update layer thickness
             OUT["subZ"][cond_layers] = subZ_old[cond_layers] * subD_old[cond_layers] / OUT["subD"][cond_layers]
 
-            # Update irreducible water storage
+            # Update irreducible water storage: `mliqmax` is the maximum liquid water
+            # (kg m-2) a layer holds against gravity; ice layers keep 0.0 and drain fully
+            mliqmax = np.zeros((gpsum, nl))
             exp_factor = 0.0143 * np.exp(3.3 * (Dice - OUT["subD"][cond_layers]) / Dice)
             mliqmax[cond_layers] = (
                 OUT["subD"][cond_layers]
