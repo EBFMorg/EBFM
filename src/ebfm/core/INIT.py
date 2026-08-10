@@ -562,7 +562,7 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
                 # arrays into the simulation state is unsafe: numpy's masked-array
                 # ufuncs silently ignore `where=` when combining masks (only the
                 # data respects `where`), so masks can leak into cells they
-                # shouldn't and snowball across timesteps. Verify the assumption
+                # should not and snowball across timesteps. Verify the assumption
                 # holds, then drop down to a plain ndarray.
                 assert not np.ma.is_masked(var_data), (
                     f"Restart variable '{var_name}' in {io['bootfilein']} contains missing values, "
