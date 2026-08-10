@@ -481,8 +481,7 @@ def main(C, OUT, IN, dt, grid, phys):
                 # Integer indices of still-active grid points; early exit when all are done
                 # Replaces cond_dt mask
                 idx = np.flatnonzero(dt_temp > 0)
-                if idx.size == 0:
-                    break
+                assert idx.size > 0, "no cells left where local time stepping has to be performed. Unexpected!"
                 # Calculate vertical heat fluxes
                 kdTdz[idx, 1] = kk_sz_top[idx] * (T_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
                 kdTdz[idx, 2:] = kk_sz_interior[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
