@@ -554,8 +554,22 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
         with Dataset(io["bootfilein"], "r") as ncfile:
             # Iterate through all variables in the file
             for var_name in ncfile.variables:
-                # Read the variable data
+                # Read the variable data. netCDF4 returns a numpy.ma.MaskedArray
+                # here whenever the variable defines a fill value, regardless of
+                # whether any missing values are actually present.
                 var_data = ncfile.variables[var_name][:]
+                # Restart files are expected to be fully populated. Mixing masked
+                # arrays into the simulation state is unsafe: numpy's masked-array
+                # ufuncs silently ignore `where=` when combining masks (only the
+                # data respects `where`), so masks can leak into cells they
+                # shouldn't and snowball across timesteps. Verify the assumption
+                # holds, then drop down to a plain ndarray.
+                assert not np.ma.is_masked(var_data), (
+                    f"Restart variable '{var_name}' in {io['bootfilein']} contains missing values, "
+                    "which is not supported."
+                )
+                if isinstance(var_data, np.ma.MaskedArray):
+                    var_data = var_data.data
                 # If a variable has no dimensions (scalar), convert it to a Python scalar
                 if var_data.shape == ():  # Scalar variable
                     var_data = var_data.item()
