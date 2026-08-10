@@ -442,7 +442,7 @@ This project uses [REUSE](https://reuse.software/) to track information regardin
 
 You can use pre-commit to automatically check if all files in the repository provide the necessary information:
 
-```
+```sh
 pre-commit run reuse --all-files
 ```
 
