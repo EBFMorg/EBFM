@@ -59,7 +59,7 @@ class TestInitFromRestartFile(unittest.TestCase):
     Mixing masked arrays into the simulation state made numpy's masked-array
     ufuncs silently ignore `where=` when combining masks in LOOP_SNOW's
     compaction() step, so masks from expected divide-by-zero results leaked
-    into cells they shouldn't and snowballed across timesteps, eventually
+    into cells they should not and snowballed across timesteps, eventually
     making `dt_stab` fully masked and tripping
     `assert (dt_stab > 0).all()` even though no real value was <= 0.
 
