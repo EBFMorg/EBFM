@@ -427,6 +427,7 @@ def main(C, OUT, IN, dt, grid, phys):
             / np.max(kk[:, 1:], axis=1)
             / C["dayseconds"]
         )
+        assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
 
         # subZ and c_eff do not change
         # Precompute kk*subZ products once
