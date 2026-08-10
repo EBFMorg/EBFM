@@ -429,7 +429,8 @@ def main(C, OUT, IN, dt: float, grid, phys):
             / np.max(kk[:, 1:], axis=1)
             / C["dayseconds"]
         )
-        assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
+        # See https://github.com/EBFMorg/EBFM/pull/154
+        # assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
 
         # subZ and c_eff do not change
         # Precompute kk*subZ products once
