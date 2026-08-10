@@ -429,8 +429,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
             / np.max(kk[:, 1:], axis=1)
             / C["dayseconds"]
         )
-        # See https://github.com/EBFMorg/EBFM/pull/154
-        # assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
+        assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
 
         # subZ and c_eff do not change
         # Precompute kk*subZ products once
@@ -493,9 +492,8 @@ def main(C, OUT, IN, dt: float, grid, phys):
 
                 # Integer indices of still-active columns
                 idx = np.flatnonzero(dt_local > 0)
-                # See https://github.com/EBFMorg/EBFM/pull/154
-                # assert idx.size > 0, "no cells left where local time stepping has to be performed. Unexpected!"
-
+                assert idx.size > 0, "no cells left where local time stepping has to be performed. Unexpected!"
+                # Calculate vertical heat fluxes
                 kdTdz[idx, 1] = kk_sz_top[idx] * (T_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
                 kdTdz[idx, 2:] = kk_sz_interior[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
 
