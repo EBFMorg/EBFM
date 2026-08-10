@@ -11,41 +11,43 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 import numpy as np
-from netCDF4 import Dataset, date2num
+from netCDF4 import Dataset
 
 from ebfm.core.INIT import init_initial_conditions
+from ebfm.core.FINAL_create_restart_file import main as write_restart_file
 
 GPSUM = 5
 NL = 4
 
 
+def _build_out_dict() -> dict:
+    return {
+        "subZ": np.full((GPSUM, NL), 1.0),
+        "subW": np.full((GPSUM, NL), 1.0),
+        "subD": np.full((GPSUM, NL), 1.0),
+        "subS": np.full((GPSUM, NL), 1.0),
+        "subT": np.full((GPSUM, NL), 1.0),
+        "subTmean": np.full((GPSUM, NL), 1.0),
+        "snowmass": np.full((GPSUM,), 1.0),
+        "Tsurf": np.full((GPSUM,), 1.0),
+        "ys": np.full((GPSUM,), 1.0),
+        "timelastsnow": np.array([datetime(1979, 1, 1, tzinfo=timezone.utc)] * GPSUM),
+        "alb_snow": np.full((GPSUM,), 1.0),
+        "surface_elevation": np.full((GPSUM,), 1.0),
+        "x": np.arange(GPSUM, dtype=np.int32),
+        "y": np.arange(GPSUM, dtype=np.int32),
+    }
+
+
 def _write_restart_file(path: Path, with_missing_value: bool = False) -> None:
-    with Dataset(path, "w", format="NETCDF4") as ncfile:
-        ncfile.createDimension("gpsum", GPSUM)
-        ncfile.createDimension("nl", NL)
+    io = {"writebootfile": True, "bootfileout": path}
+    write_restart_file(_build_out_dict(), io, restartdir=path.parent)
 
-        for var_name in ("subZ", "subW", "subD", "subS", "subT", "subTmean"):
-            var = ncfile.createVariable(var_name, "f8", ("gpsum", "nl"))
-            var[:, :] = np.full((GPSUM, NL), 1.0)
-
-        for var_name in ("snowmass", "Tsurf", "ys", "alb_snow", "surface_elevation"):
-            var = ncfile.createVariable(var_name, "f8", ("gpsum",))
-            var[:] = np.full((GPSUM,), 1.0)
-
-        for var_name in ("x", "y"):
-            var = ncfile.createVariable(var_name, "i4", ("gpsum",))
-            var[:] = np.arange(GPSUM, dtype="i4")
-
-        timelastsnow = ncfile.createVariable("timelastsnow_netCDF", "f8", ("gpsum",))
-        timelastsnow[:] = date2num(
-            [datetime(1979, 1, 1, tzinfo=timezone.utc)] * GPSUM,
-            units="days since 1970-01-01 00:00:00",
-            calendar="gregorian",
-        )
-
-        if with_missing_value:
-            # Leave one entry of subZ unwritten so netCDF4 reports it as masked
-            # (missing) when read back with auto-masking enabled (the default).
+    if with_missing_value:
+        # Restart files produced by EBFM are always fully populated. To
+        # exercise the "contains missing values" guard, reopen the file
+        # afterwards and simulate corruption/an incomplete write.
+        with Dataset(path, "r+") as ncfile:
             ncfile.variables["subZ"][0, 0] = np.ma.masked
 
 
@@ -78,7 +80,7 @@ class TestInitFromRestartFile(unittest.TestCase):
         io = {"bootfilein": self.bootfile}
         time = {}
 
-        OUT, IN, OUTFILE = init_initial_conditions(C, grid, io, time, init_with_restart_file=True)
+        OUT, _, _ = init_initial_conditions(C, grid, io, time, init_with_restart_file=True)
 
         for var_name in ("subZ", "subW", "subD", "subS", "subT", "subTmean", "Tsurf", "ys", "alb_snow"):
             with self.subTest(var_name=var_name):
@@ -91,7 +93,7 @@ class TestInitFromRestartFile(unittest.TestCase):
         io = {"bootfilein": self.bootfile}
         time = {}
 
-        OUT, IN, OUTFILE = init_initial_conditions(C, grid, io, time, init_with_restart_file=True)
+        OUT, _, _ = init_initial_conditions(C, grid, io, time, init_with_restart_file=True)
 
         np.testing.assert_array_equal(OUT["subZ"], np.full((GPSUM, NL), 1.0))
         np.testing.assert_array_equal(OUT["subD"], np.full((GPSUM, NL), 1.0))
