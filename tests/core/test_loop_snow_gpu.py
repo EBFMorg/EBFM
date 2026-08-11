@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: 2026 EBFM Authors
 #
 # SPDX-License-Identifier: BSD-3-Clause
+#
+# Content partially generated with the assistance of AI tools.
+# Claude Code: Opus 5
 
 """
 Correctness gate for the GPU backend of LOOP_SNOW.
