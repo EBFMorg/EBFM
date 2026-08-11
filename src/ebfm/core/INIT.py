@@ -386,46 +386,48 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
         # -----------------------------------------------------------------------------------------------------
-        grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
-        grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
+        # Skip (expensive) pre-computation look-up table when shading is disabled.
+        if grid["has_shading"]:
+            grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
+            grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
 
-        # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
-        grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
+            # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
+            grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
 
-        xl, yl = grid["x_2D"].shape
+            xl, yl = grid["x_2D"].shape
 
-        # loop over the azimuth angles to determine gridded maximum grid angles per angle
-        grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
-        for n in range(grid["nr_az_steps"]):
-            az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
+            # loop over the azimuth angles to determine gridded maximum grid angles per angle
+            grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
+            for n in range(grid["nr_az_steps"]):
+                az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
 
-            # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
-            ddx, ddy = calculate_step_sizes(az)
+                # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
+                ddx, ddy = calculate_step_sizes(az)
 
-            # from every grid cell step in the direction of the azimuth until the grid end is reached
-            # and detect maximum grid angle along the path
-            i0, j0 = np.where(mask_2D == 1)
-            max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
-            count = 1
-            active = np.ones(grid["gpsum"], dtype=bool)
-            while active.any():
-                j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
-                i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
+                # from every grid cell step in the direction of the azimuth until the grid end is reached
+                # and detect maximum grid angle along the path
+                i0, j0 = np.where(mask_2D == 1)
+                max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
+                count = 1
+                active = np.ones(grid["gpsum"], dtype=bool)
+                while active.any():
+                    j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
+                    i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
 
-                inbound = (j >= 0) & (j < yl) & (i >= 0) & (i < xl) & active
-                if not inbound.any():  # stop when all walks have reached the domain edge
-                    break
+                    inbound = (j >= 0) & (j < yl) & (i >= 0) & (i < xl) & active
+                    if not inbound.any():  # stop when all walks have reached the domain edge
+                        break
 
-                grid_angle = compute_grid_angle(grid, i, j, inbound)  # calculate grid angle from start to target
+                    grid_angle = compute_grid_angle(grid, i, j, inbound)  # calculate grid angle from start to target
 
-                max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle when needed
+                    max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle if needed
 
-                active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
+                    active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
 
-                count += 1
+                    count += 1
 
-            # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
-            grid["maxgridangle"][:, n] = max_angle
+                # fill lookup table with maximum grid angles for all cells (dim 1) and azimuth angle (dim 2)
+                grid["maxgridangle"][:, n] = max_angle
 
         # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
     else:

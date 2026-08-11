@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Fixed bug where the shading look-up table for MATLAB grids was pre-computed during initialization even when shading is disabled.  https://github.com/EBFMorg/EBFM/pull/155.
 * Fixed `phys["percolation"] = "uniform"` raising `TypeError` on the first timestep in `LOOP_SNOW.py` (only in NumPy path). `test_loop_snow_percolation.py` added.
 * EBFM now officially support and tests Python 3.14. https://github.com/EBFMorg/EBFM/pull/156
 * Fixed bug where resuming from a restart file (`--restart-init`) could lead to time step sizes equal to zero in `LOOP_SNOW.py`. Loading a restart file now asserts the restart variables to contain no missing values and converts them to plain `ndarray`. https://github.com/EBFMorg/EBFM/pull/154
