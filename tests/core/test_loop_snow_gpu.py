@@ -43,13 +43,16 @@ except ImportError:  # pragma: no cover, numba is an optional dependency
     _NUMBA = False
 
 
-def _make_case(gpsum=48, nl=50, seed=7):
+def _make_case(gpsum=48, nl=50, seed=7, snow_compaction="firn+snow", percolation="normal"):
     """Build a small but non-degenerate LOOP_SNOW state.
 
     The columns are randomised across the regimes the kernels branch on: snow
     and firn and solid ice densities, wet and dry layers, columns that gain
     enough snow to shift the grid down and columns that melt enough to shift it
     up, and layer thicknesses on both sides of the merge/split thresholds.
+
+    `snow_compaction` and `percolation` select the physics branch the kernels
+    take; see _SNOW_COMPACTION_MODES / _PERCOLATION_MODES below.
     """
     from ebfm.core import INIT
 
@@ -67,7 +70,7 @@ def _make_case(gpsum=48, nl=50, seed=7):
     # A few inactive columns, so the kernel's mask early-out is exercised.
     grid["mask"][:3] = 0
 
-    phys = {"snow_compaction": "firn+snow", "percolation": "normal"}
+    phys = {"snow_compaction": snow_compaction, "percolation": percolation}
     dt = 1.0 / 24.0
 
     OUT = {}
@@ -157,6 +160,19 @@ _COMPARED = [
     "Dens_drift",
 ]
 
+# The physics options the kernels switch on: _compaction_kernel_gpu takes the
+# snow_compaction branch, _percolation_kernel_gpu the percolation one. The
+# default configuration exercises exactly one branch of each, so the modes are
+# enumerated here instead.
+_SNOW_COMPACTION_MODES = ("firn_only", "firn+snow")
+# "uniform" is missing on purpose: there is no NumPy reference to compare
+# against, because that branch raises TypeError before it produces a result
+# (LOOP_SNOW.percolation_refreezing_and_storage() indexes `carrot` with
+# `: ind + 1`, where `ind` is a per-column array). The bug is on main and
+# predates the GPU backend, so mode 3 of the kernel stays unverified until it
+# is fixed.
+_PERCOLATION_MODES = ("bucket", "normal", "linear")
+
 
 @unittest.skipUnless(_NUMBA and _CUDASIM, "requires numba with NUMBA_ENABLE_CUDASIM=1")
 class TestLoopSnowGPUMatchesNumPy(unittest.TestCase):
@@ -182,9 +198,9 @@ class TestLoopSnowGPUMatchesNumPy(unittest.TestCase):
     def tearDown(self):
         self.compute_backend._backend = self.compute_backend.ComputeBackend.NUMPY
 
-    def _run(self, backend, steps):
+    def _run(self, backend, steps, **case):
         """Run `steps` LOOP_SNOW timesteps on `backend` from a fixed state."""
-        C, OUT, IN, dt, grid, phys = _make_case()
+        C, OUT, IN, dt, grid, phys = _make_case(**case)
         self.compute_backend._backend = backend
         for _ in range(steps):
             # Fresh copies of the per-step forcing, so both backends see the
@@ -221,6 +237,22 @@ class TestLoopSnowGPUMatchesNumPy(unittest.TestCase):
         self.setUp()
         got = self._run(self.compute_backend.ComputeBackend.GPU, steps=3)
         self._assert_matches(ref, got, "3 steps")
+
+    def test_physics_modes_match_numpy(self):
+        """Every snow_compaction / percolation branch of the kernels, one step each.
+
+        The other tests only ever run "firn+snow" and "normal", which leaves the
+        remaining kernel branches unexecuted.
+        """
+        for snow_compaction in _SNOW_COMPACTION_MODES:
+            for percolation in _PERCOLATION_MODES:
+                with self.subTest(snow_compaction=snow_compaction, percolation=percolation):
+                    case = {"snow_compaction": snow_compaction, "percolation": percolation}
+                    self.setUp()
+                    ref = self._run(self.compute_backend.ComputeBackend.NUMPY, steps=1, **case)
+                    self.setUp()
+                    got = self._run(self.compute_backend.ComputeBackend.GPU, steps=1, **case)
+                    self._assert_matches(ref, got, f"{snow_compaction}/{percolation}, 1 step")
 
 
 if __name__ == "__main__":
