@@ -25,13 +25,24 @@ logger = logging.getLogger(__name__)
 
 def main(C, OUT, IN, dt: float, grid, phys):
     """
-    Implementation of the multi-layer snow and firn model
+    Implementation of the multi-layer snow and firn model.
+
+    Each glacier grid point (total number of grid points `grid["gpsum"]`) carries one vertical snow/firn "column" of
+    `grid["nl"]` layers. Per-column state (subT, subD, subZ, subW, subS, ...) is stored in OUT as 2D arrays of shape
+    (grid["gpsum"], grid["nl"]): axis 0 indexes the column (grid point), axis 1 indexes the layer within that column,
+    from layer 0 (a thin surface ghost layer, not physical) down to the deepest layer. Columns are independent and
+    updated in parallel, either vectorized over axis 0 (NumPy path) or via Numba `prange` over columns (Numba path).
+    `dt` is the global time step shared by all columns; some steps (see heat_conduction) locally sub-step individual
+    columns with their own CFL-limited dt_local until every column has caught up to `dt`.
 
     Parameters:
         C (dict): Model constants and parameters.
         OUT (dict): Output variables to store results.
         IN (dict): Input data for the model.
         dt (float): Global model time-step, shared by all columns.
+        grid (dict): Grid geometry, incl. gpsum (number of grid points/columns), nl (layers per column), max_subZ (max.
+            top-layer thickness), and doubledepth/split (layer-merging/splitting thresholds,see
+            layer_merging_and_splitting).
         phys (dict): Model physics settings.
 
     Returns:
