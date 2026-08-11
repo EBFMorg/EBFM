@@ -76,6 +76,7 @@ def _parse_time(time_str: str) -> datetime:
     dt: datetime
     try:
         import sys
+
         if sys.version_info < (3, 11) and time_str.endswith("Z"):
             # Python < 3.11 does not support parsing ISO 8601 timestamps
             # with a trailing 'Z' UTC designator.

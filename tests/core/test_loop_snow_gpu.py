@@ -165,13 +165,7 @@ _COMPARED = [
 # default configuration exercises exactly one branch of each, so the modes are
 # enumerated here instead.
 _SNOW_COMPACTION_MODES = ("firn_only", "firn+snow")
-# "uniform" is missing on purpose: there is no NumPy reference to compare
-# against, because that branch raises TypeError before it produces a result
-# (LOOP_SNOW.percolation_refreezing_and_storage() indexes `carrot` with
-# `: ind + 1`, where `ind` is a per-column array). The bug is on main and
-# predates the GPU backend, so mode 3 of the kernel stays unverified until it
-# is fixed.
-_PERCOLATION_MODES = ("bucket", "normal", "linear")
+_PERCOLATION_MODES = ("bucket", "normal", "linear", "uniform")
 
 
 @unittest.skipUnless(_NUMBA and _CUDASIM, "requires numba with NUMBA_ENABLE_CUDASIM=1")
