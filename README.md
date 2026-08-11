@@ -257,14 +257,14 @@ EBFM now includes several performance improvements and supports several options 
 
 - GPU offloading:
 
-  Install the GPU dependencies and use the `--with-gpu` flag to offload the compaction, heat conduction and percolation kernels to a GPU:
+  Install the GPU dependencies and use the `--with-gpu` flag to offload kernels from `LOOP_SNOW.py` to a GPU:
 
   ```sh
   pip install -e .[gpu]
   ebfm --matlab-mesh examples/dem_and_mask.mat --with-gpu
   ```
 
-  The same kernels run on NVIDIA (via `numba.cuda`) and on AMD (via `numba.hip`). The vendor is detected automatically; use `--gpu-vendor {auto,nvidia,amd}` to select or guard it explicitly. `--with-gpu` and `--with-numba` are mutually exclusive.
+  The same kernels run on NVIDIA (via `numba.cuda`) and on AMD (via `numba.hip`). The vendor is detected automatically. You can use `--gpu-vendor {auto,nvidia,amd}` to select or guard it explicitly. `--with-gpu` and `--with-numba` are mutually exclusive.
 
   Note: on a cluster you usually have to load a CUDA/ROCm toolkit and point `CUDA_HOME` at it, otherwise Numba cannot compile the kernels even though the GPU itself is visible. See [CUDA runtime not found](#numba-does-not-find-the-cuda-runtime-cudais_available-is-false) in the troubleshooting section.
 

@@ -65,14 +65,14 @@ except ImportError:
 # makes `from numba import cuda` delegate to HIP.  Vendor detection therefore
 # happens at IMPORT time, because kernel decoration is import-time.
 #
-# _GPU_AVAILABLE only means the GPU stack is importable; presence of a usable
+# _GPU_AVAILABLE only means the GPU stack is importable. Presence of a usable
 # device is confirmed separately by the smoke test in init_gpu().
 # ---------------------------------------------------------------------------
 _GPU_AVAILABLE = False
 _GPU_VENDOR: str | None = None  # "nvidia" | "amd" | None
 
 try:
-    # AMD path: numba-hip provides `numba.hip`; pose_as_cuda() makes the stock
+    # AMD path: numba-hip provides `numba.hip`; pose_as_cuda() makes
     # `from numba import cuda` kernels run on gfx GPUs unchanged.
     from numba import hip as _hip
 
@@ -83,7 +83,7 @@ try:
     _GPU_VENDOR = "amd"
 except ImportError:
     try:
-        # NVIDIA path: stock numba.cuda (bundled numba-cuda for numba >= 0.62).
+        # NVIDIA path: numba.cuda (bundled numba-cuda for numba >= 0.62).
         from numba import cuda  # noqa: F401
 
         _GPU_AVAILABLE = True
@@ -130,7 +130,7 @@ def is_numba_available() -> bool:
 def is_gpu_available() -> bool:
     """Return True if a GPU stack (numba.cuda or numba.hip) is importable.
 
-    Note: this does not guarantee a usable device is present; that is verified
+    Note: this does not guarantee a usable device is present. That is verified
     by the smoke test run inside init_gpu().
     """
     return _GPU_AVAILABLE

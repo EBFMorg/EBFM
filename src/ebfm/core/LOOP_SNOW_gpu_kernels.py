@@ -9,7 +9,7 @@ Availability: numba.cuda kernels for compaction, heat conduction and
 percolation, offloaded to a GPU when the GPU backend is active (--with-gpu).
 
 The same kernels run on both vendors:
-- NVIDIA via stock numba.cuda,
+- NVIDIA via numba.cuda,
 - AMD via numba.hip.pose_as_cuda() (see compute_backend.py).
 
 Each ``_*_kernel_gpu`` is the CUDA-thread equivalent of the corresponding
@@ -57,7 +57,7 @@ def _blocks(gpsum: int) -> int:
 # via a separate overload mechanism and is unaffected.
 #
 # @cuda.jit(device=True) functions are the canonical numba solution: they
-# are compiled once for the device, inlined at every call site, and work
+# are compiled once for the device, inlined at every call site and work
 # on all supported numba versions and Python versions.
 #
 # When the GPU stack is absent (_CudaStub from compute_backend), the

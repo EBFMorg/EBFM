@@ -14,9 +14,8 @@ from .LOOP_SNOW_kernels import (
     _percolation_kernel,
 )
 
-# SnowDeviceState is imported lazily inside the GPU branch of main() so that
-# NumPy/Numba-only users never trigger the numba.cuda / numba.hip import (and
-# its import-time vendor detection) in LOOP_SNOW_gpu_kernels.
+# SnowDeviceState is imported lazily inside the GPU branch. Using NumPy/Numba
+# never pulls in GPU dependencies
 
 # line_profiler support: `profile` is injected as a builtin by kernprof.
 # When running normally, fall back to a no-op so the decorator stays in place.
@@ -279,7 +278,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
             else:
                 OUT[_key].fill(0.0)
 
-        # runoff_irr is written by the kernel; ensure it exists before it reads.
+        # runoff_irr is written by the kernel. Ensure it exists before it reads.
         _gshape = (gpsum,)
         if "runoff_irr" not in OUT or OUT["runoff_irr"].shape != _gshape:
             OUT["runoff_irr"] = np.zeros(_gshape)
@@ -292,7 +291,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
                 raise ValueError(f"_compaction_kernel: unknown snow_compaction={phys['snow_compaction']!r}")
             _tau_drift = 48 * 2 * SECONDS_PER_HOUR
             if gpu is not None:
-                # GPU: kernel launched on the resident device arrays; the
+                # GPU: kernel launched on the resident device arrays. The
                 # pre-compaction subD/subZ snapshot is taken on-device.
                 gpu.compaction(
                     OUT["Dens_destr_metam"],
@@ -480,7 +479,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
         """
         if gpu is not None:
             # GPU: the prep / solve / boundary-clip kernels run on the resident
-            # device arrays, so the host precompute and post-clip below are done
+            # device arrays. Host precompute and post-clip below are done
             # on-device (subK / subCeff are returned in download()).
             gpu.heat_conduction(dt, C)
             return _SUCCESS
@@ -650,7 +649,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
                 0.0,
             )
             if gpu is not None:
-                # GPU: kernel launched on the resident device arrays; the
+                # GPU: kernel launched on the resident device arrays. The
                 # post-heat subW snapshot is taken on-device.
                 gpu.percolation(_avail_W, C, _p_mode, dt)
                 return _SUCCESS
@@ -1018,10 +1017,8 @@ def main(C, OUT, IN, dt: float, grid, phys):
         # Resident-state core: subT/subD/subZ/subW/subS stay on the device
         # across compaction -> heat conduction -> percolation. The subsurface
         # state is uploaded once here and downloaded once after percolation,
-        # instead of round-tripping in each sub-step. The three functions run
-        # their usual host-side glue and dispatch their kernel launches to the
-        # device state; results match the NumPy/Numba paths.
-        # Imported here (not at module top) so only GPU runs pull in numba.cuda.
+        # instead of round-tripping in each sub-step.
+        # Imported here so only GPU runs pull in numba.cuda.
         from .LOOP_SNOW_gpu_kernels import SnowDeviceState
 
         gpu_state = SnowDeviceState(

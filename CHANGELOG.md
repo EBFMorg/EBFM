@@ -6,7 +6,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
-* Introduce `--with-gpu` to offload the kernels compaction, heat conduction, percolation to a GPU via `numba.cuda` (NVIDIA) or `numba.hip` (AMD), with `--gpu-vendor {auto,nvidia,amd}` to select/guard the vendor. Mutually exclusive with `--with-numba`. Install via `pip install ebfm[gpu]`.
+* Introduced `--with-gpu` to offload the kernels compaction, heat conduction, percolation to a GPU via `numba.cuda` (NVIDIA) or `numba.hip` (AMD), with `--gpu-vendor {auto,nvidia,amd}` to select/guard the vendor. Mutually exclusive with `--with-numba`. Install via `pip install ebfm[gpu]`.
+* Added `tests/core/test_loop_snow_gpu.py`: runs the snow model on the NumPy and GPU backends from an identical state and requires agreement to `atol=1e-12, rtol=1e-9`. Uses numba's CUDA simulator, so it needs no GPU.
 * Further optimizations in CPU/host-side code in `LOOP_SNOW.py`: fewer full-grid copies, heat conduction precompute moved into Numba kernel. https://github.com/EBFMorg/EBFM/pull/147.
 * The `performance` extra no longer installs `mpi4py`: Numba parallelises with threads inside a single process and does not require MPI. Use `EBFM[performance,mpi]` to combine both. https://github.com/EBFMorg/EBFM/pull/147.
 * Fixed bug where the shading look-up table for MATLAB grids was pre-computed during initialization even when shading is disabled.  https://github.com/EBFMorg/EBFM/pull/155.

@@ -381,9 +381,9 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         action="store_true",
         default=False,
         help=(
-            "Offload the kernels (compaction, heat conduction, percolation) to a GPU "
+            "Offload kernels (compaction, heat conduction, percolation) to a GPU "
             "via numba.cuda (NVIDIA) or numba.hip (AMD). Mutually exclusive with --with-numba. "
-            "Requires numba with GPU support; install via: pip install 'ebfm[gpu]' and load the "
+            "Requires numba with GPU support. Install via: pip install 'ebfm[gpu]' and load the "
             "CUDA/ROCm toolkit on the compute node."
         ),
     )
@@ -395,8 +395,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         default="auto",
         help=(
             "GPU vendor to target when using --with-gpu. 'auto' detects the installed numba GPU "
-            "stack (numba.cuda for NVIDIA, numba.hip for AMD); 'nvidia'/'amd' additionally guard "
-            "against a mismatch with the detected stack."
+            "stack (numba.cuda for NVIDIA, numba.hip for AMD)."
         ),
     )
 
