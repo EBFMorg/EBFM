@@ -30,8 +30,6 @@ def _compaction_kernel(
     subT,  # (gpsum, nl)
     subW,  # (gpsum, nl), Output array
     subTmean,  # (gpsum, nl) Output array, updated in-place
-    subD_old,  # (gpsum, nl)
-    subZ_old,  # (gpsum, nl)
     logyearsnow,  # (gpsum, nl)
     yearsnow,  # (gpsum, nl)
     WS,  # (gpsum,)
@@ -67,6 +65,12 @@ def _compaction_kernel(
     """
     gpsum, nl = subD.shape
     for i in prange(gpsum):
+        # Snapshot this column's pre-compaction density and thickness (used for
+        # the layer-thickness update in section 3). Done per-thread instead
+        # of copying whole grid on the host before launch.
+        subD_old = subD[i, :].copy()
+        subZ_old = subZ[i, :].copy()
+
         # ------ 1. FIRN COMPACTION ------ #
         for k in range(nl):
             subTmean[i, k] = subTmean[i, k] * (1.0 - dt_yearfrac) + dt_yearfrac * subT[i, k]
@@ -145,7 +149,7 @@ def _compaction_kernel(
         subW_sum = 0.0
         for k in range(nl):
             if subD[i, k] < Dice:
-                subZ[i, k] = subZ_old[i, k] * subD_old[i, k] / subD[i, k]
+                subZ[i, k] = subZ_old[k] * subD_old[k] / subD[i, k]
                 exp_f = 0.0143 * math.exp(3.3 * (Dice - subD[i, k]) / Dice)
                 denom = 1.0 - exp_f
                 mliqmax_k = subD[i, k] * subZ[i, k] * exp_f / denom * 0.05 * min(Dice - subD[i, k], 20.0)
@@ -155,11 +159,83 @@ def _compaction_kernel(
                 # Ice layer: mliqmax = 0 => clamp subW to zero
                 subW[i, k] = 0.0
             z_sum += subZ[i, k]
-            z_sum_old += subZ_old[i, k]
+            z_sum_old += subZ_old[k]
             subW_sum += subW[i, k]
 
         surfH[i] += z_sum - z_sum_old
         runoff_irr[i] = sumWinit[i] - subW_sum
+
+
+@njit(parallel=True, cache=True)
+def _heat_conduction_prep_kernel(
+    subD,  # (gpsum, nl)
+    subZ,  # (gpsum, nl)
+    subT,  # (gpsum, nl)
+    kk,  # (gpsum, nl)      out: effective conductivity
+    c_eff,  # (gpsum, nl)      out: volumetric heat capacity
+    kk_sz_top,  # (gpsum,)         out
+    kk_sz_interior,  # (gpsum, nl-2)    out
+    dz1,  # (gpsum,)         out
+    dz2,  # (gpsum, nl-2)    out
+    denom_layer1,  # (gpsum,)         out
+    denom_interior,  # (gpsum, nl-3)    out
+    denom_bottom,  # (gpsum,)         out
+    dt_stab,  # (gpsum,)         out
+    dayseconds,  # scalar
+):
+    """Per-column heat-conduction precompute, parallelized over gpsum.
+
+    Produces the derived arrays (conductivity, heat capacity, interface
+    conductivity-thickness products, squared inter-layer distances, update
+    denominators and the CFL stability step) that _heat_conduction_kernel
+    needs, directly from subD/subZ/subT (without NumPy).
+    """
+    gpsum, nl = subD.shape
+    for i in prange(gpsum):
+        # Effective conductivity and volumetric heat capacity per layer.
+        for k in range(nl):
+            d = subD[i, k]
+            kk[i, k] = 0.138 - 1.01e-3 * d + 3.233e-6 * (d * d)
+            c_eff[i, k] = d * (152.2 + 7.122 * subT[i, k])
+
+        # dz1 = (subZ[0] + 0.5*subZ[1])**2
+        half1 = subZ[i, 0] + 0.5 * subZ[i, 1]
+        dz1[i] = half1 * half1
+
+        # dz2 = 0.5 * (subZ[k+2] + subZ[k+1])**2
+        for k in range(nl - 2):
+            s = subZ[i, k + 2] + subZ[i, k + 1]
+            dz2[i, k] = 0.5 * (s * s)
+
+        # kk_sz_top = kk[0]*subZ[0] + 0.5*kk[1]*subZ[1]
+        kk_sz_top[i] = kk[i, 0] * subZ[i, 0] + 0.5 * kk[i, 1] * subZ[i, 1]
+
+        # kk_sz_interior[j] = kk[j+1]*subZ[j+1] + kk[j+2]*subZ[j+2]
+        for k in range(nl - 2):
+            kk_sz_interior[i, k] = kk[i, k + 1] * subZ[i, k + 1] + kk[i, k + 2] * subZ[i, k + 2]
+
+        # denom_layer1 = c_eff[1] * (0.5*subZ[0] + 0.5*subZ[1] + 0.25*subZ[2])
+        denom_layer1[i] = c_eff[i, 1] * (0.5 * subZ[i, 0] + 0.5 * subZ[i, 1] + 0.25 * subZ[i, 2])
+
+        # denom_interior[k-2] = c_eff[k] * (0.25*subZ[k-1] + 0.5*subZ[k] + 0.25*subZ[k+1]), k in 2..nl-2
+        for k in range(2, nl - 1):
+            denom_interior[i, k - 2] = c_eff[i, k] * (0.25 * subZ[i, k - 1] + 0.5 * subZ[i, k] + 0.25 * subZ[i, k + 1])
+
+        # denom_bottom = c_eff[-1] * (0.25*subZ[-2] + 0.75*subZ[-1])
+        denom_bottom[i] = c_eff[i, nl - 1] * (0.25 * subZ[i, nl - 2] + 0.75 * subZ[i, nl - 1])
+
+        # dt_stab = 0.5 * min(c_eff[1:]) * min(subZ[1:])**2 / max(kk[1:]) / dayseconds
+        min_ceff = math.inf
+        min_sz = math.inf
+        max_kk = 0.0
+        for k in range(1, nl):
+            if c_eff[i, k] < min_ceff:
+                min_ceff = c_eff[i, k]
+            if subZ[i, k] < min_sz:
+                min_sz = subZ[i, k]
+            if kk[i, k] > max_kk:
+                max_kk = kk[i, k]
+        dt_stab[i] = 0.5 * min_ceff * (min_sz * min_sz) / max_kk / dayseconds
 
 
 @njit(parallel=True, cache=True)
@@ -226,7 +302,6 @@ def _percolation_kernel(
     subW,  # (gpsum, nl) Output array, updated in-place
     subS,  # (gpsum, nl) Output array, rewritten
     subZ,  # (gpsum, nl)
-    subW_old,  # (gpsum, nl)
     avail_W,  # (gpsum,)
     RP,  # (gpsum, nl)
     runoff_surface,  # (gpsum,)
@@ -260,6 +335,10 @@ def _percolation_kernel(
     trunoff_factor = 1.0 / (1.0 + dt / Trunoff)
 
     for i in prange(gpsum):
+        # Snapshot this column's pre-percolation water content, instead of
+        # copying whole grid on the host before launch.
+        subW_old = subW[i, :].copy()
+
         # ------ Refreezing and Irreducible Water Storage Limits ------
         # Compute refreezing potential (`Wlim`) per layer
         # Compute maximum irreducible water storage (`mliqmax`)
@@ -278,7 +357,7 @@ def _percolation_kernel(
                 mliqmax_k = subD[i, k] * subZ[i, k] * irr_f * 0.05 * min(Dice - subD[i, k], 20.0)
             else:
                 mliqmax_k = 0.0
-            wirr_loc[k] = mliqmax_k - subW_old[i, k]
+            wirr_loc[k] = mliqmax_k - subW_old[k]
 
         # ------ Compute carrot (water-distribution profile) by percolation mode ------
         carrot_loc = np.zeros(nl)
@@ -318,9 +397,9 @@ def _percolation_kernel(
             excess = avail_W_loc - wlim_loc[n]
             if excess < 0.0:
                 excess = 0.0
-            new_subW_n = subW_old[i, n] + min(excess, wirr_loc[n])
+            new_subW_n = subW_old[n] + min(excess, wirr_loc[n])
             subW[i, n] = new_subW_n
-            avail_W_loc -= rp_n + (new_subW_n - subW_old[i, n])
+            avail_W_loc -= rp_n + (new_subW_n - subW_old[n])
             # Temperature and density update after percolating-water refreezing
             cpi_n = 152.2 + 7.122 * subT[i, n]
             subT[i, n] += Lm * rp_n / (subD[i, n] * cpi_n * subZ[i, n])

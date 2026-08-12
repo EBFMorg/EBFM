@@ -7,17 +7,24 @@
 import unittest
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 from datetime import datetime, timezone
 
 import numpy as np
 from netCDF4 import Dataset
 
-from ebfm.core.INIT import init_initial_conditions
+from ebfm.core import INIT
+from ebfm.core.INIT import init_config, init_grid, init_initial_conditions
 from ebfm.core.FINAL_create_restart_file import main as write_restart_file
+from ebfm.core.cli import parse_cli_args
+from ebfm.core.config.grid import GridConfig
+from ebfm.core.config.time import TimeConfig
 
 GPSUM = 5
 NL = 4
+
+_MATLAB_MESH = Path(__file__).parents[2] / "examples" / "dem_and_mask.mat"
 
 
 def _build_out_dict() -> dict:
@@ -109,6 +116,44 @@ class TestInitFromRestartFile(unittest.TestCase):
 
         with self.assertRaises(AssertionError):
             init_initial_conditions(C, grid, io, time, init_with_restart_file=True)
+
+
+class TestMatlabShadingLookupTable(unittest.TestCase):
+    """The shading look-up table must only be pre-computed when shading is enabled.
+
+    Building it is by far the most expensive part of grid initialization (ca. 25 s for
+    examples/dem_and_mask.mat), so the test never lets it run: the disabled case skips
+    it by design and the enabled case patches the helper and only checks that it is
+    called. What the look-up table contains is not affected by this.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _init_grid(self, shading_flag):
+        args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), shading_flag])
+        grid_config = GridConfig(args)
+        grid, io, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        return init_grid(grid, io, grid_config)
+
+    def test_shading_disabled_skips_the_lookup_table(self):
+        grid = self._init_grid("--no-shading")
+
+        self.assertFalse(grid["has_shading"])
+        for key in ("maxgridangle", "az_array", "nr_az_steps", "shading_method"):
+            self.assertNotIn(key, grid, f"{key} must not be created when shading is disabled")
+
+    def test_shading_enabled_precomputes_the_lookup_table(self):
+        # Swap the helper for a recorder while init_grid runs: this checks that the
+        # call happens, without building the (ca. 25 s) look-up table itself.
+        with mock.patch.object(INIT, "_precompute_shading_matlab") as precompute:
+            grid = self._init_grid("--shading")
+
+        self.assertTrue(grid["has_shading"])
+        precompute.assert_called_once()
 
 
 if __name__ == "__main__":
