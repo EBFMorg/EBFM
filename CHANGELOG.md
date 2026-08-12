@@ -6,6 +6,8 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Further optimizations in CPU/host-side code in `LOOP_SNOW.py`: fewer full-grid copies, heat conduction precompute moved into Numba kernel. https://github.com/EBFMorg/EBFM/pull/147.
+* The `performance` extra no longer installs `mpi4py`: Numba parallelises with threads inside a single process and does not require MPI. Use `EBFM[performance,mpi]` to combine both. https://github.com/EBFMorg/EBFM/pull/147.
 * Fixed bug where the shading look-up table for MATLAB grids was pre-computed during initialization even when shading is disabled.  https://github.com/EBFMorg/EBFM/pull/155.
 * Fixed `phys["percolation"] = "uniform"` raising `TypeError` on the first timestep in `LOOP_SNOW.py` (only in NumPy path). `test_loop_snow_percolation.py` added.
 * EBFM now officially support and tests Python 3.14. https://github.com/EBFMorg/EBFM/pull/156

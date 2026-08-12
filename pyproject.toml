@@ -39,7 +39,6 @@ cpl = [
 ]
 
 performance = [
-    "EBFM[mpi]",
     "numba >= 0.59",
 ]
 
