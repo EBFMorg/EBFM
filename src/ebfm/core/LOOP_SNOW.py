@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .compute_backend import get_backend, ComputeBackend
 from .constants import SECONDS_PER_HOUR
@@ -22,15 +23,26 @@ _SUCCESS = True
 logger = logging.getLogger(__name__)
 
 
-def main(C, OUT, IN, dt, grid, phys):
+def main(C, OUT, IN, dt: float, grid, phys):
     """
-    Implementation of the multi-layer snow and firn model
+    Implementation of the multi-layer snow and firn model.
+
+    Each glacier grid point (total number of grid points `grid["gpsum"]`) carries one vertical snow/firn "column" of
+    `grid["nl"]` layers. Per-column state (subT, subD, subZ, subW, subS, ...) is stored in OUT as 2D arrays of shape
+    (grid["gpsum"], grid["nl"]): axis 0 indexes the column (grid point), axis 1 indexes the layer within that column,
+    from layer 0 (a thin surface ghost layer, not physical) down to the deepest layer. Columns are independent and
+    updated in parallel, either vectorized over axis 0 (NumPy path) or via Numba `prange` over columns (Numba path).
+    `dt` is the global time step shared by all columns; some steps (see heat_conduction) locally sub-step individual
+    columns with their own CFL-limited dt_local until every column has caught up to `dt`.
 
     Parameters:
         C (dict): Model constants and parameters.
         OUT (dict): Output variables to store results.
         IN (dict): Input data for the model.
-        dt: Model time-step.
+        dt (float): Global model time-step, shared by all columns.
+        grid (dict): Grid geometry, incl. gpsum (number of grid points/columns), nl (layers per column), max_subZ (max.
+            top-layer thickness), and doubledepth/split (layer-merging/splitting thresholds,see
+            layer_merging_and_splitting).
         phys (dict): Model physics settings.
 
     Returns:
@@ -418,9 +430,10 @@ def main(C, OUT, IN, dt, grid, phys):
         kk = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2  # Effective conductivity
         c_eff = OUT["subD"] * (152.2 + 7.122 * OUT["subT"])  # Effective heat capacity
 
-        # Stability time step (CFL condition)
+        # Per-grid-point stability time step (CFL condition), used below to locally sub-step each column up to the
+        # shared global dt.
         # Layer 0: surface ghost layer, excluded from CFL condition
-        dt_stab = (
+        dt_stab: NDArray[np.float64] = (
             0.5
             * np.min(c_eff[:, 1:], axis=1)
             * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
@@ -464,30 +477,39 @@ def main(C, OUT, IN, dt, grid, phys):
             )
 
         else:
-            # NumPy path: explicit while-loop with vectorized column updates.
-            tt = np.zeros(grid["gpsum"])
-            kdTdz = np.zeros_like(OUT["subT"])
+            # NumPy path: explicit while-loop with vectorized column updates. dt is the global time step; each column
+            # uses local time stepping to advance from the current time until the global dt is reached. The maximum
+            # local time step size of each sub-step is determined by the CFL condition and the remainder until the end
+            # of the global time step.
+
+            # Time elapsed for each column
+            t_elapsed: NDArray[np.float64] = np.zeros(grid["gpsum"])
+            # Vertical heat fluxes between layers
+            kdTdz: NDArray[np.float64] = np.zeros_like(OUT["subT"])
             # Ping-pong buffers:
             # Pre-allocate two arrays once and swap references each iteration
             T_old = OUT["subT"].copy()
             T_new = np.empty_like(OUT["subT"])
 
-            while np.any(tt < dt):
+            # Local time-stepping loop: advances each column by its own dt_local until all columns reach the end of the
+            # global time step
+            while np.any(t_elapsed < dt):
                 # Copy T_old to T_new so inactive rows carry forward correctly across swaps
                 np.copyto(T_new, T_old)
-                dt_temp = np.minimum(dt_stab, dt - tt)
-                tt += dt_temp
 
-                # Integer indices of still-active grid points; early exit when all are done
-                # Replaces cond_dt mask
-                idx = np.flatnonzero(dt_temp > 0)
+                dt_remainder = dt - t_elapsed  # determine remainder until end of global time step
+                # use minimum of 1) maximum allowed dt due to stability and 2) remainder until end of global time step
+                dt_local = np.minimum(dt_stab, dt_remainder)
+
+                # Integer indices of still-active columns
+                idx = np.flatnonzero(dt_local > 0)
                 assert idx.size > 0, "no cells left where local time stepping has to be performed. Unexpected!"
                 # Calculate vertical heat fluxes
                 kdTdz[idx, 1] = kk_sz_top[idx] * (T_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
                 kdTdz[idx, 2:] = kk_sz_interior[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
 
                 # Update layer-wise temperatures
-                C_day_dt = C["dayseconds"] * dt_temp[idx]
+                C_day_dt = C["dayseconds"] * dt_local[idx]
 
                 T_new[idx, 1] = T_old[idx, 1] + C_day_dt * (kdTdz[idx, 2] - kdTdz[idx, 1]) / denom_layer1[idx]
 
@@ -503,6 +525,11 @@ def main(C, OUT, IN, dt, grid, phys):
 
                 # Swap buffer roles
                 T_old, T_new = T_new, T_old
+
+                # increase t_elapsed by local time step size
+                t_elapsed += dt_local
+
+            assert np.allclose(t_elapsed, dt), "some cells did not reach end of global time step!"
 
         OUT["subT"][:, 0] = (
             OUT["Tsurf"]
