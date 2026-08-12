@@ -273,11 +273,11 @@ def _heat_conduction_kernel(
 
         tt_i = 0.0
         while tt_i < dt:
-            dt_temp_i = min(dt_stab[i], dt - tt_i)
-            if dt_temp_i == 0.0:
+            dt_local_i = min(dt_stab[i], dt - tt_i)
+            if dt_local_i == 0.0:
                 break
-            tt_i += dt_temp_i
-            C_day_dt = dayseconds * dt_temp_i
+            tt_i += dt_local_i
+            C_day_dt = dayseconds * dt_local_i
 
             # ---- Step 1: freeze all fluxes from current T_loc ----
             kdTdz[1] = kk_sz_top[i] * (T_loc[1] - Tsurf[i]) / dz1[i]
