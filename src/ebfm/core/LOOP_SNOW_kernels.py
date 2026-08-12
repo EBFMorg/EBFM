@@ -242,13 +242,13 @@ def _percolation_kernel(
     Lm,
     Trunoff,
     perc_depth,
-    percolation_mode,  # 0=bucket, 1=normal, 2=linear, 3=uniform
+    percolation_mode,  # 0=bucket, 1=normal, 2=linear
     dt,
 ):
     """Per-column percolation, slush storage and refreezing kernel, parallelized over gpsum
 
     1. Compute Wlim and Wirr (refreezing potential and available irreducible water storate)
-    2. carrot distribution profile (bucket / normal / linear / uniform)
+    2. carrot distribution profile (bucket / normal / linear)
     3. Refreezing and irreducible-water-storage
     4. Slush storage
     5. Slush refreezing
@@ -285,29 +285,16 @@ def _percolation_kernel(
         if percolation_mode == 0:  # bucket: all water enters surface layer
             carrot_loc[0] = 1.0
         else:
-            # Compute zz (midpoint depth of each layer) for mode 1/2/3
+            # Compute zz (midpoint depth of each layer) for mode 1/2
             depth = 0.0
             for k in range(nl):
                 zz_k = depth + 0.5 * subZ[i, k]
                 if percolation_mode == 1:  # normal (Gaussian)
                     carrot_loc[k] = norm_coeff * math.exp(-(zz_k * zz_k) / sigma2_2)
-                elif percolation_mode == 2:  # linear
+                else:  # linear (mode 2)
                     v = 2.0 * (perc_depth - zz_k) / (perc_depth * perc_depth)
                     carrot_loc[k] = v if v > 0.0 else 0.0
-                else:  # uniform (mode 3): temporarily store zz for the argmin pass below
-                    carrot_loc[k] = zz_k
                 depth += subZ[i, k]
-
-            if percolation_mode == 3:  # uniform: resolve argmin, then fill layers 0..ind
-                min_dist = math.inf
-                ind = 0
-                for k in range(nl):
-                    d = abs(carrot_loc[k] - perc_depth)
-                    if d < min_dist:
-                        min_dist = d
-                        ind = k
-                for k in range(nl):
-                    carrot_loc[k] = (1.0 / perc_depth) if k <= ind else 0.0
 
         # Scale by layer thickness, normalize, multiply by avail_W
         s = 0.0

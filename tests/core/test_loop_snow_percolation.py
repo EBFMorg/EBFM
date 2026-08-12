@@ -1,20 +1,13 @@
 # SPDX-FileCopyrightText: 2026 EBFM Authors
 #
 # SPDX-License-Identifier: BSD-3-Clause
-#
-# Content partially generated with the assistance of AI tools.
-# Claude Code: Opus 5
 
 """
-Smoke test for the "uniform" percolation scheme of LOOP_SNOW.
+The percolation schemes LOOP_SNOW accepts.
 
-The scheme distributes the available water evenly over the layers down to the
-characteristic percolation depth C["perc_depth"] and adds nothing below it.
-That cut-off layer is determined per column, so columns with different layer
-thicknesses wet down to different layer indices.
-
-The default configuration uses percolation="normal" and the scheme is not
-reachable from the command line, so this code path had never been executed.
+"bucket", "normal" and "linear" run. Anything else (including the removed
+"uniform" scheme) is rejected with a clear error instead of being silently
+ignored.
 """
 
 import unittest
@@ -22,12 +15,6 @@ import unittest
 import numpy as np
 
 GPSUM, NL = 4, 20
-# Layer thickness per column (m), constant over depth. With perc_depth = 6.0 m
-# the layer midpoints zz = cumsum(subZ) - subZ/2 put the cut-off at
-#   0.7 m layers: zz[8] = 5.95 (next one 6.65) -> layer 8
-#   1.3 m layers: zz[4] = 5.85 (next one 7.15) -> layer 4
-_THICKNESS = np.array([0.7, 0.7, 1.3, 1.3])
-_EXPECTED_CUTOFF = np.array([8, 8, 4, 4])
 
 
 def _make_case(C):
@@ -42,7 +29,7 @@ def _make_case(C):
         "mask": np.ones(GPSUM, dtype=int),
     }
     OUT = {
-        "subZ": np.repeat(_THICKNESS[:, None], NL, axis=1),
+        "subZ": np.full((GPSUM, NL), 1.0),
         "subT": np.full((GPSUM, NL), C["T0"] - 10.0),
         "subTmean": np.full((GPSUM, NL), C["T0"] - 10.0),
         "subD": np.full((GPSUM, NL), 400.0),
@@ -71,50 +58,31 @@ def _make_case(C):
     return grid, OUT, IN
 
 
-class TestUniformPercolation(unittest.TestCase):
-    """percolation="uniform" must run and must stop at the percolation depth."""
-
+class TestPercolationSchemes(unittest.TestCase):
     def setUp(self):
         from ebfm.core import INIT, LOOP_SNOW
 
         self.LOOP_SNOW = LOOP_SNOW
         self.C = INIT.init_constants()
-        self.phys = {"snow_compaction": "firn+snow", "percolation": "uniform"}
-        self.grid, self.OUT, self.IN = _make_case(self.C)
 
-    def test_uniform_percolation_runs(self):
-        """The scheme used to raise TypeError on the first timestep.
+    def _run(self, percolation):
+        grid, OUT, IN = _make_case(self.C)
+        phys = {"snow_compaction": "firn+snow", "percolation": percolation}
+        self.LOOP_SNOW.main(self.C, OUT, IN, 1.0 / 24.0, grid, phys)
+        return OUT
 
-        The layer range was selected with a slice built from the per-column
-        index array `ind`, which NumPy cannot use as a slice bound.
-        """
-        self.LOOP_SNOW.main(self.C, self.OUT, self.IN, 1.0 / 24.0, self.grid, self.phys)
+    def test_supported_schemes_run(self):
+        for percolation in ("bucket", "normal", "linear"):
+            with self.subTest(percolation=percolation):
+                OUT = self._run(percolation)
+                self.assertTrue(np.isfinite(OUT["subT"]).all())
 
-    def test_uniform_percolation_stops_at_percolation_depth(self):
-        """Water reaches the cut-off layer of its own column, and no layer below.
-
-        The incoming rain refreezes in the cold layers it reaches, which raises
-        their temperature; layers that receive no water keep theirs. The two
-        column groups differ only in layer thickness, so a cut-off shared by all
-        columns cannot reproduce this.
-        """
-        subT_before = self.OUT["subT"].copy()
-        self.LOOP_SNOW.main(self.C, self.OUT, self.IN, 1.0 / 24.0, self.grid, self.phys)
-
-        warmed = self.OUT["subT"] > subT_before
-        for column, cutoff in enumerate(_EXPECTED_CUTOFF):
-            with self.subTest(column=column, thickness=_THICKNESS[column]):
-                self.assertTrue(
-                    warmed[column, : cutoff + 1].all(),
-                    f"column {column}: layers 0..{cutoff} should have received water, got {warmed[column]}",
-                )
-                self.assertFalse(
-                    warmed[column, cutoff + 1 :].any(),
-                    f"column {column}: no layer below {cutoff} should have received water, got {warmed[column]}",
-                )
-
-        # The point of the per-column cut-off: thin and thick columns differ.
-        self.assertNotEqual(_EXPECTED_CUTOFF[0], _EXPECTED_CUTOFF[-1])
+    def test_removed_and_unknown_schemes_are_rejected(self):
+        """"uniform" was removed; selecting it must fail, not fall through."""
+        for percolation in ("uniform", "not-a-scheme"):
+            with self.subTest(percolation=percolation):
+                with self.assertRaises(ValueError):
+                    self._run(percolation)
 
 
 if __name__ == "__main__":

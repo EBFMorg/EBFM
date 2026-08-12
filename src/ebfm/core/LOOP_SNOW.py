@@ -558,7 +558,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
 
         if get_backend() == ComputeBackend.NUMBA:
             # Numba parallel path:
-            _p_mode = {"bucket": 0, "normal": 1, "linear": 2, "uniform": 3}.get(phys["percolation"], -1)
+            _p_mode = {"bucket": 0, "normal": 1, "linear": 2}.get(phys["percolation"], -1)
             if _p_mode < 0:
                 raise ValueError(f"_percolation_kernel: unknown percolation={phys['percolation']!r}")
             _avail_W = np.maximum(
@@ -661,12 +661,6 @@ def main(C, OUT, IN, dt: float, grid, phys):
             elif phys["percolation"] == "linear":
                 carrot = 2 * (z0 - zz) / z0**2
                 carrot = np.maximum(carrot, 0)
-            elif phys["percolation"] == "uniform":
-                # Layers down to the characteristic percolation depth (per column).
-                # `ind` holds one index per column, so the range cannot be taken
-                # with a slice, layers are selected with a mask instead.
-                ind = np.argmin(np.abs(zz - z0), axis=1)
-                carrot[np.arange(carrot.shape[1])[None, :] <= ind[:, None]] = 1 / z0
             else:
                 raise ValueError("`phys['percolation']` is not set correctly!")
 
