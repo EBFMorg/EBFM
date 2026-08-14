@@ -330,6 +330,10 @@ def _percolation_kernel(
     6. Irreducible-water refreezing
     """
     gpsum, nl = subT.shape
+    # Checked here and not in the carrot branch below: a raise inside the prange body is a second loop exit,
+    # which makes Numba run the kernel serially.
+    if percolation_mode < 0 or percolation_mode > 2:
+        raise RuntimeError("_percolation_kernel: unknown percolation_mode, expected 0=bucket, 1=normal, 2=linear")
     sigma2_2 = 2.0 * (perc_depth / 3.0) ** 2
     norm_coeff = 2.0 / (perc_depth / 3.0) / math.sqrt(2.0 * math.pi)
     trunoff_factor = 1.0 / (1.0 + dt / Trunoff)
@@ -370,7 +374,7 @@ def _percolation_kernel(
                 zz_k = depth + 0.5 * subZ[i, k]
                 if percolation_mode == 1:  # normal (Gaussian)
                     carrot_loc[k] = norm_coeff * math.exp(-(zz_k * zz_k) / sigma2_2)
-                else:  # linear (mode 2)
+                elif percolation_mode == 2:  # linear
                     v = 2.0 * (perc_depth - zz_k) / (perc_depth * perc_depth)
                     carrot_loc[k] = v if v > 0.0 else 0.0
                 depth += subZ[i, k]
