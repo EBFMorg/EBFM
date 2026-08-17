@@ -274,6 +274,12 @@ EBFM now includes several performance improvements and supports several options 
   python -c "from numba import cuda; print(cuda.is_available())"
   ```
 
+  At startup `--with-gpu` reports which stack and device it found, so you can check it went to the GPU you expected:
+
+  ```
+  [GPU] backend enabled (nvidia). Device: NVIDIA A100-SXM4-80GB  free=79.15 GiB  total=79.15 GiB
+  ```
+
 
 #### Timing Your Run
 

@@ -43,12 +43,17 @@ performance = [
 ]
 
 gpu = [
-    # GPU offload runs in a single process and does not require MPI.
-    # NVIDIA: numba >= 0.62 bundles numba.cuda (verified with numba 0.66 on A100).
-    # AMD (MI300A / gfx942): GPU offload runs the same numba.cuda kernels via
-    # numba-hip's pose_as_cuda(). numba-hip requires numba >= 0.58, < 0.62 and a
-    # ROCm environment (better to install separately rather than through here).
-    # (Status as of July 2026)
+    # GPU offload runs in a single process and does not require MPI. Combine with
+    # the mpi extra (EBFM[gpu,mpi]) to run one MPI rank per GPU.
+    #
+    # NVIDIA: numba ships numba.cuda itself from 0.62 on, so no extra package is
+    # needed.
+    #
+    # AMD (MI300A / gfx942): the same numba.cuda kernels run through numba-hip's
+    # pose_as_cuda(). numba-hip pins numba to >= 0.58, < 0.62 (incompatible with
+    # the lower bound here, so it cannot be installed through the extra in EBFM.
+    # Install it into a ROCm environment separately. Status as of April 2026,
+    # not re-checked since).
     "numba >= 0.62",
 ]
 

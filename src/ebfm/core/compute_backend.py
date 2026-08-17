@@ -66,7 +66,7 @@ except ImportError:
 # happens at IMPORT time, because kernel decoration is import-time.
 #
 # _GPU_AVAILABLE only means the GPU stack is importable. Presence of a usable
-# device is confirmed separately by the smoke test in init_gpu().
+# device is confirmed separately by probe_gpu_device() in init_gpu().
 # ---------------------------------------------------------------------------
 _GPU_AVAILABLE = False
 _GPU_VENDOR: str | None = None  # "nvidia" | "amd" | None
@@ -131,7 +131,7 @@ def is_gpu_available() -> bool:
     """Return True if a GPU stack (numba.cuda or numba.hip) is importable.
 
     Note: this does not guarantee a usable device is present. That is verified
-    by the smoke test run inside init_gpu().
+    by probe_gpu_device(), run inside init_gpu().
     """
     return _GPU_AVAILABLE
 
@@ -161,7 +161,7 @@ def init_numba(n_threads: int = 1):
 def init_gpu(vendor: str = "auto", logger=None):
     """Activate the GPU backend after confirming a usable device.
 
-    Runs a small round-trip smoke test to verify the device works before
+    Runs probe_gpu_device() to verify a usable device is present before
     switching the backend. Must be called before any kernel runs (i.e. before
     the time loop).
 
@@ -183,11 +183,11 @@ def init_gpu(vendor: str = "auto", logger=None):
         )
 
     # Imported lazily to avoid a circular import at module load time.
-    from ebfm.core.LOOP_SNOW_gpu_kernels import gpu_offload_smoke_test
+    from ebfm.core.LOOP_SNOW_gpu_kernels import probe_gpu_device
 
-    smoke = gpu_offload_smoke_test()
-    if not smoke.get("available", False):
-        raise RuntimeError(f"GPU smoke test failed: {smoke.get('reason', 'unknown error')}")
+    device = probe_gpu_device()
+    if not device.get("available", False):
+        raise RuntimeError(f"GPU device check failed: {device.get('reason', 'unknown error')}")
 
     global _backend
     _backend = ComputeBackend.GPU
@@ -196,7 +196,7 @@ def init_gpu(vendor: str = "auto", logger=None):
         logger.info(
             "[GPU] backend enabled (%s). Device: %s  free=%.2f GiB  total=%.2f GiB",
             _GPU_VENDOR,
-            smoke["device_name"],
-            smoke["free_mem_gb"],
-            smoke["total_mem_gb"],
+            device["device_name"],
+            device["free_mem_gb"],
+            device["total_mem_gb"],
         )

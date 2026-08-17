@@ -52,19 +52,17 @@ def _blocks(gpsum: int) -> int:
 # ---------------------------------------------------------------------------
 # Device helper functions
 #
-# Python's built-in max(), min(), abs() cannot be reliably used inside
-# @cuda.jit kernels across all numba/Python versions.  In Python 3.12+
-# (and especially 3.14) numba's CUDA type-inference maps them to a
-# single-argument overload, raising "2 argument types given, but function
-# takes 1 arguments" at JIT-compile time.  The CPU @njit path handles them
-# via a separate overload mechanism and is unaffected.
+# These exist because the built-ins are not usable here: inside @cuda.jit,
+# numba's CUDA type inference resolves the two-argument max()/min() to a
+# single-argument overload and fails to compile with "2 argument types given,
+# but function takes 1 arguments" (Python 3.12+).
+# The CPU @njit kernels in LOOP_SNOW_kernels.py resolve them through a different
+# overload mechanism, which is why they call max()/min()/abs() directly.
 #
-# @cuda.jit(device=True) functions are the canonical numba solution: they
-# are compiled once for the device, inlined at every call site and work
-# on all supported numba versions and Python versions.
-#
-# When the GPU stack is absent (_CudaStub from compute_backend), the
-# decorator is a no-op, so the functions stay importable as plain Python.
+# @cuda.jit(device=True) is numba's own answer to this: compiled once for the
+# device and inlined at every call site, so there is no call overhead. When no
+# GPU stack is installed, `cuda` is the _CudaStub from compute_backend and the
+# decorator is a no-op, so these stay importable as plain Python.
 # ---------------------------------------------------------------------------
 
 
@@ -93,7 +91,7 @@ def _fabs(x):
 
 @cuda.jit
 def _gpu_probe_kernel(arr):
-    """Trivial kernel used only by gpu_offload_smoke_test().
+    """Trivial kernel used only by probe_gpu_device().
 
     Multiplies every element of ``arr`` by 2 to verify a GPU round-trip.
     """
@@ -837,15 +835,21 @@ class SnowDeviceState:
 
 
 # ===========================================================================
-# Smoke test
+# Startup device check
 # ===========================================================================
 
 
-def gpu_offload_smoke_test() -> dict:
-    """Verify GPU availability by running a trivial round-trip kernel.
+def probe_gpu_device() -> dict:
+    """Check that a usable GPU is present, before the time loop starts.
+
+    This is a startup precondition of a --with-gpu run: it is called from
+    init_gpu() so that a missing device, a missing CUDA/ROCm runtime
+    or a GPU that cannot run a kernel fails immediately with a clear reason,
+    instead of somewhere inside the first timestep. The device name and memory it
+    returns are logged (for identifiable) run logs.
 
     Transfers a small array to the GPU, doubles each element, copies the result
-    back, and asserts correctness. Also queries device name and memory.
+    back and asserts correctness. Also queries device name and memory.
 
     Returns
     -------
