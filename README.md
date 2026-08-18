@@ -255,6 +255,31 @@ EBFM now includes several performance improvements and supports several options 
 
   Note: If you use more than one thread, you must specify `--numba-threads`. In practice, 2 threads have shown the best performance so far, but optimal settings depend on your hardware and problem size. Feel free to experiment.
 
+- GPU offloading:
+
+  Install the GPU dependencies and use the `--with-gpu` flag to offload kernels from `LOOP_SNOW.py` to a GPU:
+
+  ```sh
+  pip install -e .[gpu]
+  ebfm --matlab-mesh examples/dem_and_mask.mat --with-gpu
+  ```
+
+  The same kernels run on NVIDIA (via `numba.cuda`) and on AMD (via `numba.hip`). The vendor is detected automatically. You can use `--gpu-vendor {auto,nvidia,amd}` to select or guard it explicitly. `--with-gpu` and `--with-numba` are mutually exclusive.
+
+  Note: on a cluster you usually have to load a CUDA/ROCm toolkit and point `CUDA_HOME` at it, otherwise Numba cannot compile the kernels even though the GPU itself is visible. See [CUDA runtime not found](#numba-does-not-find-the-cuda-runtime-cudais_available-is-false) in the troubleshooting section.
+
+  Before a long run you can verify the setup with:
+
+  ```sh
+  python -c "from numba import cuda; print(cuda.is_available())"
+  ```
+
+  At startup `--with-gpu` reports which stack and device it found, so you can check it went to the GPU you expected:
+
+  ```
+  [GPU] backend enabled (nvidia). Device: NVIDIA A100-SXM4-80GB  free=79.15 GiB  total=79.15 GiB
+  ```
+
 
 #### Timing Your Run
 
@@ -393,6 +418,19 @@ pytest -v tests/
 *Problem:* `./icon_dummy.x: error while loading shared libraries: libyaxt_c.so.1: cannot open shared object file: No such file or directory`
 
 *Solution:* `export LD_LIBRARY_PATH='$YAXT_INSTALL_DIR/lib/'
+
+### Numba does not find the CUDA runtime (`cuda.is_available()` is `False`)
+
+*Problem:* `--with-gpu` fails, or `python -c "from numba import cuda; print(cuda.is_available())"` prints `False`, even though the GPU is visible. Note that `cuda.detect()` and `nvidia-smi` can still report the device correctly: they only need the CUDA *driver*, while Numba additionally needs the CUDA *runtime* (`libnvvm`, `libcudart`) to compile kernels.
+
+*Solution:* Point `CUDA_HOME` at a CUDA toolkit installation and add its libraries to `LD_LIBRARY_PATH`. On Levante, for example:
+
+```sh
+export CUDA_HOME=/sw/spack-levante/nvhpc-22.5-v4oky3/Linux_x86_64/22.5/cuda/11.7
+export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+```
+
+Afterwards `cuda.is_available()` should print `True`.
 
 ### `#include <proj.h>` not found when building the Elmer dummy
 

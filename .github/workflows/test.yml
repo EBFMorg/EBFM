@@ -73,6 +73,32 @@ jobs:
     - name: Run unit tests with MPI
       run: tox -e unit-mpi
 
+  gpu-simulator-test:
+    name: GPU backend vs NumPy (CUDA simulator, Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]  # kernel logic is Python-version independent, one run is enough
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install tox
+      run: |
+        python -m pip install --upgrade pip
+        pip install tox
+
+    - name: Run the GPU kernels on the CUDA simulator
+      run: tox -e gpu-sim
+
   example-tests:
     name: Example tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
