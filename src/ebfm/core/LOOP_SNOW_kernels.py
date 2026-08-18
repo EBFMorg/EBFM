@@ -317,19 +317,23 @@ def _percolation_kernel(
     Lm,
     Trunoff,
     perc_depth,
-    percolation_mode,  # 0=bucket, 1=normal, 2=linear, 3=uniform
+    percolation_mode,  # 0=bucket, 1=normal, 2=linear
     dt,
 ):
     """Per-column percolation, slush storage and refreezing kernel, parallelized over gpsum
 
     1. Compute Wlim and Wirr (refreezing potential and available irreducible water storate)
-    2. carrot distribution profile (bucket / normal / linear / uniform)
+    2. carrot distribution profile (bucket / normal / linear)
     3. Refreezing and irreducible-water-storage
     4. Slush storage
     5. Slush refreezing
     6. Irreducible-water refreezing
     """
     gpsum, nl = subT.shape
+    # Checked here and not in the carrot branch below: a raise inside the prange body is a second loop exit,
+    # which makes Numba run the kernel serially.
+    if percolation_mode < 0 or percolation_mode > 2:
+        raise RuntimeError("_percolation_kernel: unknown percolation_mode, expected 0=bucket, 1=normal, 2=linear")
     sigma2_2 = 2.0 * (perc_depth / 3.0) ** 2
     norm_coeff = 2.0 / (perc_depth / 3.0) / math.sqrt(2.0 * math.pi)
     trunoff_factor = 1.0 / (1.0 + dt / Trunoff)
@@ -364,7 +368,7 @@ def _percolation_kernel(
         if percolation_mode == 0:  # bucket: all water enters surface layer
             carrot_loc[0] = 1.0
         else:
-            # Compute zz (midpoint depth of each layer) for mode 1/2/3
+            # Compute zz (midpoint depth of each layer) for mode 1/2
             depth = 0.0
             for k in range(nl):
                 zz_k = depth + 0.5 * subZ[i, k]
@@ -373,20 +377,7 @@ def _percolation_kernel(
                 elif percolation_mode == 2:  # linear
                     v = 2.0 * (perc_depth - zz_k) / (perc_depth * perc_depth)
                     carrot_loc[k] = v if v > 0.0 else 0.0
-                else:  # uniform (mode 3): temporarily store zz for the argmin pass below
-                    carrot_loc[k] = zz_k
                 depth += subZ[i, k]
-
-            if percolation_mode == 3:  # uniform: resolve argmin, then fill layers 0..ind
-                min_dist = math.inf
-                ind = 0
-                for k in range(nl):
-                    d = abs(carrot_loc[k] - perc_depth)
-                    if d < min_dist:
-                        min_dist = d
-                        ind = k
-                for k in range(nl):
-                    carrot_loc[k] = (1.0 / perc_depth) if k <= ind else 0.0
 
         # Scale by layer thickness, normalize, multiply by avail_W
         s = 0.0

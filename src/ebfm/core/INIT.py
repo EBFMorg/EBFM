@@ -74,7 +74,6 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     #   - 'bucket': tipping-bucket method (all water added at the surface)
     #   - 'normal': normally distributed deep percolation
     #   - 'linear': linearly distributed deep percolation
-    #   - 'uniform': uniformly distributed deep percolation
 
     phys["snow_compaction"] = "firn+snow"  # Snow and firn compaction scheme
     # Options:

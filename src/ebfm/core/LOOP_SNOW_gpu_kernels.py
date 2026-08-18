@@ -78,12 +78,6 @@ def _fmin(a, b):
     return a if a < b else b
 
 
-@cuda.jit(device=True)
-def _fabs(x):
-    """abs(x) for use inside GPU kernels (replaces Python built-in)."""
-    return x if x >= 0.0 else -x
-
-
 # ===========================================================================
 # GPU kernels
 # ===========================================================================
@@ -347,20 +341,7 @@ def _percolation_kernel_gpu(
             elif percolation_mode == 2:
                 v = 2.0 * (perc_depth - zz_k) / (perc_depth * perc_depth)
                 carrot_ws[i, k] = v if v > 0.0 else 0.0
-            else:
-                carrot_ws[i, k] = zz_k
             depth += subZ[i, k]
-
-        if percolation_mode == 3:
-            min_dist = math.inf
-            ind = 0
-            for k in range(nl):
-                d = _fabs(carrot_ws[i, k] - perc_depth)
-                if d < min_dist:
-                    min_dist = d
-                    ind = k
-            for k in range(nl):
-                carrot_ws[i, k] = (1.0 / perc_depth) if k <= ind else 0.0
 
     s = 0.0
     for k in range(nl):

@@ -6,15 +6,9 @@
 # Claude Code: Opus 5
 
 """
-Smoke test for the "uniform" percolation scheme of LOOP_SNOW.
+The percolation schemes in LOOP_SNOW.
 
-The scheme distributes the available water evenly over the layers down to the
-characteristic percolation depth C["perc_depth"] and adds nothing below it.
-That cut-off layer is determined per column, so columns with different layer
-thicknesses wet down to different layer indices.
-
-The default configuration uses percolation="normal" and the scheme is not
-reachable from the command line, so this code path had never been executed.
+"bucket", "normal" and "linear".
 """
 
 import unittest
@@ -22,11 +16,11 @@ import unittest
 import numpy as np
 
 GPSUM, NL = 4, 20
-# Layer thickness per column (m), constant over depth. With perc_depth = 6.0 m
-# the layer midpoints zz = cumsum(subZ) - subZ/2 put the cut-off at
-#   0.7 m layers: zz[8] = 5.95 (next one 6.65) -> layer 8
-#   1.3 m layers: zz[4] = 5.85 (next one 7.15) -> layer 4
+_SCHEMES = ("bucket", "normal", "linear")
+# Layer thickness per column (m), constant over depth: the columns differ in thickness only.
 _THICKNESS = np.array([0.7, 0.7, 1.3, 1.3])
+# Deepest layer still reached by percolation="linear": the last one whose midpoint
+# zz = cumsum(subZ) - subZ/2 stays above perc_depth = 6.0 m (0.7 m: zz[8] = 5.95, 1.3 m: zz[4] = 5.85).
 _EXPECTED_CUTOFF = np.array([8, 8, 4, 4])
 
 
@@ -71,37 +65,58 @@ def _make_case(C):
     return grid, OUT, IN
 
 
-class TestUniformPercolation(unittest.TestCase):
-    """percolation="uniform" must run and must stop at the percolation depth."""
-
+class TestPercolationSchemes(unittest.TestCase):
     def setUp(self):
         from ebfm.core import INIT, LOOP_SNOW
 
         self.LOOP_SNOW = LOOP_SNOW
         self.C = INIT.init_constants()
-        self.phys = {"snow_compaction": "firn+snow", "percolation": "uniform"}
-        self.grid, self.OUT, self.IN = _make_case(self.C)
 
-    def test_uniform_percolation_runs(self):
-        """The scheme used to raise TypeError on the first timestep.
+    def _run(self, percolation):
+        """Advance the case by one hourly time step and return the state before and after."""
+        grid, OUT, IN = _make_case(self.C)
+        phys = {"snow_compaction": "firn+snow", "percolation": percolation}
+        subT_before = OUT["subT"].copy()
+        self.LOOP_SNOW.main(self.C, OUT, IN, 1.0 / 24.0, grid, phys)
+        return subT_before, OUT
 
-        The layer range was selected with a slice built from the per-column
-        index array `ind`, which NumPy cannot use as a slice bound.
+    def test_supported_schemes_run(self):
+        """One time step must complete and leave a finite state for every scheme."""
+        for percolation in _SCHEMES:
+            with self.subTest(percolation=percolation):
+                _, OUT = self._run(percolation)
+                for name in ("subT", "subD", "subZ", "subW", "subS"):
+                    self.assertTrue(np.isfinite(OUT[name]).all(), f"{name} is not finite")
+
+    def test_rain_warms_the_column(self):
+        """The rain refreezes in the cold layers it reaches, so every scheme warms the column.
+
+        The column set is isothermal, so refreezing is the only process that changes subT.
         """
-        self.LOOP_SNOW.main(self.C, self.OUT, self.IN, 1.0 / 24.0, self.grid, self.phys)
+        for percolation in _SCHEMES:
+            with self.subTest(percolation=percolation):
+                subT_before, OUT = self._run(percolation)
+                warmed = OUT["subT"] > subT_before
+                self.assertTrue(warmed[:, 0].all(), f"surface layer stayed cold, got {warmed}")
+                self.assertTrue((OUT["subT"] <= self.C["T0"]).all(), "refreezing warmed a layer above T0")
 
-    def test_uniform_percolation_stops_at_percolation_depth(self):
+    def test_bucket_percolation_wets_only_the_surface_layer(self):
+        """All water enters the surface layer, which here holds it all: no layer below warms."""
+        subT_before, OUT = self._run("bucket")
+
+        warmed = OUT["subT"] > subT_before
+        self.assertTrue(warmed[:, 0].all(), f"surface layer should have received water, got {warmed}")
+        self.assertFalse(warmed[:, 1:].any(), f"no layer below the surface should have received water, got {warmed}")
+
+    def test_linear_percolation_stops_at_percolation_depth(self):
         """Water reaches the cut-off layer of its own column, and no layer below.
 
-        The incoming rain refreezes in the cold layers it reaches, which raises
-        their temperature; layers that receive no water keep theirs. The two
-        column groups differ only in layer thickness, so a cut-off shared by all
-        columns cannot reproduce this.
+        The cut-off follows from the layer thickness, so the thin and the thick columns
+        stop at different layers: a cut-off shared by all columns cannot reproduce this.
         """
-        subT_before = self.OUT["subT"].copy()
-        self.LOOP_SNOW.main(self.C, self.OUT, self.IN, 1.0 / 24.0, self.grid, self.phys)
+        subT_before, OUT = self._run("linear")
 
-        warmed = self.OUT["subT"] > subT_before
+        warmed = OUT["subT"] > subT_before
         for column, cutoff in enumerate(_EXPECTED_CUTOFF):
             with self.subTest(column=column, thickness=_THICKNESS[column]):
                 self.assertTrue(

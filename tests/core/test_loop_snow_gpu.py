@@ -165,7 +165,7 @@ _COMPARED = [
 # default configuration exercises exactly one branch of each, so the modes are
 # enumerated here instead.
 _SNOW_COMPACTION_MODES = ("firn_only", "firn+snow")
-_PERCOLATION_MODES = ("bucket", "normal", "linear", "uniform")
+_PERCOLATION_MODES = ("bucket", "normal", "linear")
 
 
 @unittest.skipUnless(_NUMBA and _CUDASIM, "requires numba with NUMBA_ENABLE_CUDASIM=1")
