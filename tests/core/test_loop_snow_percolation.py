@@ -6,9 +6,9 @@
 # Claude Code: Opus 5
 
 """
-The percolation schemes LOOP_SNOW accepts.
+The percolation schemes in LOOP_SNOW.
 
-"bucket", "normal" and "linear" run.
+"bucket", "normal" and "linear".
 """
 
 import unittest

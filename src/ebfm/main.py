@@ -139,9 +139,14 @@ def _main_impl():
 
         n_threads = resolve_numba_threads(args, ebfm_comm, logger)
         init_numba(n_threads)
+    elif args.with_gpu:
+        from ebfm.core.compute_backend import init_gpu
+
+        init_gpu(args.gpu_vendor, logger)
     else:
         logger.info(
-            "Pass --with-numba to enable the parallel Numba kernels " "(requires: pip install 'ebfm[performance]')."
+            "Pass --with-numba to enable the parallel Numba kernels, or --with-gpu to offload them "
+            "to a GPU (requires: pip install 'ebfm[performance]' / 'ebfm[gpu]')."
         )
 
     logger.info("Done parsing command line arguments.")

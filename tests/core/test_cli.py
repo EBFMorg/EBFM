@@ -139,6 +139,12 @@ class TestDefaults(unittest.TestCase):
     def test_numba_threads_default_none(self):
         self.assertIsNone(self.args.numba_threads)
 
+    def test_with_gpu_default_false(self):
+        self.assertFalse(self.args.with_gpu)
+
+    def test_gpu_vendor_default_auto(self):
+        self.assertEqual(self.args.gpu_vendor, "auto")
+
     def test_no_coupling_by_default(self):
         self.assertFalse(self.args.couple_to_elmer_ice)
         self.assertFalse(self.args.couple_to_icon_atmo)
@@ -148,6 +154,33 @@ class TestDefaults(unittest.TestCase):
 
     def test_random_seed_default_none(self):
         self.assertIsNone(self.args.random_seed)
+
+
+class TestGpuOptions(unittest.TestCase):
+    """--with-gpu / --gpu-vendor parsing and compatibility checks."""
+
+    def test_with_gpu_accepted(self):
+        args = _parse("--with-gpu")
+        self.assertTrue(args.with_gpu)
+
+    def test_gpu_vendor_accepted(self):
+        args = _parse("--with-gpu", "--gpu-vendor", "nvidia")
+        self.assertEqual(args.gpu_vendor, "nvidia")
+
+    def test_gpu_vendor_invalid_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            _parse("--with-gpu", "--gpu-vendor", "intel")
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_with_gpu_and_with_numba_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            _parse("--with-gpu", "--with-numba")
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_gpu_vendor_without_with_gpu_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            _parse("--gpu-vendor", "nvidia")
+        self.assertEqual(ctx.exception.code, 2)
 
 
 class TestLocalGroupLabel(unittest.TestCase):

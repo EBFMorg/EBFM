@@ -6,8 +6,10 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
-* Removed the `uniform` percolation scheme (not used in practice, `normal` and `bucket` are typically chosen). `phys["percolation"]` now accepts `bucket`, `normal` and `linear`. https://github.com/EBFMorg/EBFM/pull/160
+* Removed the `uniform` percolation scheme (not used in practice, `normal` and `bucket` are typically chosen). `phys["percolation"]` now accepts `bucket`, `normal` and `linear`. Adapted tests. https://github.com/EBFMorg/EBFM/pull/160
 * Fixed `phys["percolation"] = "uniform"` raising `TypeError` on the first timestep in `LOOP_SNOW.py` (only in NumPy path). `test_loop_snow_percolation.py` added. https://github.com/EBFMorg/EBFM/pull/158
+* Introduced `--with-gpu` to offload the kernels compaction, heat conduction, percolation to a GPU via `numba.cuda` (NVIDIA) or `numba.hip` (AMD), with `--gpu-vendor {auto,nvidia,amd}` to select/guard the vendor. Mutually exclusive with `--with-numba`. Install via `pip install ebfm[gpu]`. https://github.com/EBFMorg/EBFM/pull/157
+* Added `tests/core/test_loop_snow_gpu.py`: runs the snow model on the NumPy and GPU backends from an identical state and requires agreement to `atol=1e-12, rtol=1e-9`. Uses numba's CUDA simulator, so it needs no GPU. https://github.com/EBFMorg/EBFM/pull/157
 * Further optimizations in CPU/host-side code in `LOOP_SNOW.py`: fewer full-grid copies, heat conduction precompute moved into Numba kernel. https://github.com/EBFMorg/EBFM/pull/147.
 * The `performance` extra no longer installs `mpi4py`: Numba parallelises with threads inside a single process and does not require MPI. Use `EBFM[performance,mpi]` to combine both. https://github.com/EBFMorg/EBFM/pull/147.
 * Fixed bug where the shading look-up table for MATLAB grids was pre-computed during initialization even when shading is disabled.  https://github.com/EBFMorg/EBFM/pull/155.
