@@ -11,47 +11,16 @@ SPDX-License-Identifier: BSD-3-Clause
 Install EBFM with the performance features:
 
 ```sh
-pip install -e .[performance]
+pip install ebfm[performance]
 ```
 
 This additionally installs `numba` to run with multiple CPU-threads.
 
-## Running EBFM with performance optimizations
-
-EBFM offers several options for tuning performance on a given system and for testing and benchmarking it.
-
-### Numba kernels: `--with-numba`
-
-`--with-numba` runs the `LOOP_SNOW.py` kernels (compaction, heat conduction, percolation) as compiled,
-multi-threaded Numba kernels instead of NumPy array operations. Use it on a multi-core CPU when no GPU is available.
-It generally outperforms the NumPy path, the more clearly the larger the mesh and the longer the run.
-
-It is not on by default because `numba` is an optional dependency and the kernels compile on first use. A very short run can therefore spend more time compiling than it saves.
-
-Control the number of threads with `--numba-threads N` (replace `N` with the desired thread count):
+For GPU offloading, install the GPU dependencies instead:
 
 ```sh
-ebfm --matlab-mesh examples/dem_and_mask.mat --with-numba --numba-threads 2
+pip install ebfm[gpu]
 ```
-
-Note: If you use more than one thread, you must specify `--numba-threads`. In practice, 2 threads have shown the
-best performance so far, but optimal settings depend on your hardware and problem size. Feel free to experiment.
-
-### GPU offloading: `--with-gpu`
-
-You can use this option when the node you run on has a GPU: it offloads the same kernels to the device. How much that
-gains depends on the mesh size and the GPU, and for small meshes it is not necessarily faster than `--with-numba`.
-`--with-gpu` and `--with-numba` are alternative backends for those kernels and therefore mutually exclusive.
-
-Install the GPU dependencies and run with the `--with-gpu` flag:
-
-```sh
-pip install -e .[gpu]
-ebfm --matlab-mesh examples/dem_and_mask.mat --with-gpu
-```
-
-The same kernels run on NVIDIA (via `numba.cuda`) and on AMD (via `numba.hip`). The vendor is detected
-automatically. You can use `--gpu-vendor {auto,nvidia,amd}` to select or guard it explicitly.
 
 Note: on a cluster you usually have to load a CUDA/ROCm toolkit and point `CUDA_HOME` at it, otherwise Numba
 cannot compile the kernels even though the GPU itself is visible. See
@@ -64,15 +33,52 @@ python -c "from numba import cuda; print(cuda.is_available())"
 # expected output: True
 ```
 
-At startup `--with-gpu` reports which stack and device it found, so you can check it went to the GPU you expected:
+## Running EBFM with performance optimizations
+
+EBFM offers several options for tuning performance on a given system and for testing and benchmarking it.
+
+### Numba kernels: `--with-numba`
+
+The option `--with-numba` runs the `LOOP_SNOW.py` kernels (compaction, heat conduction, percolation) as compiled,
+multi-threaded Numba kernels instead of NumPy array operations. Use it on a multi-core CPU when no GPU is available.
+It generally outperforms the NumPy path, the more clearly the larger the mesh and the longer the run.
+
+It is not on by default because `numba` is an optional dependency and the kernels compile on first use. A very short run can therefore spend more time compiling than it saves.
+
+Control the number of threads with `--numba-threads N` (replace `N` with the desired thread count).
+
+**Example:** Run EBFM on the MATLAB example mesh with the Numba kernels on two threads:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat --with-numba --numba-threads 2
+```
+
+Note: If you use more than one thread, you must specify `--numba-threads`. In practice, 2 threads have shown the
+best performance so far, but optimal settings depend on your hardware and problem size. Feel free to experiment.
+
+### GPU offloading: `--with-gpu`
+
+You can use the option `--with-gpu` when the node you run on has a GPU: it offloads the same kernels to the device as for the option `--with-numba`. How much that
+gains depends on the mesh size and the GPU, and for small meshes it is not necessarily faster than `--with-numba`.
+The options `--with-gpu` and `--with-numba` tell EBFM to select alternative backends for those kernels and are therefore mutually exclusive.
+
+**Example:** Run EBFM on the MATLAB example mesh with the GPU kernels:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat --with-gpu
+```
+
+The same kernels run on NVIDIA and AMD GPUs, see `--gpu-vendor` in `ebfm --help`.
+
+When `--with-gpu` is set, EBFM will report at startup which vendor backend (`nvidia` or `amd`) and which device have been found, so you can check it went to the GPU you expected:
 
 ```
-[GPU] backend enabled (nvidia). Device: NVIDIA A100-SXM4-80GB  free=79.15 GiB  total=79.15 GiB
+[GPU] backend enabled (nvidia). Device: NVIDIA A100-SXM4-80GB  free=78.83 GiB  total=79.15 GiB
 ```
 
 ## Timing Your Run
 
-To measure the total runtime, simply prepend your command with
+To measure the total runtime prepend your command with
 [`time`](https://www.gnu.org/software/bash/manual/bash.html#Pipelines):
 
 ```sh
@@ -105,7 +111,7 @@ Then compare with:
 python tools/compare_snapshots.py reference_run.npz new_run.npz
 ```
 
-Note: If you use the random-forcing within EBFM in your testcases, make sure to additionally set the option `--random-seed`, as explained below.
+Note: uncoupled runs (such as the example testcase) generate their climate forcing randomly, so make sure to additionally set the option `--random-seed`, as explained below.
 
 ## Diagnostics and Reproducibility
 
@@ -115,10 +121,10 @@ Note: If you use the random-forcing within EBFM in your testcases, make sure to 
   ebfm --matlab-mesh examples/dem_and_mask.mat --random-seed 42
   ```
 
-- Use `--diagnostics` to print some diagnostics for a quick overview for every timestep:
+- Use `--print-diagnostics` to print some diagnostics for a quick overview for every timestep:
 
   ```sh
-  ebfm --matlab-mesh examples/dem_and_mask.mat --diagnostics
+  ebfm --matlab-mesh examples/dem_and_mask.mat --print-diagnostics
   ```
 
 ## Troubleshooting

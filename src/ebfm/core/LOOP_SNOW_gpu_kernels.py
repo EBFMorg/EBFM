@@ -861,18 +861,13 @@ def probe_gpu_device() -> dict:
         return {"available": False, "reason": f"failed to query device memory: {exc}"}
 
     # Round-trip test: allocate 32 ones, double on GPU, assert result == 2.
-    # Imported here and not at module level: numba is only guaranteed to be
-    # importable once init_gpu() has checked _GPU_AVAILABLE, which it does
-    # before calling this function.
     from numba.core.errors import NumbaPerformanceWarning
 
     host_arr = np.ones(32, dtype=np.float64)
     try:
-        # numba warns about grids below 128 blocks. The probe is deliberately
-        # tiny, so that warning says nothing about the real kernels, but it would
-        # show up in every --with-gpu run log. Suppressed for this launch only;
-        # the warning is raised when the launch is configured (`[4, 8]`), so that
-        # has to happen inside the block as well.
+        # numba warns about the probe's tiny grid: suppressed for this launch only,
+        # and `[4, 8]` has to stay nside the block because that is where the warning
+        # is raised.
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
             d_arr = cuda.to_device(host_arr)
