@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
-* Moved performance and profiling sections out of `README.md` into `docs/Performance.md`, together with the GPU setup and CUDA runtime troubleshooting entry. https://github.com/EBFMorg/EBFM/pull/XXX
+* Moved performance and profiling sections out of `README.md` into `docs/Performance.md`, together with the GPU setup and CUDA runtime troubleshooting entry. https://github.com/EBFMorg/EBFM/pull/161
 * Removed the `uniform` percolation scheme (not used in practice, `normal` and `bucket` are typically chosen). `phys["percolation"]` now accepts `bucket`, `normal` and `linear`. Adapted tests. https://github.com/EBFMorg/EBFM/pull/160
 * Fixed `phys["percolation"] = "uniform"` raising `TypeError` on the first timestep in `LOOP_SNOW.py` (only in NumPy path). `test_loop_snow_percolation.py` added. https://github.com/EBFMorg/EBFM/pull/158
 * Introduced `--with-gpu` to offload the kernels compaction, heat conduction, percolation to a GPU via `numba.cuda` (NVIDIA) or `numba.hip` (AMD), with `--gpu-vendor {auto,nvidia,amd}` to select/guard the vendor. Mutually exclusive with `--with-numba`. Install via `pip install ebfm[gpu]`. https://github.com/EBFMorg/EBFM/pull/157
