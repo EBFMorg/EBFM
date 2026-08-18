@@ -35,6 +35,7 @@ are never launched.
 """
 
 import math
+import warnings
 
 import numpy as np
 
@@ -860,11 +861,23 @@ def probe_gpu_device() -> dict:
         return {"available": False, "reason": f"failed to query device memory: {exc}"}
 
     # Round-trip test: allocate 32 ones, double on GPU, assert result == 2.
+    # Imported here and not at module level: numba is only guaranteed to be
+    # importable once init_gpu() has checked _GPU_AVAILABLE, which it does
+    # before calling this function.
+    from numba.core.errors import NumbaPerformanceWarning
+
     host_arr = np.ones(32, dtype=np.float64)
     try:
-        d_arr = cuda.to_device(host_arr)
-        _gpu_probe_kernel[4, 8](d_arr)  # 4 blocks x 8 threads = 32 threads
-        result = d_arr.copy_to_host()
+        # numba warns about grids below 128 blocks. The probe is deliberately
+        # tiny, so that warning says nothing about the real kernels, but it would
+        # show up in every --with-gpu run log. Suppressed for this launch only;
+        # the warning is raised when the launch is configured (`[4, 8]`), so that
+        # has to happen inside the block as well.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
+            d_arr = cuda.to_device(host_arr)
+            _gpu_probe_kernel[4, 8](d_arr)  # 4 blocks x 8 threads = 32 threads
+            result = d_arr.copy_to_host()
     except Exception as exc:
         return {"available": False, "reason": f"GPU kernel launch failed: {exc}"}
 
