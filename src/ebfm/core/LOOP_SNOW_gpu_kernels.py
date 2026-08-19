@@ -35,6 +35,7 @@ are never launched.
 """
 
 import math
+import warnings
 
 import numpy as np
 
@@ -860,11 +861,18 @@ def probe_gpu_device() -> dict:
         return {"available": False, "reason": f"failed to query device memory: {exc}"}
 
     # Round-trip test: allocate 32 ones, double on GPU, assert result == 2.
+    from numba.core.errors import NumbaPerformanceWarning
+
     host_arr = np.ones(32, dtype=np.float64)
     try:
-        d_arr = cuda.to_device(host_arr)
-        _gpu_probe_kernel[4, 8](d_arr)  # 4 blocks x 8 threads = 32 threads
-        result = d_arr.copy_to_host()
+        # numba warns about the probe's tiny grid: suppressed for this launch only,
+        # and `[4, 8]` has to stay nside the block because that is where the warning
+        # is raised.
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=NumbaPerformanceWarning)
+            d_arr = cuda.to_device(host_arr)
+            _gpu_probe_kernel[4, 8](d_arr)  # 4 blocks x 8 threads = 32 threads
+            result = d_arr.copy_to_host()
     except Exception as exc:
         return {"available": False, "reason": f"GPU kernel launch failed: {exc}"}
 
