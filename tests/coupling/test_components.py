@@ -81,7 +81,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
         data_to_icon = {
-            "albedo": 0.5,
+            "icemask": 1.0,
         }
 
         # Simulate data exchange
@@ -116,7 +116,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         )
 
         data_to_icon = {
-            "albedo": 0.5,
+            "icemask": 1.0,
         }
 
         fallback_values = {
