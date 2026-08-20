@@ -93,10 +93,6 @@ def _make_case(gpsum=48, nl=50, seed=7, snow_compaction="firn+snow", percolation
     OUT["subS"][1::3, :] = 0.0
     OUT["surfH"] = rng.uniform(-1.0, 1.0, gpsum)
     OUT["Tsurf"] = C["T0"] - rng.uniform(0.0, 15.0, gpsum)
-    # Conductivity / heat capacity diagnostics: INIT allocates these, and the
-    # GPU path writes the kernel results back into them in place.
-    OUT["subK"] = np.zeros((gpsum, nl))
-    OUT["subCeff"] = np.zeros((gpsum, nl))
 
     # Surface energy balance results consumed by LOOP_SNOW.
     OUT["melt"] = rng.uniform(0.0, 0.02, gpsum)
@@ -109,8 +105,10 @@ def _make_case(gpsum=48, nl=50, seed=7, snow_compaction="firn+snow", percolation
     OUT["moist_evaporation"] = rng.uniform(0.0, 1e-4, gpsum)
     OUT["runoff_irr_deep_mean"] = rng.uniform(0.0, 1.0, gpsum)
     # Deliberately NOT seeded here: "sumWinit", "cpi", "Dens_*" and "runoff_irr"
-    # are not created by INIT either, LOOP_SNOW produces them. Seeding them
-    # would hide a backend that only ever writes into an existing host array.
+    # are not created by INIT either -- LOOP_SNOW produces them. Seeding them
+    # would hide a backend that only ever writes *into* an existing host array,
+    # which is how the GPU path once failed with KeyError on the first
+    # sync_gpu_state() of a real run.
 
     IN = {}
     IN["T"] = C["T0"] - rng.uniform(-5.0, 25.0, gpsum)
@@ -174,9 +172,10 @@ class TestLoopSnowGPUMatchesNumPy(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from ebfm.core import LOOP_SNOW, compute_backend
+        from ebfm.core import LOOP_SNOW, LOOP_SNOW_gpu_kernels, compute_backend
 
         cls.LOOP_SNOW = LOOP_SNOW
+        cls.gpu_kernels = LOOP_SNOW_gpu_kernels
         cls.compute_backend = compute_backend
 
         # The drift-densification time scale divides by a gamma that underflows
@@ -187,9 +186,13 @@ class TestLoopSnowGPUMatchesNumPy(unittest.TestCase):
         warnings.filterwarnings("ignore", message="divide by zero encountered", category=RuntimeWarning)
 
     def setUp(self):
+        # Each test starts from a clean device state, otherwise the resident
+        # buffers of a previous test would be reused.
+        self.gpu_kernels._device_state = None
         self.compute_backend._backend = self.compute_backend.ComputeBackend.NUMPY
 
     def tearDown(self):
+        self.gpu_kernels._device_state = None
         self.compute_backend._backend = self.compute_backend.ComputeBackend.NUMPY
 
     def _run(self, backend, steps, **case):
@@ -201,6 +204,7 @@ class TestLoopSnowGPUMatchesNumPy(unittest.TestCase):
             # same inputs even though LOOP_SNOW overwrites some of them.
             _, IN_step = _deepcopy_state(OUT, IN)
             self.LOOP_SNOW.main(C, OUT, IN_step, dt, grid, phys)
+            self.LOOP_SNOW.sync_gpu_state(OUT)
         return OUT
 
     def _assert_matches(self, ref, got, context):
@@ -247,6 +251,30 @@ class TestLoopSnowGPUMatchesNumPy(unittest.TestCase):
                     self.setUp()
                     got = self._run(self.compute_backend.ComputeBackend.GPU, steps=1, **case)
                     self._assert_matches(ref, got, f"{snow_compaction}/{percolation}, 1 step")
+
+    def test_boundary_download_keeps_host_layers_current(self):
+        """The layers host code reads between timesteps must be up to date.
+
+        download_boundary() refreshes only part of the host grids; this checks
+        that the part it does refresh matches a full sync, so LOOP_EBM,
+        LOOP_EBM_SWout and LOOP_mass_balance see current values without one.
+        """
+        C, OUT, IN, dt, grid, phys = _make_case()
+        self.compute_backend._backend = self.compute_backend.ComputeBackend.GPU
+        _, IN_step = _deepcopy_state(OUT, IN)
+        self.LOOP_SNOW.main(C, OUT, IN_step, dt, grid, phys)
+
+        partial = {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in OUT.items()}
+        self.LOOP_SNOW.sync_gpu_state(OUT)
+
+        np.testing.assert_array_equal(partial["subD"][:, :2], OUT["subD"][:, :2])
+        np.testing.assert_array_equal(partial["subZ"][:, :2], OUT["subZ"][:, :2])
+        np.testing.assert_array_equal(partial["subT"][:, 1], OUT["subT"][:, 1])
+        np.testing.assert_array_equal(partial["T_ice"], OUT["subT"][:, -1])
+        np.testing.assert_array_equal(
+            partial["all_ice_column"],
+            np.all(OUT["subD"] >= C["Dice"], axis=1),
+        )
 
 
 if __name__ == "__main__":

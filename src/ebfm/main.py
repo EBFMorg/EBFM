@@ -271,6 +271,11 @@ def _main_impl():
         # TODO: should be supported for all cases to avoid case distinction here
         if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
             if grid_config.grid_type is GridInputType.MATLAB:
+                # The subsurface grids are written as "sample" variables, so on
+                # the GPU backend they only have to leave the device on the
+                # steps that actually record one.
+                if LOOP_write_to_file.is_sample_step(io, t):
+                    LOOP_SNOW.sync_gpu_state(OUT)
                 io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time)
             else:
                 logger.warning("Skipping writing output to file for Elmer input grids.")
@@ -283,6 +288,7 @@ def _main_impl():
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
     if not grid["is_partitioned"]:
+        LOOP_SNOW.sync_gpu_state(OUT)
         FINAL_create_restart_file.main(OUT, io, args.restart_dir)
     else:
         logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
@@ -290,6 +296,7 @@ def _main_impl():
     logger.info("Time loop completed.")
 
     if args.dump_reference:
+        LOOP_SNOW.sync_gpu_state(OUT)
         dump_reference(logger, OUT, args.dump_reference)
 
     coupler.finalize()

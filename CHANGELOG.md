@@ -4,6 +4,11 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# develop
+
+* `--with-gpu` now runs all of `LOOP_SNOW` on the device and keeps the subsurface state resident across timesteps, instead of round-tripping it twice per timestep. Per-step transfers are down to the `(gpsum,)` forcing and result vectors; `LOOP_SNOW.sync_gpu_state()` copies the full grids back when output, restart or `--dump-reference` needs them.
+* `LOOP_EBM` evaluates the GHF conductivity on the top two subsurface layers only, and `LOOP_write_to_file` reads `sample`-type variables only on timesteps that record one. Bit-identical for every backend.
+
 # v0.7.0
 
 * Moved performance and profiling sections out of `README.md` into `docs/Performance.md`, together with the GPU setup and CUDA runtime troubleshooting entry. https://github.com/EBFMorg/EBFM/pull/161
