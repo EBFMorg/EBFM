@@ -23,6 +23,7 @@ from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 # Minimal valid args for each primary grid type.
 _MATLAB = ["--matlab-mesh", "mesh.mat"]
 _ELMER = ["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413"]
+_CARRA2 = ["--netcdf-mesh", "mesh.nc"]
 
 
 def _parse(*extra: str, base: list[str] = _MATLAB):
@@ -41,14 +42,23 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
         args = parse_cli_args(_ELMER)
         self.assertEqual(args.elmer_mesh, Path("mesh/"))
 
+    def test_carra2_mesh_accepted(self):
+        args = parse_cli_args(_CARRA2)
+        self.assertEqual(args.netcdf_mesh, Path("mesh.nc"))
+
     def test_no_grid_option_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args([])
         self.assertEqual(ctx.exception.code, 2)
 
-    def test_two_grid_options_rejected(self):
+    def test_two_grid_options_rejected_matlab_elmer(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(_MATLAB + _ELMER)
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_two_grid_options_rejected_matlab_carra(self):
+        with self.assertRaises(SystemExit) as ctx:
+            parse_cli_args(_MATLAB + _CARRA2)
         self.assertEqual(ctx.exception.code, 2)
 
 
@@ -326,6 +336,7 @@ class TestCliHelpOutput(unittest.TestCase):
         help_text = buf.getvalue()
         self.assertIn("--matlab-mesh", help_text)
         self.assertIn("--elmer-mesh", help_text)
+        self.assertIn("--netcdf-mesh", help_text)
         self.assertIn("--calendar", help_text)
 
 
