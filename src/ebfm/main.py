@@ -167,7 +167,7 @@ def _main_impl():
 
     # Model setup & initialization
     time = time_config.to_dict()
-    grid, io, phys = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
+    grid, io, phys, column = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
 
     if args.random_seed is not None:
         np.random.seed(args.random_seed)
@@ -176,7 +176,7 @@ def _main_impl():
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
 
-    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, init_with_restart_file=args.restart_init)
+    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 
     coupler.setup(grid, time_config)
 
@@ -229,7 +229,7 @@ def _main_impl():
         OUT = LOOP_EBM.main(C, OUT, IN, time, grid, coupler)
 
         # Run snow & firn model
-        OUT = LOOP_SNOW.main(C, OUT, IN, time["dt"], grid, phys)
+        OUT = LOOP_SNOW.main(C, OUT, IN, time["dt"], grid, phys, column)
 
         # Calculate surface mass balance
         OUT = LOOP_mass_balance.main(OUT, IN, C)
@@ -271,7 +271,7 @@ def _main_impl():
         # TODO: should be supported for all cases to avoid case distinction here
         if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
             if grid_config.grid_type is GridInputType.MATLAB:
-                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time)
+                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
             else:
                 logger.warning("Skipping writing output to file for Elmer input grids.")
         elif grid["is_partitioned"] or not isinstance(coupler, ebfm.coupling.DummyCoupler):

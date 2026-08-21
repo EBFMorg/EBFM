@@ -18,6 +18,7 @@ from ebfm.core import INIT
 from ebfm.core.INIT import init_config, init_grid, init_initial_conditions
 from ebfm.core.FINAL_create_restart_file import main as write_restart_file
 from ebfm.core.cli import parse_cli_args
+from ebfm.core.config import ColumnDiscretizationConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
 
@@ -25,6 +26,11 @@ GPSUM = 5
 NL = 4
 
 _MATLAB_MESH = Path(__file__).parents[2] / "examples" / "dem_and_mask.mat"
+
+
+def _make_column():
+    """A discretization matching the restart files written by these tests."""
+    return ColumnDiscretizationConfig(nl=NL, split=(2,))
 
 
 def _build_out_dict() -> dict:
@@ -83,11 +89,11 @@ class TestInitFromRestartFile(unittest.TestCase):
 
     def test_restart_arrays_are_not_masked(self):
         C = {"alb_ice": 0.5}
-        grid = {"gpsum": GPSUM, "nl": NL}
+        grid = {"gpsum": GPSUM}
         io = {"bootfilein": self.bootfile}
         time = {}
 
-        OUT, _, _ = init_initial_conditions(C, grid, io, time, init_with_restart_file=True)
+        OUT, _, _ = init_initial_conditions(C, grid, io, time, _make_column(), init_with_restart_file=True)
 
         for var_name in ("subZ", "subW", "subD", "subS", "subT", "subTmean", "Tsurf", "ys", "alb_snow"):
             with self.subTest(var_name=var_name):
@@ -96,11 +102,11 @@ class TestInitFromRestartFile(unittest.TestCase):
 
     def test_restart_arrays_keep_their_values(self):
         C = {"alb_ice": 0.5}
-        grid = {"gpsum": GPSUM, "nl": NL}
+        grid = {"gpsum": GPSUM}
         io = {"bootfilein": self.bootfile}
         time = {}
 
-        OUT, _, _ = init_initial_conditions(C, grid, io, time, init_with_restart_file=True)
+        OUT, _, _ = init_initial_conditions(C, grid, io, time, _make_column(), init_with_restart_file=True)
 
         np.testing.assert_array_equal(OUT["subZ"], np.full((GPSUM, NL), 1.0))
         np.testing.assert_array_equal(OUT["subD"], np.full((GPSUM, NL), 1.0))
@@ -110,12 +116,12 @@ class TestInitFromRestartFile(unittest.TestCase):
         _write_restart_file(bootfile_with_gap, with_missing_value=True)
 
         C = {"alb_ice": 0.5}
-        grid = {"gpsum": GPSUM, "nl": NL}
+        grid = {"gpsum": GPSUM}
         io = {"bootfilein": bootfile_with_gap}
         time = {}
 
         with self.assertRaises(AssertionError):
-            init_initial_conditions(C, grid, io, time, init_with_restart_file=True)
+            init_initial_conditions(C, grid, io, time, _make_column(), init_with_restart_file=True)
 
 
 class TestMatlabShadingLookupTable(unittest.TestCase):
@@ -136,7 +142,7 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
     def _init_grid(self, shading_flag):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), shading_flag])
         grid_config = GridConfig(args)
-        grid, io, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
         return init_grid(grid, io, grid_config)
 
     def test_shading_disabled_skips_the_lookup_table(self):
