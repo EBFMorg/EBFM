@@ -16,7 +16,7 @@ from datetime import datetime
 from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
-from .config import TimeConfig, GridConfig, iso8601
+from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
@@ -58,11 +58,14 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     # ---------------------------------------------------------------------
     # Grid parameters
     # ---------------------------------------------------------------------
+    column_config = ColumnDiscretizationConfig()  # validates on construction
+
     grid: GridDict = {}
-    grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
-    grid["nl"] = 50  # Number of vertical layers
-    grid["doubledepth"] = True  # Double vertical layer depth at specified layers (True/False)
-    grid["split"] = np.array([15, 25, 35])  # Vertical layer numbers at which layer depth doubles
+    # Copied into the grid dict until the readers take the config directly
+    grid["max_subZ"] = column_config.max_subZ
+    grid["nl"] = column_config.nl
+    grid["doubledepth"] = column_config.doubledepth
+    grid["split"] = column_config.split
 
     # ---------------------------------------------------------------------
     # Model physics
