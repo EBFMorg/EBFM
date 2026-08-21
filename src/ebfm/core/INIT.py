@@ -656,6 +656,10 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
             for var_name in ncfile.variables:
                 # Read the variable data
                 var_data = ncfile.variables[var_name][:]
+                assert not np.ma.is_masked(var_data), (
+                    f"Restart variable '{var_name}' in {io['bootfilein']} contains missing values, "
+                    "which is not supported."
+                )
                 # If a variable has no dimensions (scalar), convert it to a Python scalar
                 if var_data.shape == ():  # Scalar variable
                     var_data = var_data.item()
