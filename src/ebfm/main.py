@@ -190,6 +190,18 @@ def _main_impl():
 
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
+        # Send the ice fraction of the EBFM grid cells to ICON-Land (JSBACH)
+        # (done before the exchange with the ICON atmosphere, see coupling sequence)
+        if coupler.has_coupling_to("icon_land"):
+            icon_land = coupler.get_component("icon_land")
+            logger.info("Data exchange with ICON-Land")
+            logger.debug("Started...")
+            data_to_icon_land = {
+                "icefract": grid["mask"].astype(float),
+            }
+            icon_land.exchange(data_to_icon_land)
+            logger.debug("Done.")
+
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
             # Exchange data with ICON
@@ -197,7 +209,7 @@ def _main_impl():
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
             data_to_icon = {
-                "icemask": np.ones_like(grid["x"]),
+                "albedo": OUT["albedo"],
             }
 
             fallback_values = {

@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# Unreleased
+
+* Added coupling to the ICON land model (ICON-Land/JSBACH) as a separate component (`--couple-to-icon-land`, component `icon_land`): EBFM sends the ice-covered fraction of its grid cells as field `icefract`. The abbreviation `--couple-to-icon` is now ambiguous and must be spelled out as `--couple-to-icon-atmo`.
+
 # v0.7.0
 
 * Moved performance and profiling sections out of `README.md` into `docs/Performance.md`, together with the GPU setup and CUDA runtime troubleshooting entry. https://github.com/EBFMorg/EBFM/pull/161

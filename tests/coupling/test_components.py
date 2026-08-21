@@ -43,6 +43,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         calendar="proleptic_gregorian",
         component_name="ebfm",
         couple_to_icon_atmo=True,
+        couple_to_icon_land=False,
         couple_to_elmer_ice=False,
         fake_coupling=True,
         field_validation_level=FieldValidationLevel("FATAL"),
@@ -81,7 +82,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
         data_to_icon = {
-            "icemask": 1.0,
+            "albedo": 0.5,
         }
 
         # Simulate data exchange
@@ -116,7 +117,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         )
 
         data_to_icon = {
-            "icemask": 1.0,
+            "albedo": 0.5,
         }
 
         fallback_values = {
@@ -140,3 +141,75 @@ class TestIconAtmoComponent(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestIconLandComponent(unittest.TestCase):
+    args = Namespace(
+        start_time="2025-01-01T00:00:00Z",
+        end_time="2025-01-02T00:00:00Z",
+        time_step="PT1H",
+        calendar="proleptic_gregorian",
+        component_name="ebfm",
+        couple_to_icon_atmo=False,
+        couple_to_icon_land=True,
+        couple_to_elmer_ice=False,
+        fake_coupling=True,
+        field_validation_level=FieldValidationLevel("FATAL"),
+        coupler_config=None,
+    )
+
+    time_config = TimeConfig(args=args)
+
+    coupling_config = CouplingConfig(
+        args=args,
+        time_config=time_config,
+    )
+
+    # just fake values to get coupler._n_points set
+    grid_dict = {"x": np.array([0, 1, 2])}
+
+    def test_field_definitions(self):
+        """
+        Test that the IconLand component defines icefract as a source field only.
+        """
+        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        icon_land = coupler.get_component("icon_land")
+
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        self.assertTrue(coupler.has_coupling_to("icon_land"))
+        self.assertFalse(coupler.has_coupling_to("icon_atmo"))
+        self.assertTrue(coupler.has_field("icon_land", "icefract", GenericExchangeType.SOURCE))
+        self.assertFalse(coupler.has_field("icon_land", "icefract", GenericExchangeType.TARGET))
+
+        field_names = {field.name for field in icon_land.get_field_definitions(self.time_config)}
+        self.assertEqual(field_names, {"icefract"})
+
+    def test_exchange(self):
+        """
+        Test that the IconLand component sends icefract and receives nothing.
+        """
+        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        icon_land = coupler.get_component("icon_land")
+
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        data_to_icon_land = {
+            "icefract": np.array([1.0, 0.0, 1.0]),
+        }
+
+        data_from_icon_land = icon_land.exchange(data_to_icon_land)
+
+        self.assertEqual(data_from_icon_land, {})
+
+    def test_exchange_missing_data(self):
+        """
+        Test that exchanging without providing icefract fails.
+        """
+        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        icon_land = coupler.get_component("icon_land")
+
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        with self.assertRaises(AssertionError):
+            icon_land.exchange({})
