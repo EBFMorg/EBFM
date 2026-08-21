@@ -379,6 +379,28 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["lat"] = grid["lat_2D"].flatten()[mask_flat == 1]
         grid["lon"] = grid["lon_2D"].flatten()[mask_flat == 1]
 
+        # four individual asserts to avoid overhead when turning on optimization
+        assert np.isfinite(grid["slope"]).all(), (
+            f"{int((~np.isfinite(grid['slope'])).sum())} of {grid['slope'].size} active grid cells have a "
+            "non-finite `slope`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["slope_x"]).all(), (
+            f"{int((~np.isfinite(grid['slope_x'])).sum())} of {grid['slope_x'].size} active grid cells have a "
+            "non-finite `slope_x`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["slope_y"]).all(), (
+            f"{int((~np.isfinite(grid['slope_y'])).sum())} of {grid['slope_y'].size} active grid cells have a "
+            "non-finite `slope_y`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["aspect"]).all(), (
+            f"{int((~np.isfinite(grid['aspect'])).sum())} of {grid['aspect'].size} active grid cells have a "
+            "non-finite `aspect`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+
         # Calculate slope_beta and slope_gamma (defining the tilt and orientation of a sloping surface)
         grid["slope_beta"] = np.arctan(grid["slope"])
         grid["slope_gamma"] = np.zeros_like(grid["slope"])
