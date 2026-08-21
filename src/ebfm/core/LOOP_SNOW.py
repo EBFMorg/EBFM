@@ -142,10 +142,12 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 subD_old = OUT["subD"][idx_shift]
                 subW_old = OUT["subW"][idx_shift]
 
-                OUT["subZ"][idx_shift, 2 : nl - 1] = subZ_old[:, 1 : nl - 2]
-                OUT["subT"][idx_shift, 2 : nl - 1] = subT_old[:, 1 : nl - 2]
-                OUT["subD"][idx_shift, 2 : nl - 1] = subD_old[:, 1 : nl - 2]
-                OUT["subW"][idx_shift, 2 : nl - 1] = subW_old[:, 1 : nl - 2]
+                # Shift the column down by one: the layers at indices 1..nl-2 move to
+                # indices 2..nl-1. The layer at index nl-1 falls out of the domain.
+                OUT["subZ"][idx_shift, 2:nl] = subZ_old[:, 1 : nl - 1]
+                OUT["subT"][idx_shift, 2:nl] = subT_old[:, 1 : nl - 1]
+                OUT["subD"][idx_shift, 2:nl] = subD_old[:, 1 : nl - 1]
+                OUT["subW"][idx_shift, 2:nl] = subW_old[:, 1 : nl - 1]
 
                 OUT["subZ"][idx_shift, 1] = max_subZ
                 OUT["subZ"][idx_shift, 0] = (subZ_old[:, 0] + shift_amount[idx_shift]) - max_subZ
@@ -163,7 +165,8 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 OUT["subW"][idx_shift, 1] = subW_old[:, 0]
                 OUT["subW"][idx_shift, 0] = 0.0
 
-                # Update runoff for shifted layers
+                # The layer that just fell out of the domain, index nl-1 before the
+                # shift, takes its irreducible water with it.
                 OUT["runoff_irr_deep"][idx_shift] += subW_old[:, nl - 1]
 
         return _SUCCESS
@@ -204,6 +207,8 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
 
             OUT["surfH"] += shift_amount
 
+            nl = grid["nl"]
+
             # No-shift branch only touches top layer, only column 0 copied (instead of whole grid).
             subZ_top_old = OUT["subZ"][:, 0].copy()
             subT_top_old = OUT["subT"][:, 0].copy()
@@ -233,10 +238,12 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 subD_old = OUT["subD"][idx_shift]
                 subW_old = OUT["subW"][idx_shift]
 
-                OUT["subZ"][idx_shift, 1 : nl - 2] = subZ_old[:, 2 : nl - 1]
-                OUT["subT"][idx_shift, 1 : nl - 2] = subT_old[:, 2 : nl - 1]
-                OUT["subD"][idx_shift, 1 : nl - 2] = subD_old[:, 2 : nl - 1]
-                OUT["subW"][idx_shift, 1 : nl - 2] = subW_old[:, 2 : nl - 1]
+                # Shift the column up by one: the layers at indices 2..nl-1 move to
+                # indices 1..nl-2.
+                OUT["subZ"][idx_shift, 1 : nl - 1] = subZ_old[:, 2:nl]
+                OUT["subT"][idx_shift, 1 : nl - 1] = subT_old[:, 2:nl]
+                OUT["subD"][idx_shift, 1 : nl - 1] = subD_old[:, 2:nl]
+                OUT["subW"][idx_shift, 1 : nl - 1] = subW_old[:, 2:nl]
 
                 subZ_top_new = subZ_old[:, 0] + subZ_old[:, 1] + shift_amount[idx_shift]
                 OUT["subZ"][idx_shift, 0] = subZ_top_new
@@ -244,6 +251,9 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 OUT["subD"][idx_shift, 0] = subD_old[:, 1]
                 # Liquid water scales with the remaining fraction of the former layer 1
                 OUT["subW"][idx_shift, 0] = subW_old[:, 1] * (subZ_top_new / subZ_old[:, 1])
+                # Index nl-1 becomes a fresh layer at the base (vectorized over the
+                # shift rows): it inherits the temperature and density of the pre-shift
+                # deepest layer, starts dry, and gets the full deep-layer thickness.
                 OUT["subT"][idx_shift, nl - 1] = subT_old[:, nl - 1]
                 OUT["subW"][idx_shift, nl - 1] = 0.0
 
@@ -262,6 +272,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         Calculate snow and firn compaction and update density and layer thickness
         """
 
+        gpsum, nl = grid["gpsum"], grid["nl"]
         Dice, Dfirn = C["Dice"], C["Dfirn"]
 
         dt_yearfrac = dt / C["yeardays"]
@@ -486,6 +497,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         if get_backend() == ComputeBackend.NUMBA:
             # Numba parallel path
             # per-column precompute + CFL solve is done in _heat_conduction_prep_kernel
+            gpsum, nl = OUT["subT"].shape
             kk = np.empty((gpsum, nl))
             c_eff = np.empty((gpsum, nl))
             kk_sz_top = np.empty(gpsum)
@@ -633,6 +645,8 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         #########################################################
         # Percolation, refreezing and irreducible water storage
         #########################################################
+        gpsum, nl = OUT["subT"].shape
+
         backend = get_backend()
         if backend in (ComputeBackend.NUMBA, ComputeBackend.GPU):
             # Numba / GPU kernel path:
