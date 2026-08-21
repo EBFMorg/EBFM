@@ -39,10 +39,10 @@ def main(C, OUT, IN, dt: float, grid, phys):
     """
     Implementation of the multi-layer snow and firn model.
 
-    Each glacier grid point (total number of grid points `grid["gpsum"]`) carries one vertical snow/firn "column" of
-    `grid["nl"]` layers. Per-column state (subT, subD, subZ, subW, subS, ...) is stored in OUT as 2D arrays of shape
-    (grid["gpsum"], grid["nl"]): axis 0 indexes the column (grid point), axis 1 indexes the layer within that column,
-    from layer 0 (a thin surface ghost layer, not physical) down to the deepest layer. Columns are independent and
+    Each glacier grid point carries one vertical snow/firn "column" of layers. Per-column state (subT, subD, subZ,
+    subW, subS, ...) is stored in OUT as 2D arrays of shape (gpsum, nl): axis 0 indexes the column (grid point), axis 1
+    indexes the layer within that column, from layer 0 (a thin surface ghost layer, not physical) down to the deepest
+    layer. Both dimensions are read off those arrays rather than taken from the grid. Columns are independent and
     updated in parallel, either vectorized over axis 0 (NumPy path) or via Numba `prange` over columns (Numba path).
     `dt` is the global time step shared by all columns; some steps (see heat_conduction) locally sub-step individual
     columns with their own CFL-limited dt_local until every column has caught up to `dt`.
@@ -52,9 +52,8 @@ def main(C, OUT, IN, dt: float, grid, phys):
         OUT (dict): Output variables to store results.
         IN (dict): Input data for the model.
         dt (float): Global model time-step, shared by all columns.
-        grid (dict): Grid geometry, incl. gpsum (number of grid points/columns), nl (layers per column), max_subZ (max.
-            top-layer thickness), and doubledepth/split (layer-merging/splitting thresholds,see
-            layer_merging_and_splitting).
+        grid (dict): Grid geometry, incl. max_subZ (max. top-layer thickness) and doubledepth/split
+            (layer-merging/splitting thresholds, see layer_merging_and_splitting).
         phys (dict): Model physics settings.
 
     Returns:
@@ -63,6 +62,9 @@ def main(C, OUT, IN, dt: float, grid, phys):
 
     logger.debug("Starting LOOP_SNOW...")
 
+    # The state arrays define the column geometry; no step below resizes them.
+    gpsum, nl = OUT["subT"].shape
+
     @profile
     def snowfall_and_deposition():
         """
@@ -70,8 +72,6 @@ def main(C, OUT, IN, dt: float, grid, phys):
         """
 
         max_subZ = grid["max_subZ"]
-        gpsum = grid["gpsum"]
-        nl = grid["nl"]
 
         # Fresh snow density calculations
         if phys["snow_compaction"] == "firn+snow":
@@ -203,8 +203,6 @@ def main(C, OUT, IN, dt: float, grid, phys):
 
             OUT["surfH"] += shift_amount
 
-            nl = grid["nl"]
-
             # No-shift branch only touches top layer, only column 0 copied (instead of whole grid).
             subZ_top_old = OUT["subZ"][:, 0].copy()
             subT_top_old = OUT["subT"][:, 0].copy()
@@ -263,7 +261,6 @@ def main(C, OUT, IN, dt: float, grid, phys):
         Calculate snow and firn compaction and update density and layer thickness
         """
 
-        gpsum, nl = grid["gpsum"], grid["nl"]
         Dice, Dfirn = C["Dice"], C["Dfirn"]
 
         dt_yearfrac = dt / C["yeardays"]
@@ -488,7 +485,6 @@ def main(C, OUT, IN, dt: float, grid, phys):
         if get_backend() == ComputeBackend.NUMBA:
             # Numba parallel path
             # per-column precompute + CFL solve is done in _heat_conduction_prep_kernel
-            gpsum, nl = OUT["subT"].shape
             kk = np.empty((gpsum, nl))
             c_eff = np.empty((gpsum, nl))
             kk_sz_top = np.empty(gpsum)
@@ -566,7 +562,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
             denom_bottom = c_eff[:, -1] * (0.25 * OUT["subZ"][:, -2] + 0.75 * OUT["subZ"][:, -1])
 
             # Time elapsed for each column
-            t_elapsed: NDArray[np.float64] = np.zeros(grid["gpsum"])
+            t_elapsed: NDArray[np.float64] = np.zeros(gpsum)
             # Vertical heat fluxes between layers
             kdTdz: NDArray[np.float64] = np.zeros_like(OUT["subT"])
             # Ping-pong buffers:
@@ -636,8 +632,6 @@ def main(C, OUT, IN, dt: float, grid, phys):
         #########################################################
         # Percolation, refreezing and irreducible water storage
         #########################################################
-        gpsum, nl = OUT["subT"].shape
-
         backend = get_backend()
         if backend in (ComputeBackend.NUMBA, ComputeBackend.GPU):
             # Numba / GPU kernel path:
@@ -766,7 +760,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
                 OUT["_perc_RP"].fill(0.0)
             RP = OUT["_perc_RP"]
 
-            avail_W_loc = np.zeros(grid["gpsum"])  # Available water per layer
+            avail_W_loc = np.zeros(gpsum)  # Available water per layer
 
             for n in range(nl):
                 # Compute available water per layer
