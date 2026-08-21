@@ -59,7 +59,6 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     # Grid parameters
     # ---------------------------------------------------------------------
     grid: GridDict = {}
-    grid["utmzone"] = 33  # UTM zone
     grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
     grid["nl"] = 50  # Number of vertical layers
     grid["doubledepth"] = True  # Double vertical layer depth at specified layers (True/False)
@@ -324,8 +323,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # Calculate latitude & longitude fields (from the original UTM coordinates)
-        utmzone = grid["utmzone"]  # Assume this is already part of the grid
-        utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + utmzone}", "EPSG:4326", always_xy=True)
+        utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
         x_coords = grid["x_2D"].ravel()
         y_coords = grid["y_2D"].ravel()
         lon, lat = utm_to_latlon.transform(x_coords, y_coords)

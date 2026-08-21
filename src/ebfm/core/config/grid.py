@@ -30,6 +30,9 @@ class GridConfig:
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
 
+    # UTM zone of grid coordinates, used to derive lat lon fields
+    utmzone: int = 33
+
     # maps GridInputType to corresponding argparse destination
     mesh_arg_dests = {
         GridInputType.ELMER: "elmer_mesh",
