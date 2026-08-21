@@ -53,19 +53,14 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
         grid (dict): Grid-related parameters.
         io (dict): Input/output parameters.
         phys (dict): Model physics settings.
+        column_config (ColumnDiscretizationConfig): How each column is divided into layers.
     """
 
     # ---------------------------------------------------------------------
     # Grid parameters
     # ---------------------------------------------------------------------
     column_config = ColumnDiscretizationConfig()  # validates on construction
-
     grid: GridDict = {}
-    # Copied into the grid dict until the readers take the config directly
-    grid["max_subZ"] = column_config.max_subZ
-    grid["nl"] = column_config.nl
-    grid["doubledepth"] = column_config.doubledepth
-    grid["split"] = column_config.split
 
     # ---------------------------------------------------------------------
     # Model physics
@@ -118,7 +113,7 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     os.makedirs(io["outdir"], exist_ok=True)
 
     # Return the initialized parameters
-    return grid, io, phys
+    return grid, io, phys, column_config
 
 
 def init_constants():
@@ -539,7 +534,9 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file: bool):
+def init_initial_conditions(
+    C, grid: GridDict, io, time, column: ColumnDiscretizationConfig, init_with_restart_file: bool
+):
     """
     Sets the model's initial conditions at the start of the simulation.
 
@@ -548,6 +545,7 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
         grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
         io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         time (dict): Dictionary with time-related parameters (e.g. ts).
+        column (ColumnDiscretizationConfig): How each column is divided into layers.
         init_with_restart_file (bool): Flag indicating whether to initialize from a restart file or set manually.
 
     Returns:
@@ -560,7 +558,7 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
     IN = {}  # Dictionary to hold model input variables
 
     gpsum = grid["gpsum"]
-    nl = grid["nl"]
+    nl = column.nl
 
     ##########################################################
     # Initialize conditions from restart file or set manually
@@ -611,18 +609,18 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
         OUT["subD"] = np.full((gpsum, nl), C["Dice"])  # Vertical densities (kg m-3)
         OUT["timelastsnow"] = np.full((gpsum,), time["ts"])  # Timestep of last snowfall (days)
         OUT["ys"] = np.full((gpsum,), 500.0)  # Annual snowfall (mm water equivalent)
-        OUT["subZ"] = np.full((gpsum, nl), grid["max_subZ"])  # Vertical layer depths (m)
+        OUT["subZ"] = np.full((gpsum, nl), column.max_subZ)  # Vertical layer depths (m)
         OUT["alb_snow"] = np.full((gpsum,), C["alb_fresh"])  # Snow albedo
         OUT["snowmass"] = np.zeros((gpsum,))  # Snow mass (m water equivalent)
 
-        if grid.get("doubledepth", False):  # Sets layer thicknesses when 'double depth' is active
+        if column.doubledepth:  # Sets layer thicknesses when 'double depth' is active
             mask_indices = np.where(grid["mask"] == 1)
-            split = grid["split"] - 1
+            split = column.split - 1
             for n, split_start in enumerate(split[:-1]):
-                depth_value = (2.0 ** (n + 1)) * grid["max_subZ"]
+                depth_value = (2.0 ** (n + 1)) * column.max_subZ
                 OUT["subZ"][mask_indices[0], split_start : split[n + 1]] = depth_value
 
-            final_depth_value = (2.0 ** len(split)) * grid["max_subZ"]
+            final_depth_value = (2.0 ** len(split)) * column.max_subZ
             OUT["subZ"][mask_indices[0], split[-1] :] = final_depth_value
 
     ######################################################

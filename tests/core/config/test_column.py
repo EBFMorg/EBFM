@@ -41,44 +41,41 @@ class TestShippedDefaults(unittest.TestCase):
 
 
 class TestInvariants(unittest.TestCase):
-    """Each guard is exercised through a subclass that overrides one parameter."""
-
-    def _config_with(self, **overrides):
-        return type("Overridden", (ColumnDiscretizationConfig,), overrides)
+    """Each guard is exercised by constructing a config that violates it."""
 
     def test_too_few_layers_is_rejected(self):
         for nl in (0, 1, 2):
             with self.subTest(nl=nl), self.assertRaises(ValueError):
-                self._config_with(nl=nl, split=np.array([2]))()
+                ColumnDiscretizationConfig(nl=nl, split=(2,))
 
     def test_non_positive_top_layer_thickness_is_rejected(self):
         for max_subZ in (0.0, -0.1):
             with self.subTest(max_subZ=max_subZ), self.assertRaises(ValueError):
-                self._config_with(max_subZ=max_subZ)()
+                ColumnDiscretizationConfig(max_subZ=max_subZ)
 
     def test_non_increasing_split_is_rejected(self):
-        for split in ([25, 15], [15, 15]):
+        for split in ((25, 15), (15, 15)):
             with self.subTest(split=split), self.assertRaises(ValueError):
-                self._config_with(split=np.array(split))()
+                ColumnDiscretizationConfig(split=split)
 
     def test_empty_split_is_rejected(self):
         with self.assertRaises(ValueError):
-            self._config_with(split=np.array([], dtype=int))()
+            ColumnDiscretizationConfig(split=())
 
     def test_split_too_close_to_the_surface_is_rejected(self):
         """split - 2 would wrap around to the deepest layer."""
-        for split in ([0, 25], [1, 25]):
+        for split in ((0, 25), (1, 25)):
             with self.subTest(split=split), self.assertRaises(ValueError):
-                self._config_with(split=np.array(split))()
+                ColumnDiscretizationConfig(split=split)
 
     def test_split_below_the_deepest_layer_is_rejected(self):
         """subZ[:, split] would be out of bounds."""
         with self.assertRaises(ValueError):
-            self._config_with(nl=50, split=np.array([15, 50]))()
+            ColumnDiscretizationConfig(nl=50, split=(15, 50))
 
     def test_split_on_the_deepest_layer_is_accepted(self):
         """nl - 1 is the last valid index, so it must not be rejected."""
-        self._config_with(nl=50, split=np.array([15, 49]))()  # must not raise
+        ColumnDiscretizationConfig(nl=50, split=(15, 49))  # must not raise
 
 
 if __name__ == "__main__":

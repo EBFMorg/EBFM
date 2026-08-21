@@ -6,6 +6,8 @@
 This file provides the configuration of how a single snow/firn column is divided into layers.
 """
 
+from collections.abc import Sequence
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -24,16 +26,23 @@ class ColumnDiscretizationConfig:
     zone has layers of `2 ** len(split) * max_subZ`.
 
     `split` holds indices, which sit one layer below the start of each thickness zone.
+
+    The defaults below are the model configuration; nothing overrides them from the command line. Tests pass explicit
+    values to run smaller columns.
     """
 
-    nl: int = 50  # Number of layers per column
-    max_subZ: float = 0.1  # Maximum thickness of the top layer (m)
-    doubledepth: bool = True  # Whether layer thickness doubles with depth
-    split: NDArray[np.int_] = np.array([15, 25, 35])  # Merge trigger indices (see above)
+    def __init__(
+        self,
+        nl: int = 50,  # Number of layers per column
+        max_subZ: float = 0.1,  # Maximum thickness of the top layer (m)
+        doubledepth: bool = True,  # Whether layer thickness doubles with depth
+        split: Sequence[int] = (15, 25, 35),  # Merge trigger indices (see above)
+    ) -> None:
+        self.nl = nl
+        self.max_subZ = max_subZ
+        self.doubledepth = doubledepth
+        self.split: NDArray[np.int_] = np.asarray(split)
 
-    def __init__(self) -> None:
-        """Validate the discretization. Nothing here comes from the command line, so a failure means the hardcoded
-        values above are inconsistent."""
         if self.nl < 3:
             # snowfall_and_deposition and melt_sublimation both treat layers 0 and 1 specially and shift the interior
             # between them, so a column needs at least one interior layer to be meaningful.
