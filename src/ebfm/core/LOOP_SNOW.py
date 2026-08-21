@@ -35,7 +35,7 @@ _MIN_LAYER_THICKNESS = 1e-17
 logger = logging.getLogger(__name__)
 
 
-def main(C, OUT, IN, dt: float, grid, phys):
+def main(C, OUT, IN, dt: float, grid, phys, column):
     """
     Implementation of the multi-layer snow and firn model.
 
@@ -52,9 +52,10 @@ def main(C, OUT, IN, dt: float, grid, phys):
         OUT (dict): Output variables to store results.
         IN (dict): Input data for the model.
         dt (float): Global model time-step, shared by all columns.
-        grid (dict): Grid geometry, incl. max_subZ (max. top-layer thickness) and doubledepth/split
-            (layer-merging/splitting thresholds, see layer_merging_and_splitting).
+        grid (dict): Grid geometry, incl. the glacier mask.
         phys (dict): Model physics settings.
+        column (ColumnDiscretizationConfig): Column discretization, incl. max_subZ (max. top-layer thickness) and
+            doubledepth/split (layer-merging/splitting thresholds, see layer_merging_and_splitting).
 
     Returns:
         dict: Updated OUT dictionary.
@@ -71,7 +72,7 @@ def main(C, OUT, IN, dt: float, grid, phys):
         Calculate snowfall and deposition and shift vertical grid accordingly
         """
 
-        max_subZ = grid["max_subZ"]
+        max_subZ = column.max_subZ
 
         # Fresh snow density calculations
         if phys["snow_compaction"] == "firn+snow":
@@ -247,10 +248,10 @@ def main(C, OUT, IN, dt: float, grid, phys):
                 OUT["subW"][idx_shift, nl - 1] = 0.0
 
                 # Update the deepest layer properties (vectorized over shift rows)
-                if grid["doubledepth"] == 1:
-                    OUT["subZ"][idx_shift, nl - 1] = 2.0 ** len(grid["split"]) * grid["max_subZ"]
+                if column.doubledepth:
+                    OUT["subZ"][idx_shift, nl - 1] = 2.0 ** len(column.split) * column.max_subZ
                 else:
-                    OUT["subZ"][idx_shift, nl - 1] = grid["max_subZ"]
+                    OUT["subZ"][idx_shift, nl - 1] = column.max_subZ
                 OUT["subD"][idx_shift, nl - 1] = subD_old[:, nl - 1]
 
         return _SUCCESS
@@ -880,17 +881,17 @@ def main(C, OUT, IN, dt: float, grid, phys):
         """
         Layer merging and splitting
         """
-        if not grid["doubledepth"]:
+        if not column.doubledepth:
             return _SUCCESS
 
         # Precompute constants / reuse lookups
-        max_subZ = grid["max_subZ"]
+        max_subZ = column.max_subZ
         mask1 = grid["mask"] == 1
-        nsplit = len(grid["split"])
+        nsplit = len(column.split)
         top_thickness = (2.0**nsplit) * max_subZ
 
         for n in range(nsplit):  # Iterate through split points
-            split = grid["split"][n]
+            split = column.split[n]
             threshold = (2.0**n) * max_subZ
 
             # Merge Layers (Accumulation Case)
