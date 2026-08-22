@@ -240,7 +240,9 @@ ebfm ...
 ```
 
 With `--couple-to-icon-land`, EBFM sends the ice-covered fraction of its grid cells
-(fields `icefract` and `albedo`) to the ICON land model (ICON-Land/JSBACH), which is coupled as a
+(fields `icefract` and `albedo`) to the ICON land model (ICON-Land/JSBACH) and receives the
+surface energy balance results of its glacier tile (`t_srf`, `melt`, `evapotrans` and the surface
+energy fluxes `hfss`, `hfls`, `rsns`, `rlns`, `ghf`, averaged over the EBFM time step). ICON-Land is coupled as a
 separate YAC component (`icon-land`) independent of the ICON atmosphere coupling.
 Note that the abbreviation `--couple-to-icon` is ambiguous and no longer accepted.
 

@@ -5,7 +5,6 @@
 from typing import TYPE_CHECKING
 from collections.abc import Mapping
 import numpy as np
-from ebfm.core.constants import SECONDS_PER_DAY
 
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
@@ -101,10 +100,7 @@ class IconAtmo(Component):
     # We need to convert precipitation received from ICON from kg / m^2 / s
     # to m w.e. (per EBFM timestep)
     def _map_pr_to_ebfm(self, precipitation: np.ndarray) -> np.ndarray:
-        mwe_per_second = precipitation * 1e-3
-        mwe_per_day = mwe_per_second * SECONDS_PER_DAY
-        mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
-        return mwe_per_timestep
+        return self._map_mass_flux_to_ebfm(precipitation)
 
     def exchange(
         self, data_to_exchange: Mapping[str, np.ndarray], fallback_values: Mapping[str, np.ndarray] = {}

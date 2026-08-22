@@ -117,6 +117,18 @@ class Component(ABC):
         logger.debug(f"Received data for field '{field_name}' from coupler: {data}")
         return transform(data)
 
+    def _map_mass_flux_to_ebfm(self, mass_flux: np.ndarray) -> np.ndarray:
+        """
+        Convert a mass flux in kg m-2 s-1 (e.g. precipitation, melt, evaporation) to
+        m w.e. per EBFM time step.
+        """
+        from ebfm.core.constants import SECONDS_PER_DAY
+
+        mwe_per_second = mass_flux * 1e-3
+        mwe_per_day = mwe_per_second * SECONDS_PER_DAY
+        mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
+        return mwe_per_timestep
+
     @abstractmethod
     def exchange(
         self, data_to_exchange: Mapping[str, np.ndarray], fallback_values: Mapping[str, np.ndarray] = {}

@@ -200,8 +200,16 @@ def _main_impl():
                 "icefract": grid["mask"].astype(float),
                 "albedo": OUT["albedo"],
             }
-            icon_land.exchange(data_to_icon_land)
+            data_from_icon_land = icon_land.exchange(data_to_icon_land)
             logger.debug("Done.")
+            # The received surface energy balance results are stored for later use
+            # (replacement of EBFM's own energy balance); not used yet.
+            for name, values in data_from_icon_land.items():
+                IN[f"lice_{name}"] = values
+                logger.debug(
+                    f"Received {name} from ICON-Land: min={np.min(values):.4g} mean={np.mean(values):.4g} "
+                    f"max={np.max(values):.4g}"
+                )
 
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
