@@ -81,9 +81,7 @@ class TestIconAtmoComponent(unittest.TestCase):
 
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
-        data_to_icon = {
-            "albedo": 0.5,
-        }
+        data_to_icon = {}
 
         # Simulate data exchange
         data_from_icon = icon_atmo.exchange(data_to_icon)
@@ -116,9 +114,7 @@ class TestIconAtmoComponent(unittest.TestCase):
             time=self.time_config,
         )
 
-        data_to_icon = {
-            "albedo": 0.5,
-        }
+        data_to_icon = {}
 
         fallback_values = {
             "pr": [10],
@@ -180,10 +176,11 @@ class TestIconLandComponent(unittest.TestCase):
         self.assertTrue(coupler.has_coupling_to("icon_land"))
         self.assertFalse(coupler.has_coupling_to("icon_atmo"))
         self.assertTrue(coupler.has_field("icon_land", "icefract", GenericExchangeType.SOURCE))
+        self.assertTrue(coupler.has_field("icon_land", "albedo", GenericExchangeType.SOURCE))
         self.assertFalse(coupler.has_field("icon_land", "icefract", GenericExchangeType.TARGET))
 
         field_names = {field.name for field in icon_land.get_field_definitions(self.time_config)}
-        self.assertEqual(field_names, {"icefract"})
+        self.assertEqual(field_names, {"icefract", "albedo"})
 
     def test_exchange(self):
         """
@@ -196,6 +193,7 @@ class TestIconLandComponent(unittest.TestCase):
 
         data_to_icon_land = {
             "icefract": np.array([1.0, 0.0, 1.0]),
+            "albedo": np.array([0.8, 0.3, 0.6]),
         }
 
         data_from_icon_land = icon_land.exchange(data_to_icon_land)
@@ -213,3 +211,5 @@ class TestIconLandComponent(unittest.TestCase):
 
         with self.assertRaises(AssertionError):
             icon_land.exchange({})
+        with self.assertRaises(AssertionError):
+            icon_land.exchange({"icefract": np.ones(3)})

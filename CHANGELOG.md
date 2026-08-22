@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # Unreleased
 
-* Added coupling to the ICON land model (ICON-Land/JSBACH) as a separate component (`--couple-to-icon-land`, component `icon_land`): EBFM sends the ice-covered fraction of its grid cells as field `icefract`. The abbreviation `--couple-to-icon` is now ambiguous and must be spelled out as `--couple-to-icon-atmo`.
+* Added coupling to the ICON land model (ICON-Land/JSBACH) as a separate component (`--couple-to-icon-land`, component `icon_land`): EBFM sends the ice-covered fraction of its grid cells (`icefract`) and the surface albedo (`albedo`). The provisional albedo field of the `icon_atmo` component was removed. The abbreviation `--couple-to-icon` is now ambiguous and must be spelled out as `--couple-to-icon-atmo`.
 
 # v0.7.0
 

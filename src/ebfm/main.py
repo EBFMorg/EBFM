@@ -198,6 +198,7 @@ def _main_impl():
             logger.debug("Started...")
             data_to_icon_land = {
                 "icefract": grid["mask"].astype(float),
+                "albedo": OUT["albedo"],
             }
             icon_land.exchange(data_to_icon_land)
             logger.debug("Done.")
@@ -208,9 +209,7 @@ def _main_impl():
             icon_atmo = coupler.get_component("icon_atmo")
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
-            data_to_icon = {
-                "albedo": OUT["albedo"],
-            }
+            data_to_icon = {}
 
             fallback_values = {
                 "rlds": IN["LWin"],

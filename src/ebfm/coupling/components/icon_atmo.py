@@ -32,13 +32,6 @@ class IconAtmo(Component):
 
         return FieldSet(
             {
-                # Field(
-                #     name="albedo",
-                #     coupled_component=self,
-                #     timestep=timestep,
-                #     metadata="Albedo of the ice surface",
-                #     exchange_type=ExchangeType.SOURCE,
-                # ),
                 Field(
                     name="pr",
                     coupled_component=self,
@@ -126,8 +119,7 @@ class IconAtmo(Component):
         """
         received_data: dict[str, np.ndarray] = {}
 
-        # Put data to IconAtmo
-        self._put_if_coupled("albedo", data_to_exchange)
+        # Put data to IconAtmo: nothing (surface fields like albedo and ice fraction go to IconLand)
 
         # Get data from IconAtmo
         pr = self._get_if_coupled("pr", transform=self._map_pr_to_ebfm, fallback_values=fallback_values)

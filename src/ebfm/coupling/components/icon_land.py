@@ -22,8 +22,8 @@ class IconLand(Component):
     The coupling to ICON-Land is separate from the coupling to the ICON atmosphere: ICON-Land
     is its own YAC component (``icon-land``) living on the ICON atmosphere processes.
 
-    Currently EBFM only sends the ice fraction to ICON-Land. Fields received from ICON-Land
-    will be added later.
+    Currently EBFM only sends fields to ICON-Land (ice fraction and surface albedo). Fields
+    received from ICON-Land will be added later.
     """
 
     def __init__(self, coupler: "Coupler", name: str = ComponentId.ICON_LAND.value):
@@ -44,6 +44,13 @@ class IconLand(Component):
                     metadata="Ice-covered fraction of the EBFM grid cell (1: glacier, 0: no glacier)",
                     exchange_type=ExchangeType.SOURCE,
                 ),
+                Field(
+                    name="albedo",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Surface albedo of the EBFM grid cell (fraction)",
+                    exchange_type=ExchangeType.SOURCE,
+                ),
             }
         )
 
@@ -62,6 +69,7 @@ class IconLand(Component):
 
         # Put data to IconLand
         self._put_if_coupled("icefract", data_to_exchange)
+        self._put_if_coupled("albedo", data_to_exchange)
 
         # Get data from IconLand: nothing yet
 
