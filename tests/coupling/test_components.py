@@ -185,8 +185,13 @@ class TestIconLandComponent(unittest.TestCase):
         field_names = {field.name for field in icon_land.get_field_definitions(self.time_config)}
         self.assertEqual(
             field_names,
-            {"icefract", "albedo", "t_srf", "melt", "evapotrans", "hfss", "hfls", "rsns", "rlns", "ghf"},
+            {
+                "icefract", "albedo", "t_sub", "ghf_cond", "runoff", "smb", "snowmass",
+                "t_srf", "melt", "evapotrans", "hfss", "hfls", "rsns", "rlns", "ghf",
+            },
         )
+        for name in ("t_sub", "ghf_cond", "runoff", "smb", "snowmass"):
+            self.assertTrue(coupler.has_field("icon_land", name, GenericExchangeType.SOURCE))
 
     def test_exchange(self):
         """
@@ -216,6 +221,11 @@ class TestIconLandComponent(unittest.TestCase):
         data_to_icon_land = {
             "icefract": np.array([1.0, 0.0, 1.0]),
             "albedo": np.array([0.8, 0.3, 0.6]),
+            "t_sub": np.array([250.0, 255.0, 260.0]),
+            "ghf_cond": np.array([1.0, 2.0, 3.0]),
+            "runoff": np.array([0.0, 1e-3, 2e-3]),
+            "smb": np.array([1e-3, -1e-3, 0.0]),
+            "snowmass": np.array([0.5, 0.0, 2.0]),
         }
 
         data_from_icon_land = icon_land.exchange(data_to_icon_land)
@@ -238,7 +248,15 @@ class TestIconLandComponent(unittest.TestCase):
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
         data_from_icon_land = icon_land.exchange(
-            {"icefract": np.array([1.0, 0.0, 1.0]), "albedo": np.array([0.8, 0.3, 0.6])}
+            {
+                "icefract": np.array([1.0, 0.0, 1.0]),
+                "albedo": np.array([0.8, 0.3, 0.6]),
+                "t_sub": np.zeros(3),
+                "ghf_cond": np.zeros(3),
+                "runoff": np.zeros(3),
+                "smb": np.zeros(3),
+                "snowmass": np.zeros(3),
+            }
         )
 
         self.assertEqual(data_from_icon_land, {})
@@ -255,4 +273,17 @@ class TestIconLandComponent(unittest.TestCase):
         with self.assertRaises(AssertionError):
             icon_land.exchange({})
         with self.assertRaises(AssertionError):
-            icon_land.exchange({"icefract": np.ones(3)})
+            icon_land.exchange({"icefract": np.ones(3), "albedo": np.ones(3)})
+
+    def test_mass_flux_conversions(self):
+        """
+        m w.e. per time step <-> kg m-2 s-1 (time step 1 h in this test configuration)
+        """
+        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        icon_land = coupler.get_component("icon_land")
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        mwe = np.array([3.6e-3])  # 3.6 mm per hour = 1e-3 kg m-2 s-1
+        flux = icon_land._map_mass_flux_from_ebfm(mwe)
+        np.testing.assert_allclose(flux, [1e-3])
+        np.testing.assert_allclose(icon_land._map_mass_flux_to_ebfm(flux), mwe)

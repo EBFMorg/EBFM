@@ -12,6 +12,7 @@ from ebfm.core import (
     LOOP_general_functions,
     LOOP_climate_forcing,
     LOOP_EBM,
+    LOOP_EBM_GHF,
     LOOP_SNOW,
     LOOP_mass_balance,
 )
@@ -196,9 +197,15 @@ def _main_impl():
             icon_land = coupler.get_component("icon_land")
             logger.info("Data exchange with ICON-Land")
             logger.debug("Started...")
+            _, ghf_cond = LOOP_EBM_GHF.conductance(OUT)
             data_to_icon_land = {
                 "icefract": grid["mask"].astype(float),
                 "albedo": OUT["albedo"],
+                "t_sub": OUT["subT"][:, 1],
+                "ghf_cond": ghf_cond,
+                "runoff": OUT.get("runoff", np.zeros_like(grid["x"])),  # not yet computed in the first step
+                "smb": OUT["smb"],
+                "snowmass": OUT["snowmass"],
             }
             data_from_icon_land = icon_land.exchange(data_to_icon_land)
             logger.debug("Done.")

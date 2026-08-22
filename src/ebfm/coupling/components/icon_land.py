@@ -22,7 +22,8 @@ class IconLand(Component):
     The coupling to ICON-Land is separate from the coupling to the ICON atmosphere: ICON-Land
     is its own YAC component (``icon-land``) living on the ICON atmosphere processes.
 
-    EBFM sends its surface state (ice fraction, surface albedo) to ICON-Land and receives the
+    EBFM sends its surface and firn state (ice fraction, surface albedo, first firn layer
+    temperature and conductance, runoff, surface mass balance, snow mass) to ICON-Land and receives the
     results of the surface energy balance computed by ICON-Land (JSBACH) on its glacier tile,
     averaged over the EBFM time step: surface temperature, melt, evapotranspiration and, for
     diagnostics, the surface energy fluxes.
@@ -51,6 +52,41 @@ class IconLand(Component):
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Surface albedo of the EBFM grid cell (fraction)",
+                    exchange_type=ExchangeType.SOURCE,
+                ),
+                Field(
+                    name="t_sub",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Temperature of the first subsurface firn layer (K)",
+                    exchange_type=ExchangeType.SOURCE,
+                ),
+                Field(
+                    name="ghf_cond",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Conductance between surface and first subsurface firn layer (W m-2 K-1)",
+                    exchange_type=ExchangeType.SOURCE,
+                ),
+                Field(
+                    name="runoff",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Runoff from the firn column (kg m-2 s-1)",
+                    exchange_type=ExchangeType.SOURCE,
+                ),
+                Field(
+                    name="smb",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Climatic surface mass balance (kg m-2 s-1)",
+                    exchange_type=ExchangeType.SOURCE,
+                ),
+                Field(
+                    name="snowmass",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Snow mass on top of the ice (kg m-2)",
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 # Fields received from ICON-Land (glacier tile, averaged over the EBFM time step)
@@ -128,9 +164,14 @@ class IconLand(Component):
         """
         received_data: dict[str, np.ndarray] = {}
 
-        # Put data to IconLand
+        # Put data to IconLand (state at the start of the EBFM time step)
         self._put_if_coupled("icefract", data_to_exchange)
         self._put_if_coupled("albedo", data_to_exchange)
+        self._put_if_coupled("t_sub", data_to_exchange)
+        self._put_if_coupled("ghf_cond", data_to_exchange)
+        self._put_if_coupled("runoff", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
+        self._put_if_coupled("smb", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
+        self._put_if_coupled("snowmass", data_to_exchange, transform=lambda x: x * 1e3)
 
         # Get data from IconLand
         for name in ("t_srf", "hfss", "hfls", "rsns", "rlns", "ghf"):
