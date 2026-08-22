@@ -12,7 +12,7 @@ from . import (
     LOOP_EBM_LWout,
     LOOP_EBM_SWin,
 )
-from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation
+from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation, LOOP_EBM_icon_land
 
 from ebfm.coupling import Coupler
 
@@ -52,6 +52,12 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
         LWin = LOOP_EBM_LWin.main(C, IN)
 
     SWout, OUT = LOOP_EBM_SWout.main(C, time2, OUT, SWin)
+
+    # When coupled to ICON-Land, the surface energy balance is computed by JSBACH on its
+    # glacier tile and received by EBFM: skip EBFM's own energy balance.
+    if LOOP_EBM_icon_land.is_available(IN, cpl):
+        return LOOP_EBM_icon_land.main(C, OUT, IN, time2, SWin, SWout, LWin)
+
     GHF_k = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2
     GHF_C = (GHF_k[:, 0] * OUT["subZ"][:, 0] + 0.5 * GHF_k[:, 1] * OUT["subZ"][:, 1]) / (
         OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1]

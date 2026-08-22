@@ -7,7 +7,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # Unreleased
 
 * Added coupling to the ICON land model (ICON-Land/JSBACH) as a separate component (`--couple-to-icon-land`, component `icon_land`): EBFM sends the ice-covered fraction of its grid cells (`icefract`) and the surface albedo (`albedo`). The provisional albedo field of the `icon_atmo` component was removed. The abbreviation `--couple-to-icon` is now ambiguous and must be spelled out as `--couple-to-icon-atmo`.
-* The `icon_land` component also receives the surface energy balance results of ICON-Land's glacier tile, averaged over the EBFM time step: `t_srf` (K), `melt` and `evapotrans` (converted to m w.e. per time step, evapotrans negative upward) and the diagnostic fluxes `hfss`, `hfls`, `rsns`, `rlns`, `ghf` (W m-2). They are stored as `IN["lice_*"]` and not used yet.
+* The `icon_land` component also receives the surface energy balance results of ICON-Land's glacier tile, averaged over the EBFM time step: `t_srf` (K), `melt` and `evapotrans` (converted to m w.e. per time step, evapotrans negative upward) and the diagnostic fluxes `hfss`, `hfls`, `rsns`, `rlns`, `ghf` (W m-2). When these fields are received, EBFM's own surface energy balance (`LOOP_EBM`) is replaced by them (`LOOP_EBM_icon_land`): `Tsurf`, `melt` and the `moist_*` terms are taken from ICON-Land (evapotranspiration partitioned by the surface temperature as before), while the shortwave radiation and the albedo evolution are still computed by EBFM.
 
 # v0.7.0
 

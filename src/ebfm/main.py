@@ -202,8 +202,8 @@ def _main_impl():
             }
             data_from_icon_land = icon_land.exchange(data_to_icon_land)
             logger.debug("Done.")
-            # The received surface energy balance results are stored for later use
-            # (replacement of EBFM's own energy balance); not used yet.
+            # The received surface energy balance results replace EBFM's own energy balance
+            # (see LOOP_EBM_icon_land).
             for name, values in data_from_icon_land.items():
                 IN[f"lice_{name}"] = values
                 logger.debug(
