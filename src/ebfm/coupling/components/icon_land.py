@@ -23,7 +23,8 @@ class IconLand(Component):
     is its own YAC component (``icon-land``) living on the ICON atmosphere processes.
 
     EBFM sends its surface and firn state (ice fraction, surface albedo, first firn layer
-    temperature and conductance, runoff, surface mass balance, snow mass) to ICON-Land and receives the
+    temperature, conductance and heat capacity, runoff, surface mass balance, snow mass) to ICON-Land
+    and receives the
     results of the surface energy balance computed by ICON-Land (JSBACH) on its glacier tile,
     averaged over the EBFM time step: surface temperature, melt and evapotranspiration.
     """
@@ -65,6 +66,13 @@ class IconLand(Component):
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Conductance between surface and first subsurface firn layer (W m-2 K-1)",
+                    exchange_type=ExchangeType.SOURCE,
+                ),
+                Field(
+                    name="hcap_sub",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Heat capacity of the firn surface layer (J m-2 K-1)",
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 Field(
@@ -133,6 +141,7 @@ class IconLand(Component):
         self._put_if_coupled("albedo", data_to_exchange)
         self._put_if_coupled("t_sub", data_to_exchange)
         self._put_if_coupled("ghf_cond", data_to_exchange)
+        self._put_if_coupled("hcap_sub", data_to_exchange)
         self._put_if_coupled("runoff", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
         self._put_if_coupled("smb", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
         self._put_if_coupled("snowmass", data_to_exchange, transform=lambda x: x * 1e3)

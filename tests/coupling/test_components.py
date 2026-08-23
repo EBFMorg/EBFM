@@ -186,11 +186,11 @@ class TestIconLandComponent(unittest.TestCase):
         self.assertEqual(
             field_names,
             {
-                "icefract", "albedo", "t_sub", "ghf_cond", "runoff", "smb", "snowmass",
+                "icefract", "albedo", "t_sub", "ghf_cond", "hcap_sub", "runoff", "smb", "snowmass",
                 "t_srf", "melt", "evapotrans",
             },
         )
-        for name in ("t_sub", "ghf_cond", "runoff", "smb", "snowmass"):
+        for name in ("t_sub", "ghf_cond", "hcap_sub", "runoff", "smb", "snowmass"):
             self.assertTrue(coupler.has_field("icon_land", name, GenericExchangeType.SOURCE))
 
     def test_exchange(self):
@@ -220,6 +220,7 @@ class TestIconLandComponent(unittest.TestCase):
             "albedo": np.array([0.8, 0.3, 0.6]),
             "t_sub": np.array([250.0, 255.0, 260.0]),
             "ghf_cond": np.array([1.0, 2.0, 3.0]),
+            "hcap_sub": np.array([5e4, 1e5, 1.5e5]),
             "runoff": np.array([0.0, 1e-3, 2e-3]),
             "smb": np.array([1e-3, -1e-3, 0.0]),
             "snowmass": np.array([0.5, 0.0, 2.0]),
@@ -249,6 +250,7 @@ class TestIconLandComponent(unittest.TestCase):
                 "albedo": np.array([0.8, 0.3, 0.6]),
                 "t_sub": np.zeros(3),
                 "ghf_cond": np.zeros(3),
+                "hcap_sub": np.zeros(3),
                 "runoff": np.zeros(3),
                 "smb": np.zeros(3),
                 "snowmass": np.zeros(3),

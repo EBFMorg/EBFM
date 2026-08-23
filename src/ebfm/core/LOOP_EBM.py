@@ -53,7 +53,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
 
     SWout, OUT = LOOP_EBM_SWout.main(C, time2, OUT, SWin)
 
-    GHF_k, GHF_C = LOOP_EBM_GHF.conductance(OUT)
+    GHF_k, GHF_C, _ = LOOP_EBM_GHF.conductance(OUT)
 
     # Precompute reusable constant arrays
     gpsum = OUT["subT"].shape[0]

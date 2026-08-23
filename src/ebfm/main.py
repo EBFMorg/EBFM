@@ -197,12 +197,13 @@ def _main_impl():
             icon_land = coupler.get_component("icon_land")
             logger.info("Data exchange with ICON-Land")
             logger.debug("Started...")
-            _, ghf_cond = LOOP_EBM_GHF.conductance(OUT)
+            _, ghf_cond, hcap_sub = LOOP_EBM_GHF.conductance(OUT)
             data_to_icon_land = {
                 "icefract": grid["mask"].astype(float),
                 "albedo": OUT["albedo"],
                 "t_sub": OUT["subT"][:, 1],
                 "ghf_cond": ghf_cond,
+                "hcap_sub": hcap_sub,
                 "runoff": OUT.get("runoff", np.zeros_like(grid["x"])),  # not yet computed in the first step
                 "smb": OUT["smb"],
                 "snowmass": OUT["snowmass"],
