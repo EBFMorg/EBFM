@@ -59,6 +59,14 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
             ["subW", "mm w.e.", "sample", "Irreducible water"],
             ["subZ", "m", "sample", "Layer thickness"],
         ]
+        if "ebm_Tsurf" in OUT:
+            # Coupled to ICON-Land: Tsurf/melt are taken from ICON-Land, EBFM's own energy
+            # balance is kept as a diagnostic
+            OUTFILE["varsout"] += [
+                ["ebm_Tsurf", "K", "mean", "Surface temperature of EBFM's own energy balance"],
+                ["ebm_melt", "m w.e.", "sum", "Melt of EBFM's own energy balance"],
+                ["ebm_Emelt", "W m^-2", "mean", "Melt energy of EBFM's own energy balance"],
+            ]
 
         io["varsout"] = [
             {"varname": v[0], "units": v[1], "type": v[2], "description": v[3]} for v in OUTFILE["varsout"]

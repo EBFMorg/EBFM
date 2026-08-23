@@ -187,7 +187,7 @@ class TestIconLandComponent(unittest.TestCase):
             field_names,
             {
                 "icefract", "albedo", "t_sub", "ghf_cond", "runoff", "smb", "snowmass",
-                "t_srf", "melt", "evapotrans", "hfss", "hfls", "rsns", "rlns", "ghf",
+                "t_srf", "melt", "evapotrans",
             },
         )
         for name in ("t_sub", "ghf_cond", "runoff", "smb", "snowmass"):
@@ -212,9 +212,6 @@ class TestIconLandComponent(unittest.TestCase):
                 coupled_component=icon_land, name="evapotrans", value=-1.0, exchange_type=GenericExchangeType.TARGET
             )
         )
-        coupler._register_fake_values(
-            FakeFieldConfig(coupled_component=icon_land, name="hfss", value=-15.0, exchange_type=GenericExchangeType.TARGET)
-        )
 
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
@@ -231,9 +228,8 @@ class TestIconLandComponent(unittest.TestCase):
         data_from_icon_land = icon_land.exchange(data_to_icon_land)
 
         # only the fields with a fake source are received
-        self.assertEqual(set(data_from_icon_land), {"t_srf", "melt", "evapotrans", "hfss"})
+        self.assertEqual(set(data_from_icon_land), {"t_srf", "melt", "evapotrans"})
         self.assertTrue(np.allclose(data_from_icon_land["t_srf"], 260.0))
-        self.assertTrue(np.allclose(data_from_icon_land["hfss"], -15.0))
         # 2 kg m-2 s-1 over a 1 h time step = 7.2 m w.e. per time step
         self.assertTrue(np.allclose(data_from_icon_land["melt"], 2.0 * 1e-3 * 3600.0))
         self.assertTrue(np.allclose(data_from_icon_land["evapotrans"], -1.0 * 1e-3 * 3600.0))

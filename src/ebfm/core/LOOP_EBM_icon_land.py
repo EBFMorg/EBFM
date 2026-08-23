@@ -7,23 +7,32 @@ Surface energy balance provided by ICON-Land (JSBACH).
 
 When EBFM is coupled to ICON-Land, the surface energy balance of the glacier tile is computed
 by JSBACH at every ICON time step and EBFM receives its results averaged over the EBFM time
-step (see ebfm.coupling.components.icon_land): surface temperature, melt, evapotranspiration
-and the surface energy fluxes. In that case EBFM does not solve its own energy balance but
-derives the quantities needed by the snow/firn model (LOOP_SNOW) and the mass balance from
-the received fields.
+step (see ebfm.coupling.components.icon_land): surface temperature, melt and
+evapotranspiration. These drive EBFM's snow/firn model (LOOP_SNOW) and the mass balance.
+EBFM's own energy balance (LOOP_EBM) is still evaluated every time step from the atmospheric
+forcing and the current firn state, but only as a diagnostic: its results are kept under
+OUT["ebm_*"] so that the two energy balances can be compared.
 """
 
 import numpy as np
 
-from ebfm.core import LOOP_EBM_LWout
 from ebfm.core import logging
 
 logger = logging.getLogger(__name__)
 
 # Fields that must have been received from ICON-Land to replace EBFM's energy balance
 REQUIRED_FIELDS = ("lice_t_srf", "lice_melt", "lice_evapotrans")
-# Diagnostic fluxes (W m-2, positive into the surface, as in EBFM) that are stored if received
-DIAGNOSTIC_FLUXES = {"SHF": "lice_hfss", "LHF": "lice_hfls", "GHF": "lice_ghf"}
+
+# Results of EBFM's own energy balance that are kept as diagnostics (OUT["ebm_<name>"])
+EBM_DIAGNOSTICS = (
+    "Tsurf",
+    "melt",
+    "Emelt",
+    "moist_sublimation",
+    "moist_evaporation",
+    "moist_deposition",
+    "moist_condensation",
+)
 
 
 def is_available(IN: dict, cpl) -> bool:
@@ -41,7 +50,7 @@ def is_available(IN: dict, cpl) -> bool:
     if missing:
         logger.warning(
             f"Coupled to ICON-Land, but the fields {missing} have not been received: "
-            "falling back to EBFM's own surface energy balance for this time step."
+            "using EBFM's own surface energy balance for this time step."
         )
         return False
     return True
@@ -81,22 +90,27 @@ def partition_evapotrans(evapotrans: np.ndarray, Tsurf: np.ndarray, melt: np.nda
     }
 
 
-def main(C: dict, OUT: dict, IN: dict, time2: dict, SWin: np.ndarray, SWout: np.ndarray, LWin: np.ndarray) -> dict:
+def main(C: dict, OUT: dict, IN: dict, time2: dict) -> dict:
     """
-    Fill the energy balance results in OUT from the fields received from ICON-Land.
+    Replace the results of EBFM's energy balance in OUT by the fields received from ICON-Land.
 
-    Replaces the iterative solution of the energy balance in LOOP_EBM; the shortwave terms
-    (incl. the albedo evolution) are still computed by EBFM and passed in.
+    Must be called after LOOP_EBM has computed EBFM's own energy balance: those results are
+    kept as OUT["ebm_*"] and Tsurf, melt, Emelt and the moist_* terms are set from ICON-Land.
+    The radiative and turbulent flux diagnostics (SWin, SWout, LWin, LWout, SHF, LHF, GHF) remain
+    those of EBFM's own balance; JSBACH's fluxes are available in the ICON-Land output.
 
     @param[in] C model constants
-    @param[in,out] OUT output variables (Tsurf, melt, moist_*, Emelt and the fluxes are set)
+    @param[in,out] OUT output variables
     @param[in] IN input variables incl. the received IN["lice_*"] fields
     @param[in] time2 time information (dt in days)
-    @param[in] SWin, SWout, LWin shortwave and incoming longwave radiation (W m-2)
 
     @returns updated OUT
     """
     logger.debug("Using the surface energy balance received from ICON-Land...")
+
+    # Keep EBFM's own results as diagnostics
+    for name in EBM_DIAGNOSTICS:
+        OUT[f"ebm_{name}"] = OUT[name]
 
     # Surface temperature: JSBACH limits the glacier surface temperature to the melting point;
     # the time average may not exceed it either, but guard against round-off.
@@ -116,14 +130,11 @@ def main(C: dict, OUT: dict, IN: dict, time2: dict, SWin: np.ndarray, SWout: np.
     seconds_per_timestep = C["dayseconds"] * time2["dt"]
     OUT["Emelt"] = melt * 1e3 * C["Lm"] / seconds_per_timestep
 
-    # Radiation terms: shortwave from EBFM, outgoing longwave from the received surface temperature
-    OUT["SWin"] = SWin
-    OUT["SWout"] = SWout
-    OUT["LWin"] = LWin
-    OUT["LWout"] = LOOP_EBM_LWout.main(C, Tsurf)
-
-    # Turbulent and ground heat fluxes as computed by ICON-Land (diagnostics)
-    for out_name, in_name in DIAGNOSTIC_FLUXES.items():
-        OUT[out_name] = np.asarray(IN[in_name], dtype=float) if in_name in IN else np.zeros_like(Tsurf)
+    logger.debug(
+        "Surface energy balance ICON-Land vs EBFM (mean over grid): "
+        f"Tsurf {np.mean(Tsurf):.2f} vs {np.mean(OUT['ebm_Tsurf']):.2f} K, "
+        f"melt {np.mean(melt):.3e} vs {np.mean(OUT['ebm_melt']):.3e} m w.e., "
+        f"sublimation {np.mean(moist['moist_sublimation']):.3e} vs {np.mean(OUT['ebm_moist_sublimation']):.3e} m w.e."
+    )
 
     return OUT

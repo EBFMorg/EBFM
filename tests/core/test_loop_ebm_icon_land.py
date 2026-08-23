@@ -52,28 +52,34 @@ class TestIconLandEnergyBalance(unittest.TestCase):
             "lice_t_srf": np.array([260.0, 274.0]),  # second value above melting point -> capped
             "lice_melt": np.array([0.0, 2e-3]),
             "lice_evapotrans": np.array([-1e-4, -5e-3]),
-            "lice_hfss": np.array([10.0, 20.0]),
-            "lice_hfls": np.array([-5.0, -50.0]),
         }
-        OUT = {}
-        SWin = np.array([100.0, 200.0])
-        SWout = np.array([80.0, 100.0])
-        LWin = np.array([200.0, 300.0])
+        # results of EBFM's own energy balance (as computed by LOOP_EBM before the call)
+        OUT = {
+            "Tsurf": np.array([255.0, 270.0]),
+            "melt": np.array([1e-4, 3e-3]),
+            "Emelt": np.array([1.0, 30.0]),
+            "moist_sublimation": np.array([2e-4, 0.0]),
+            "moist_evaporation": np.array([0.0, 1e-4]),
+            "moist_deposition": np.zeros(2),
+            "moist_condensation": np.zeros(2),
+            "SHF": np.array([10.0, 20.0]),
+        }
 
-        OUT = LOOP_EBM_icon_land.main(self.C, OUT, IN, {"dt": dt}, SWin, SWout, LWin)
+        OUT = LOOP_EBM_icon_land.main(self.C, OUT, IN, {"dt": dt})
 
+        # ICON-Land's results drive the model ...
         np.testing.assert_allclose(OUT["Tsurf"], [260.0, 273.15])
         np.testing.assert_allclose(OUT["melt"], [0.0, 2e-3])
         np.testing.assert_allclose(OUT["moist_sublimation"], [1e-4, 0.0])
         np.testing.assert_allclose(OUT["moist_evaporation"], [0.0, 2e-3])  # limited by melt
         np.testing.assert_allclose(OUT["Emelt"], [0.0, 2e-3 * 1e3 * 0.33e6 / (SECONDS_PER_DAY * dt)])
-        np.testing.assert_allclose(OUT["SWin"], SWin)
-        np.testing.assert_allclose(OUT["SWout"], SWout)
-        np.testing.assert_allclose(OUT["LWin"], LWin)
+        # ... EBFM's own are kept as diagnostics ...
+        np.testing.assert_allclose(OUT["ebm_Tsurf"], [255.0, 270.0])
+        np.testing.assert_allclose(OUT["ebm_melt"], [1e-4, 3e-3])
+        np.testing.assert_allclose(OUT["ebm_Emelt"], [1.0, 30.0])
+        np.testing.assert_allclose(OUT["ebm_moist_sublimation"], [2e-4, 0.0])
+        # ... and the flux diagnostics of EBFM's own balance are untouched
         np.testing.assert_allclose(OUT["SHF"], [10.0, 20.0])
-        np.testing.assert_allclose(OUT["LHF"], [-5.0, -50.0])
-        np.testing.assert_allclose(OUT["GHF"], [0.0, 0.0])  # not received
-        self.assertTrue(np.all(OUT["LWout"] > 0))
 
 
 if __name__ == "__main__":

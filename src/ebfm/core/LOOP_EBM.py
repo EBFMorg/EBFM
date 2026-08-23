@@ -53,11 +53,6 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
 
     SWout, OUT = LOOP_EBM_SWout.main(C, time2, OUT, SWin)
 
-    # When coupled to ICON-Land, the surface energy balance is computed by JSBACH on its
-    # glacier tile and received by EBFM: skip EBFM's own energy balance.
-    if LOOP_EBM_icon_land.is_available(IN, cpl):
-        return LOOP_EBM_icon_land.main(C, OUT, IN, time2, SWin, SWout, LWin)
-
     GHF_k, GHF_C = LOOP_EBM_GHF.conductance(OUT)
 
     # Precompute reusable constant arrays
@@ -155,5 +150,11 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     OUT["LWout"] = LWout
     OUT["SHF"] = SHF
     OUT["GHF"] = GHF
+
+    # When coupled to ICON-Land, the surface energy balance computed by JSBACH on its glacier
+    # tile drives the firn model; EBFM's own energy balance computed above is kept as a
+    # diagnostic (OUT["ebm_*"]) for comparison.
+    if LOOP_EBM_icon_land.is_available(IN, cpl):
+        OUT = LOOP_EBM_icon_land.main(C, OUT, IN, time2)
 
     return OUT
