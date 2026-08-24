@@ -32,6 +32,8 @@ import unittest
 
 import numpy as np
 
+from ebfm.core.config import ColumnDiscretizationConfig
+
 GPSUM, NL = 2, 50
 # Layer thickness (m). The top layer is a full max_subZ, so any snowfall starts a
 # new one and forces a downward shift.
@@ -98,9 +100,10 @@ class TestColumnShift(unittest.TestCase):
         self.LOOP_SNOW = LOOP_SNOW
         self.C = INIT.init_constants()
         self.phys = {"snow_compaction": "firn+snow", "percolation": "normal"}
+        self.column = ColumnDiscretizationConfig()
 
     def _step(self, grid, OUT, IN):
-        self.LOOP_SNOW.main(self.C, OUT, IN, 1.0 / 24.0, grid, self.phys)
+        self.LOOP_SNOW.main(self.C, OUT, IN, 1.0 / 24.0, grid, self.phys, self.column)
 
     def _snowfall_case(self):
         """A case that performs exactly one downward shift.

@@ -207,8 +207,6 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
 
             OUT["surfH"] += shift_amount
 
-            nl = grid["nl"]
-
             # No-shift branch only touches top layer, only column 0 copied (instead of whole grid).
             subZ_top_old = OUT["subZ"][:, 0].copy()
             subT_top_old = OUT["subT"][:, 0].copy()
@@ -272,7 +270,6 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         Calculate snow and firn compaction and update density and layer thickness
         """
 
-        gpsum, nl = grid["gpsum"], grid["nl"]
         Dice, Dfirn = C["Dice"], C["Dfirn"]
 
         dt_yearfrac = dt / C["yeardays"]
@@ -497,7 +494,6 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         if get_backend() == ComputeBackend.NUMBA:
             # Numba parallel path
             # per-column precompute + CFL solve is done in _heat_conduction_prep_kernel
-            gpsum, nl = OUT["subT"].shape
             kk = np.empty((gpsum, nl))
             c_eff = np.empty((gpsum, nl))
             kk_sz_top = np.empty(gpsum)
@@ -645,8 +641,6 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         #########################################################
         # Percolation, refreezing and irreducible water storage
         #########################################################
-        gpsum, nl = OUT["subT"].shape
-
         backend = get_backend()
         if backend in (ComputeBackend.NUMBA, ComputeBackend.GPU):
             # Numba / GPU kernel path:
