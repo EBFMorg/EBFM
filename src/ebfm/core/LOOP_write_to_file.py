@@ -108,15 +108,15 @@ def _write_structured_grid(nc_file, grid):
         lat.description = "Structured grid latitude"
 
 
-def _output_dimensions(varname, grid):
+def _output_dimensions(varname, grid, column):
     """Return NetCDF dimensions/chunking for a model output variable."""
     if grid["is_unstructured"]:
         if varname.startswith("sub"):
-            return ("time", "cell", "nl"), (1, grid["x"].shape[0], grid["nl"])
+            return ("time", "cell", "nl"), (1, grid["x"].shape[0], column.nl)
         return ("time", "cell"), (1, grid["x"].shape[0])
 
     if varname.startswith("sub"):
-        return ("time", "y", "x", "nl"), (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1], grid["nl"])
+        return ("time", "y", "x", "nl"), (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1], column.nl)
     return ("time", "y", "x"), (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1])
 
 
@@ -284,7 +284,7 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
                 var_units = entry[1]
                 var_desc = entry[3]
 
-                dimensions, chunksizes = _output_dimensions(varname, grid)
+                dimensions, chunksizes = _output_dimensions(varname, grid, column)
 
                 nc_var = io["nc_file"].createVariable(
                     varname=varname,
@@ -320,7 +320,7 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
             for entry in OUTFILE["varsout"]:
                 varname = entry[0]
                 var_1D = OUTFILE["TEMP"][varname]
-                _write_output_variable(io["nc_file"], varname, var_1D, time_index, grid)
+                _write_output_variable(io["nc_file"], varname, var_1D, time_index, grid, column)
 
         # Close the NetCDF file at the final time step
         if is_final_time_step(t, time):
