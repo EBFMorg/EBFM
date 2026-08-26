@@ -16,7 +16,8 @@ from ebfm.core import (
     LOOP_mass_balance,
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
-from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig
+from ebfm.core.grid import number_of_columns
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
     extract_active_coupling_features,
@@ -77,7 +78,7 @@ def dump_reference(logger, OUT, filepath: str):
 def print_diagnostics(grid, OUT, t):
     """Log key diagnostic values each timestep for performance and correctness analysis."""
 
-    gpsum = grid.get("gpsum", "N/A")
+    gpsum = number_of_columns(grid)
     has_shading = grid.get("has_shading", False)
     smb = OUT.get("smb")
     smb_cum = OUT.get("smb_cumulative")
@@ -125,12 +126,14 @@ def _main_impl():
         reset_handlers=True,
     )
 
+    logger = getLogger(__name__)
+    logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
+
+    forcing_config = ForcingConfig(coupling_config, args)
+
     if not hasattr(args, "use_part"):
         # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
         args.use_part = ebfm_comm.rank + 1
-
-    logger = getLogger(__name__)
-    logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
 
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
     if args.with_numba:
@@ -231,7 +234,7 @@ def _main_impl():
             IN["Pres"] = data_from_icon["sfcpres"]
 
         # Read/set meteorological forcing
-        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
+        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config)
 
         # Run surface energy balance model
         OUT = LOOP_EBM.main(C, OUT, IN, time, grid, coupler)

@@ -61,10 +61,7 @@ def _make_case(gpsum=48, nl=50, seed=7, snow_compaction="firn+snow", percolation
     C = INIT.init_constants()
 
     column = ColumnDiscretizationConfig(nl=nl)
-    grid = {
-        "gpsum": gpsum,
-        "mask": np.ones(gpsum, dtype=int),
-    }
+    grid = {"mask": np.ones(gpsum, dtype=int)}
     # A few inactive columns, so the kernel's mask early-out is exercised.
     grid["mask"][:3] = 0
 

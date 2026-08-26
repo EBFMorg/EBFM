@@ -31,10 +31,7 @@ def _make_case(C):
     # max_subZ is above _THICKNESS so nothing shifts, and doubledepth off means no
     # layer merging/splitting: the column stays exactly as built here.
     column = ColumnDiscretizationConfig(nl=NL, max_subZ=1.5, doubledepth=False, split=(15,))
-    grid = {
-        "gpsum": GPSUM,
-        "mask": np.ones(GPSUM, dtype=int),
-    }
+    grid = {"mask": np.ones(GPSUM, dtype=int)}
     OUT = {
         "subZ": np.repeat(_THICKNESS[:, None], NL, axis=1),
         "subT": np.full((GPSUM, NL), C["T0"] - 10.0),

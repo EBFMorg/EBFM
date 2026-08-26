@@ -17,7 +17,7 @@ from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
-from .grid import GridInputType, GridDict, ShadingMethod
+from .grid import GridInputType, GridDict, ShadingMethod, number_of_columns, validate_grid
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
@@ -182,19 +182,6 @@ def init_constants():
     return C
 
 
-def compute_number_of_glacier_cells(grid: GridDict) -> int:
-    """
-    Computes the number of glacier cells in the grid based on the mask.
-
-    Parameters:
-        grid (GridDict): containing grid-related parameters
-
-    Returns:
-        int: Number of glacier cells (gpsum)
-    """
-    return np.sum(grid["mask"] == 1)
-
-
 def init_grid(grid: GridDict, io, config: GridConfig):
     """
     Initializes the GridDict based on the given GridConfig.
@@ -232,7 +219,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             )
 
         grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
-
+        grid["lat"], grid["lon"] = mesh.lat_cells, mesh.lon_cells
         logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
             logger.debug("... for grid type CUSTOM.")
@@ -245,14 +232,8 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
             grid["mask"] = (h_cells > min_thickness_glacier).astype(int)
 
-        grid["lat"], grid["lon"] = np.degrees(mesh.lat_cells), np.degrees(mesh.lon_cells)
-
         if "mask" not in grid:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-        if config.grid_type is GridInputType.ELMERXIOS:
-            grid["gpsum"] = grid["z"].shape[0]
-        else:
-            grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
@@ -279,7 +260,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
@@ -319,7 +299,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
 
         # Create 1-D mask
         grid["mask"] = mask_2D[mask_2D == 1]
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # Calculate latitude & longitude fields (from the original UTM coordinates)
         utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
@@ -390,6 +369,8 @@ def init_grid(grid: GridDict, io, config: GridConfig):
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
+    validate_grid(grid)
+
     return grid
 
 
@@ -415,9 +396,10 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
     xl, yl = grid["x_2D"].shape
 
     # loop over the azimuth angles to determine gridded maximum grid angles per angle
-    grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
+    gpsum = number_of_columns(grid)
+    grid["maxgridangle"] = np.zeros((gpsum, grid["nr_az_steps"]), dtype=np.float64)
     for n in range(grid["nr_az_steps"]):
-        az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
+        az = np.full(gpsum, grid["az_array"][n], dtype=float)
 
         # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
         ddx, ddy = calculate_step_sizes(az)
@@ -425,9 +407,9 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
         # from every grid cell step in the direction of the azimuth until the grid end is reached
         # and detect maximum grid angle along the path
         i0, j0 = np.where(mask_2D == 1)
-        max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
+        max_angle = np.full(gpsum, -np.inf, dtype=np.float64)
         count = 1
-        active = np.ones(grid["gpsum"], dtype=bool)
+        active = np.ones(gpsum, dtype=bool)
         while active.any():
             j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
             i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
@@ -543,7 +525,7 @@ def init_initial_conditions(
 
     Parameters:
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
-        grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
+        grid (dict): Dictionary representing the grid.
         io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         time (dict): Dictionary with time-related parameters (e.g. ts).
         column (ColumnDiscretizationConfig): How each column is divided into layers.
@@ -553,12 +535,15 @@ def init_initial_conditions(
         OUT (dict): Dictionary containing model outputs initialized with default or restart file values.
         IN (dict): Dictionary containing model inputs initialized with default values.
         OUTFILE (dict): Placeholder dictionary for output file management.
+
+    Raises:
+        ValueError: if a restart file holds an array that does not match the configured `(gpsum, nl)`.
     """
 
     OUT = {}  # Dictionary to hold model output variables
     IN = {}  # Dictionary to hold model input variables
 
-    gpsum = grid["gpsum"]
+    gpsum = number_of_columns(grid)
     nl = column.nl
 
     ##########################################################
@@ -587,6 +572,24 @@ def init_initial_conditions(
                 )
                 if isinstance(var_data, np.ma.MaskedArray):
                     var_data = var_data.data
+
+                # Perform consistency checks
+                if var_data.ndim > 2:
+                    raise ValueError(
+                        f"Restart variable '{var_name}' in {io['bootfilein']} has {var_data.ndim} dimensions; "
+                        "restart files hold per-column and per-layer variables only."
+                    )
+                if var_data.ndim == 1 and var_data.shape != (gpsum,):
+                    raise ValueError(
+                        f"Restart variable '{var_name}' in {io['bootfilein']} has shape {var_data.shape}, "
+                        f"but every per-column variable must have shape {(gpsum,)}."
+                    )
+                if var_data.ndim == 2 and var_data.shape != (gpsum, nl):
+                    raise ValueError(
+                        f"Restart variable '{var_name}' in {io['bootfilein']} has shape {var_data.shape}, "
+                        f"but every per-layer variable must have shape {(gpsum, nl)}."
+                    )
+
                 # If a variable has no dimensions (scalar), convert it to a Python scalar
                 if var_data.shape == ():  # Scalar variable
                     var_data = var_data.item()
