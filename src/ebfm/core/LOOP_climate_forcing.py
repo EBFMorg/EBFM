@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from ebfm.coupling import Coupler
+from ebfm.core.config import ForcingConfig, ForcingType
 
 from .LOOP_general_functions import is_first_time_step
 
@@ -13,7 +13,7 @@ from ebfm.core import logging
 logger = logging.getLogger(__name__)
 
 
-def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
+def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
     """
     Meteorological forcing: Specify or read meteorological input and derive
     associated meteorological fields.
@@ -42,8 +42,9 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
     ###########################################################
     # SPECIFY/READ METEO FORCING
     ###########################################################
-    if not cpl.has_coupling_to("icon_atmo"):
-        IN = set_random_weather_data(IN, C, time, grid)
+    match config.forcing_type:
+        case ForcingType.RANDOM:
+            IN = set_random_weather_data(IN, C, time, grid)
 
     ###########################################################
     # DERIVED METEOROLOGICAL FIELDS
@@ -61,12 +62,16 @@ def main(C, grid, IN, t, time, OUT, cpl: Coupler) -> tuple[dict, dict]:
         "VP0"
     ] * np.exp(C["Ls"] / C["Rv"] * (1.0 / 273.15 - 1.0 / IN["T"])) * (IN["T"] < 273.15)
 
-    if cpl.has_coupling_to("icon_atmo"):  # q from ICON, calculate VP and RH
+    if config.forcing_type is ForcingType.ICON:
+        # q from ICON, calculate VP and RH
         IN["VP"] = IN["q"] * IN["Pres"] / C["eps"]
-        IN["RH"] = IN["VP"] / VPsat
-    else:  # RH from input, calculate VP and q
+        IN["RH"][:] = np.clip(IN["VP"] / VPsat, 0.0, 1.0)
+    elif config.forcing_type is ForcingType.RANDOM:
+        # RH from input, calculate VP and q
         IN["VP"] = IN["RH"] * VPsat
         IN["q"] = IN["RH"] * (VPsat * C["eps"] / IN["Pres"])
+    else:
+        raise ValueError(f"Unsupported forcing type: {config.forcing_type}")
 
     # Air density
     IN["Dair"] = IN["Pres"] / (C["Rd"] * IN["T"])

@@ -8,6 +8,19 @@ from netCDF4 import Dataset, date2num
 
 from .LOOP_general_functions import is_first_time_step, is_final_time_step
 
+from ebfm.core.grid import GridInputType
+
+
+def is_supported_grid_type(grid_type: GridInputType):
+    """
+    Check if provided grid input type supports writing to file
+
+    @param[in] grid_type GridInputType of used grid
+
+    @return True if provided grid_type supports writing to file; False if not
+    """
+    return grid_type is GridInputType.MATLAB
+
 
 def main(OUTFILE, io, OUT, grid, t, time, column):
     # Specify variables to be written
