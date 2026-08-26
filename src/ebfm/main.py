@@ -16,7 +16,7 @@ from ebfm.core import (
     LOOP_mass_balance,
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
-from ebfm.core.grid import GridInputType, number_of_columns
+from ebfm.core.grid import number_of_columns
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
@@ -272,7 +272,7 @@ def _main_impl():
         # Write output to files (only in uncoupled run and for unpartitioned grid)
         # TODO: should be supported for all cases to avoid case distinction here
         if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
-            if grid_config.grid_type is GridInputType.MATLAB:
+            if LOOP_write_to_file.is_supported_grid_type(grid_config.grid_type):
                 io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
             else:
                 logger.warning("Skipping writing output to file for Elmer input grids.")
