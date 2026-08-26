@@ -9,6 +9,8 @@ import numpy as np
 
 import logging
 
+from .restart import RESTART_VARIABLES
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,22 +63,7 @@ def main(OUT, io, restartdir: Path):
         units="days since 1970-01-01 00:00:00",
         calendar="gregorian",
     )
-    OUT = {
-        "subZ": OUT["subZ"],
-        "subW": OUT["subW"],
-        "subD": OUT["subD"],
-        "subS": OUT["subS"],
-        "subT": OUT["subT"],
-        "subTmean": OUT["subTmean"],
-        "snowmass": OUT["snowmass"],
-        "Tsurf": OUT["Tsurf"],
-        "ys": OUT["ys"],
-        "timelastsnow_netCDF": OUT["timelastsnow_netCDF"],
-        "alb_snow": OUT["alb_snow"],
-        "surface_elevation": OUT["surface_elevation"],
-        "x": OUT["x"],
-        "y": OUT["y"],
-    }
+    OUT = {var_name: OUT[var_name] for var_name in RESTART_VARIABLES}
 
     # Create the boot file
     create_boot_file()

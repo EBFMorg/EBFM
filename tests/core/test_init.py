@@ -21,6 +21,7 @@ from ebfm.core.cli import parse_cli_args
 from ebfm.core.config import ColumnDiscretizationConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
+from ebfm.core.restart import PER_COLUMN_VARIABLES, PER_LAYER_VARIABLES, RESTART_VARIABLES
 
 GPSUM = 5
 NL = 4
@@ -202,6 +203,61 @@ class TestRestartFileShapeValidation(unittest.TestCase):
                 init_with_restart_file=True,
             )
 
+    def _load(self, bootfile):
+        return init_initial_conditions(
+            self.C, _make_grid(), {"bootfilein": bootfile}, self.time, _make_column(), init_with_restart_file=True
+        )
+
+    def _write_with(self, name: str, **overrides) -> Path:
+        """Write a restart file whose contents differ from a valid one by `overrides`."""
+        bootfile = Path(self.tmpdir.name) / f"restart_test_{name}.nc"
+        out = _build_out_dict()
+        out.update(overrides)
+        write_restart_file(out, {"writebootfile": True, "bootfileout": bootfile}, restartdir=bootfile.parent)
+        return bootfile
+
+    def test_per_layer_variable_stored_per_column_is_rejected(self):
+        # `(GPSUM,)` is a perfectly legal restart shape -- it is what the per-column variables use --
+        # so only knowing that `subZ` belongs to the per-layer group can catch this.
+        bootfile = self._write_with("sub_z_1d", subZ=np.full((GPSUM,), 1.0))
+
+        with self.assertRaisesRegex(ValueError, r"'subZ'.*must have shape"):
+            self._load(bootfile)
+
+    def test_per_column_variable_stored_per_layer_is_rejected(self):
+        # The mirror image: `(GPSUM, NL)` is legal for a per-layer variable, wrong for `Tsurf`.
+        bootfile = self._write_with("tsurf_2d", Tsurf=np.full((GPSUM, NL), 1.0))
+
+        with self.assertRaisesRegex(ValueError, r"'Tsurf'.*must have shape"):
+            self._load(bootfile)
+
+    def test_restart_file_missing_a_required_variable_is_rejected(self):
+        # Copy a valid file, dropping `subZ`. Without the manifest check the model only notices when
+        # the time loop indexes `OUT["subZ"]`, far from the cause.
+        bootfile = Path(self.tmpdir.name) / "restart_test_no_sub_z.nc"
+        with Dataset(self.bootfile) as src, Dataset(bootfile, "w", format="NETCDF4") as dst:
+            for dim_name, dimension in src.dimensions.items():
+                dst.createDimension(dim_name, len(dimension))
+            for var_name, variable in src.variables.items():
+                if var_name == "subZ":
+                    continue
+                dst.createVariable(var_name, variable.dtype, variable.dimensions)[:] = variable[:]
+
+        with self.assertRaisesRegex(ValueError, r"missing the required variable\(s\): subZ"):
+            self._load(bootfile)
+
+    def test_variable_outside_the_manifest_is_accepted_at_a_valid_shape(self):
+        # Auxiliary variables may be added to a restart file without touching the loader, as long as
+        # they carry a recognisable column axis.
+        bootfile = Path(self.tmpdir.name) / "restart_test_extra.nc"
+        _write_restart_file(bootfile)
+        with Dataset(bootfile, "r+") as ncfile:
+            ncfile.createVariable("an_extra_diagnostic", "f8", ("ys_dim0",))[:] = 2.0
+
+        OUT, _, _ = self._load(bootfile)
+
+        np.testing.assert_array_equal(OUT["an_extra_diagnostic"], np.full((GPSUM,), 2.0))
+
     def test_restart_file_with_too_many_dimensions_is_rejected(self):
         bootfile_3d = Path(self.tmpdir.name) / "restart_test_3d.nc"
         _write_restart_file(bootfile_3d)
@@ -238,6 +294,43 @@ class TestRestartFileShapeValidation(unittest.TestCase):
         )
 
         self.assertEqual(OUT["a_scalar"], 1.0)
+
+
+class TestRestartVariableManifest(unittest.TestCase):
+    """The writer and the loader must agree on what a restart file contains.
+
+    Both derive it from `ebfm.core.restart.RESTART_VARIABLES`; these tests pin that they cannot
+    drift apart, which is the whole point of sharing the manifest.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_writer_writes_exactly_the_manifest(self):
+        bootfile = Path(self.tmpdir.name) / "restart_test.nc"
+        _write_restart_file(bootfile)
+
+        with Dataset(bootfile) as ncfile:
+            self.assertEqual(set(ncfile.variables), set(RESTART_VARIABLES))
+
+    def test_writer_writes_each_group_at_its_own_shape(self):
+        bootfile = Path(self.tmpdir.name) / "restart_test.nc"
+        _write_restart_file(bootfile)
+
+        with Dataset(bootfile) as ncfile:
+            for var_name in PER_LAYER_VARIABLES:
+                with self.subTest(var_name=var_name):
+                    self.assertEqual(ncfile.variables[var_name].shape, (GPSUM, NL))
+            for var_name in PER_COLUMN_VARIABLES:
+                with self.subTest(var_name=var_name):
+                    self.assertEqual(ncfile.variables[var_name].shape, (GPSUM,))
+
+    def test_the_two_groups_do_not_overlap(self):
+        self.assertEqual(set(PER_LAYER_VARIABLES) & set(PER_COLUMN_VARIABLES), set())
+        self.assertEqual(len(RESTART_VARIABLES), len(set(RESTART_VARIABLES)))
 
 
 class TestMatlabShadingLookupTable(unittest.TestCase):
