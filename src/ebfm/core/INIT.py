@@ -264,51 +264,63 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-    elif config.grid_type is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
+    elif config.grid_type in (GridInputType.MATLAB, GridInputType.NETCDF):  # Read grid and elevations from a file
         # ---------------------------------------------------------------------
         # Read and process grid information
         # ---------------------------------------------------------------------
         # Read grid data
-        input_data = read_MATLAB_grid(config.mesh_file)
-        grid["x_2D"] = input_data["x"][0][0]
-        grid["y_2D"] = input_data["y"][0][0]
-        grid["z_2D"] = input_data["z"][0][0]
-        mask_2D = input_data["mask"][0][0]
+        if config.grid_type is GridInputType.MATLAB:
+            input_data = read_MATLAB_grid(config.mesh_file)
+
+            grid["x_2D"] = input_data["x"][0][0]
+            grid["y_2D"] = input_data["y"][0][0]
+            grid["z_2D"] = input_data["z"][0][0]
+            mask_2D = input_data["mask"][0][0]
+
+            # Flip grid E-W or N-S when needed
+            fy, _ = np.gradient(grid["y_2D"])
+
+            if fy[0, 0] < 0:
+                grid["x_2D"] = np.flipud(grid["x_2D"])
+                grid["y_2D"] = np.flipud(grid["y_2D"])
+                grid["z_2D"] = np.flipud(grid["z_2D"])
+                mask_2D = np.flipud(mask_2D)
+
+            _, fx = np.gradient(grid["x_2D"])
+            if fx[0, 0] < 0:
+                grid["x_2D"] = np.fliplr(grid["x_2D"])
+                grid["y_2D"] = np.fliplr(grid["y_2D"])
+                grid["z_2D"] = np.fliplr(grid["z_2D"])
+                mask_2D = np.fliplr(mask_2D)
+
+            # Calculate latitude & longitude fields (from the original UTM coordinates)
+            utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
+            x_coords = grid["x_2D"].ravel()
+            y_coords = grid["y_2D"].ravel()
+            lon, lat = utm_to_latlon.transform(x_coords, y_coords)
+
+            # Reshape to 2D arrays matching the input's shape
+            grid["lon_2D"] = lon.reshape(grid["x_2D"].shape)
+            grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
+
+        else:
+            input_data = read_NETCDF_grid(config.mesh_file)
+
+            grid["x_2D"] = input_data["x"]
+            grid["y_2D"] = input_data["y"]
+            grid["z_2D"] = input_data["z"]
+            mask_2D = input_data["mask"]
+            grid["lon_2D"] = input_data["lon"]
+            grid["lat_2D"] = input_data["lat"]
 
         # Determine domain extent
         grid["Lx"], grid["Ly"] = grid["x_2D"].shape
-
-        # Flip grid E-W or N-S when needed
-        fy, _ = np.gradient(grid["y_2D"])
-
-        if fy[0, 0] < 0:
-            grid["x_2D"] = np.flipud(grid["x_2D"])
-            grid["y_2D"] = np.flipud(grid["y_2D"])
-            grid["z_2D"] = np.flipud(grid["z_2D"])
-            mask_2D = np.flipud(mask_2D)
-
-        _, fx = np.gradient(grid["x_2D"])
-        if fx[0, 0] < 0:
-            grid["x_2D"] = np.fliplr(grid["x_2D"])
-            grid["y_2D"] = np.fliplr(grid["y_2D"])
-            grid["z_2D"] = np.fliplr(grid["z_2D"])
-            mask_2D = np.fliplr(mask_2D)
 
         # Calculate grid spacing
         grid["dx"] = grid["x_2D"][0][1] - grid["x_2D"][0][0]
 
         # Create 1-D mask
         grid["mask"] = mask_2D[mask_2D == 1]
-
-        # Calculate latitude & longitude fields (from the original UTM coordinates)
-        utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
-        x_coords = grid["x_2D"].ravel()
-        y_coords = grid["y_2D"].ravel()
-        lon, lat = utm_to_latlon.transform(x_coords, y_coords)
-
-        # Reshape to 2D arrays matching the input's shape
-        grid["lon_2D"] = lon.reshape(grid["x_2D"].shape)
-        grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
 
         # Store 1-D (vectorized) grid information
         mask_flat = mask_2D.flatten()
@@ -342,6 +354,28 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["lat"] = grid["lat_2D"].flatten()[mask_flat == 1]
         grid["lon"] = grid["lon_2D"].flatten()[mask_flat == 1]
 
+        # four individual asserts to avoid overhead when turning on optimization
+        assert np.isfinite(grid["slope"]).all(), (
+            f"{int((~np.isfinite(grid['slope'])).sum())} of {grid['slope'].size} active grid cells have a "
+            "non-finite `slope`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["slope_x"]).all(), (
+            f"{int((~np.isfinite(grid['slope_x'])).sum())} of {grid['slope_x'].size} active grid cells have a "
+            "non-finite `slope_x`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["slope_y"]).all(), (
+            f"{int((~np.isfinite(grid['slope_y'])).sum())} of {grid['slope_y'].size} active grid cells have a "
+            "non-finite `slope_y`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["aspect"]).all(), (
+            f"{int((~np.isfinite(grid['aspect'])).sum())} of {grid['aspect'].size} active grid cells have a "
+            "non-finite `aspect`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+
         # Calculate slope_beta and slope_gamma (defining the tilt and orientation of a sloping surface)
         grid["slope_beta"] = np.arctan(grid["slope"])
         grid["slope_gamma"] = np.zeros_like(grid["slope"])
@@ -360,9 +394,11 @@ def init_grid(grid: GridDict, io, config: GridConfig):
 
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
+        # NOTE: Only works for grids with E-W and N-S aligned grid cells (e.g. MATLAB grid) and not for
+        # unstructured grids (e.g. Elmer mesh) or grids with rotated grid cells (e.g. NetCDF Greenland grid).
         # -----------------------------------------------------------------------------------------------------
         # Skip the (expensive) look-up table when shading is disabled.
-        if grid["has_shading"]:
+        if config.grid_type is GridInputType.MATLAB and grid["has_shading"]:
             _precompute_shading_matlab(grid, mask_2D)
 
         # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
@@ -410,7 +446,8 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
         max_angle = np.full(gpsum, -np.inf, dtype=np.float64)
         count = 1
         active = np.ones(gpsum, dtype=bool)
-        while active.any():
+        max_walk_distance = 5e4  # maximum walk distance in meters along the azimuth
+        while active.any() and count * grid["dx"] < max_walk_distance:
             j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
             i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
 
@@ -512,6 +549,91 @@ def read_MATLAB_grid(gridfile: Path):
         raise
     except KeyError as e:
         logger.info(f"Missing field in .mat file: {e}")
+        raise
+
+    return input_data
+
+
+def read_NETCDF_grid(gridfile: Path):
+    """
+    Read grid information from an NetCDF (.nc) file with DEM.
+
+    Parameters:
+        gridfile: Path to NetCDF file (.nc).
+
+    Returns:
+        dict: A dictionary named `input_data` containing:
+            - 'x': 2D NumPy array of UTM zone 24N easting coordinates (m).
+            - 'y': 2D NumPy array of UTM zone 24N northing coordinates (m).
+            - 'z': 2D NumPy array of orography/elevation.
+            - 'mask': 2D NumPy array of fractional glacier mask values.
+            - 'lon': 2D NumPy array of longitude coordinates in degrees East.
+            - 'lat': 2D NumPy array of latitude coordinates.
+    """
+
+    logger.info("EBFM: Reading grid data from NetCDF file...")
+    input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
+
+    try:
+        with Dataset(gridfile, "r") as ncfile:
+            if "orography" in ncfile.variables:
+                raw_orography = ncfile.variables["orography"][:]
+            elif "orog" in ncfile.variables:
+                raw_orography = ncfile.variables["orog"][:]
+            else:
+                raise KeyError(f"Neither `orography` nor `orog` found in NetCDF grid file {gridfile}.")
+
+            if "mask" not in ncfile.variables:
+                raise KeyError(f"Missing `mask` in in NetCDF grid file {gridfile}.")
+
+            raw_mask = ncfile.variables["mask"][:]
+            latitude = np.asarray(ncfile.variables["latitude"][:])
+            longitude = np.asarray(ncfile.variables["longitude"][:])
+
+            orography = np.asarray(raw_orography)
+            mask = np.asarray(raw_mask, dtype=np.float32)
+
+            orography = np.squeeze(orography)
+            mask = np.squeeze(mask)
+            latitude = np.squeeze(latitude)
+            longitude = np.squeeze(longitude)
+
+            if np.ma.isMaskedArray(raw_orography):
+                valid_orography = ~np.squeeze(np.ma.getmaskarray(raw_orography))
+            else:
+                valid_orography = np.isfinite(orography)
+
+            if latitude.ndim == 1 and longitude.ndim == 1:
+                longitude, latitude = np.meshgrid(longitude, latitude)
+
+            if orography.shape != mask.shape or orography.shape != latitude.shape or orography.shape != longitude.shape:
+                raise ValueError(
+                    "`orography`/`orog`, `mask`, `latitude`, and `longitude` must have matching 2D shapes. "
+                    f"Got orography={orography.shape}, mask={mask.shape}, "
+                    f"latitude={latitude.shape}, longitude={longitude.shape}."
+                )
+
+            mask = np.where(valid_orography & (mask > 0.0), 1.0, 0.0).astype(np.float32)
+            longitude = np.mod(longitude, 360.0)
+
+            if not np.any(mask > 0.0):
+                raise ValueError(f"Mask of {gridfile} contains no active cells with `mask > 0`.")
+
+            lonlat_to_utm24n = Transformer.from_crs("EPSG:4326", "EPSG:32624", always_xy=True)
+            x, y = lonlat_to_utm24n.transform(longitude, latitude)
+
+            input_data["x"] = x
+            input_data["y"] = y
+            input_data["z"] = orography
+            input_data["lat"] = latitude
+            input_data["lon"] = longitude
+            input_data["mask"] = mask
+
+    except FileNotFoundError:
+        logger.info(f"File not found: {gridfile}")
+        raise
+    except KeyError as e:
+        logger.info(f"Missing field in NetCDF file {gridfile}: {e}")
         raise
 
     return input_data

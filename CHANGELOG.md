@@ -4,6 +4,12 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# develop
+
+* Introduce coarse-resolution (10-km) and fine-resolution (2.5-km) test cases for Greenland forced with meteorological data from CARRA2. https://github.com/EBFMorg/EBFM/pull/128
+    * Add feature to use NetCDF meshes with DEM as input (`--netcdf-mesh`)
+    * Add feature to read forcing files from folder (`--forcing-dir`)
+
 # v0.7.0
 
 * Moved performance and profiling sections out of `README.md` into `docs/Performance.md`, together with the GPU setup and CUDA runtime troubleshooting entry. https://github.com/EBFMorg/EBFM/pull/161

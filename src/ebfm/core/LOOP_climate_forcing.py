@@ -1,7 +1,10 @@
 # SPDX-FileCopyrightText: 2025 EBFM Authors
 #
 # SPDX-License-Identifier: BSD-3-Clause
-
+from datetime import timezone
+from isodate import duration_isoformat
+from isodate.duration import Duration
+from netCDF4 import Dataset
 import numpy as np
 
 from ebfm.core.config import ForcingConfig, ForcingType
@@ -45,6 +48,8 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
     match config.forcing_type:
         case ForcingType.RANDOM:
             IN = set_random_weather_data(IN, C, time, grid)
+        case ForcingType.CARRA2:
+            IN = read_forcing_file(IN, C, time, config.forcing_files_dir)
 
     ###########################################################
     # DERIVED METEOROLOGICAL FIELDS
@@ -62,8 +67,8 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
         "VP0"
     ] * np.exp(C["Ls"] / C["Rv"] * (1.0 / 273.15 - 1.0 / IN["T"])) * (IN["T"] < 273.15)
 
-    if config.forcing_type is ForcingType.ICON:
-        # q from ICON, calculate VP and RH
+    if config.forcing_type in (ForcingType.CARRA2, ForcingType.ICON):
+        # q from ICON/CARRA2, calculate VP and RH
         IN["VP"] = IN["q"] * IN["Pres"] / C["eps"]
         IN["RH"][:] = np.clip(IN["VP"] / VPsat, 0.0, 1.0)
     elif config.forcing_type is ForcingType.RANDOM:
@@ -104,6 +109,163 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
     OUT["climrain"] = IN["rain"]
 
     return IN, OUT
+
+
+def read_forcing_file(IN, C, time, forcing_file_dir, slice_duration=Duration(months=1)):
+    """
+    Read vectorized meteorological data for the current time-step from a preprocessed NetCDF file.
+
+    Parameters:
+        IN (dict): Meteorological input variables.
+        C (dict): Constants for the model.
+        time (dict): Time-related variables.
+        forcing_file_dir (Path): Path to the base directory containing NetCDF forcing files with meteorological data.
+
+    Returns:
+        dict: Updated IN dictionary with meteorological data.
+    """
+
+    model_time_utc = time["TCUR"]
+    model_time_seconds = model_time_utc.replace(tzinfo=timezone.utc).timestamp()
+
+    forcing_variables = ("C", "T", "Pres", "WS", "P", "q")
+
+    def close_cached_datasets(cache):
+        dataset = cache.get("dataset")
+        if dataset is not None:
+            dataset.close()
+
+    if not hasattr(read_forcing_file, "_cache"):
+        read_forcing_file._cache = {}
+
+    cache = read_forcing_file._cache
+
+    def quantize_slice_start(current_time, duration: Duration) -> str:
+        """
+        Quantize the current time to the start of the forcing slice based on the specified duration.
+
+        Parameters:
+            current_time (datetime): The current time to be quantized.
+            duration (Duration): The duration of the forcing slice.
+        """
+        current_date = current_time.date()
+
+        if duration.seconds != 0 or duration.microseconds != 0:
+            raise ValueError(f"Unsupported forcing slice duration `{duration}`. " "Sub-daily slices are not supported.")
+
+        years = duration.years or 0
+        months = duration.months or 0
+        days = duration.days or 0
+
+        if years == 1 and months == 0 and days == 0:
+            return current_date.replace(month=1, day=1).isoformat()
+
+        if months == 1 and years == 0 and days == 0:
+            return current_date.replace(day=1).isoformat()
+
+        if months == 0 and years == 0 and days == 1:
+            return current_date.isoformat()
+
+        raise ValueError(
+            f"Unsupported forcing slice duration `{duration}`. "
+            "Only single month/year/day slices are supported (P1Y, P1M, P1D)."
+        )
+
+    current_slice = quantize_slice_start(time["TCUR"], slice_duration)
+    forcing_file = forcing_file_dir / current_slice / (duration_isoformat(slice_duration) + ".nc")
+
+    if cache.get("forcing_file") != forcing_file:
+        close_cached_datasets(cache)
+
+        logger.info(f"Opening vectorized forcing file {forcing_file}...")
+
+        dataset = Dataset(forcing_file, "r")
+        forcing_time = np.asarray(dataset.variables["time"][:], dtype=float)
+
+        variables = {}
+        for variable_name in forcing_variables:
+            if variable_name not in dataset.variables:
+                dataset.close()
+                raise KeyError(f"Missing `{variable_name}` in vectorized forcing file {forcing_file}.")
+
+            variable = dataset.variables[variable_name]
+
+            if variable.ndim != 2:
+                dataset.close()
+                raise ValueError(
+                    f"`{variable_name}` in {forcing_file} must have dimensions (time, gpsum). "
+                    f"Got shape {variable.shape}."
+                )
+
+            if variable.shape[1] != IN["C"].shape[0]:
+                dataset.close()
+                raise ValueError(
+                    f"`{variable_name}` vector length must match model vector length. "
+                    f"Got {variable.shape[1]}, model={IN['C'].shape[0]}."
+                )
+
+            variables[variable_name] = variable
+
+        cache.clear()
+        cache.update(
+            {
+                "forcing_file": forcing_file,
+                "time": forcing_time,
+                "dataset": dataset,
+                "variables": variables,
+                "window_start": None,
+                "window_end": None,
+                "data": {},
+            }
+        )
+
+        logger.info(f"Done opening vectorized forcing file {forcing_file}.")
+
+    time_index = int(np.argmin(np.abs(cache["time"] - model_time_seconds)))
+
+    time_window_size = 16
+    if cache["window_start"] is None or time_index < cache["window_start"] or time_index >= cache["window_end"]:
+        window_start = time_index
+        window_end = min(window_start + time_window_size, cache["time"].shape[0])
+
+        cache["data"] = {
+            variable_name: np.asarray(
+                cache["variables"][variable_name][window_start:window_end, :],
+                dtype=np.float32,
+            )
+            for variable_name in forcing_variables
+        }
+        cache["window_start"] = window_start
+        cache["window_end"] = window_end
+        logger.info(f"Read {time_window_size} time steps from vectorized forcing file.")
+
+    local_time_index = time_index - cache["window_start"]
+
+    def read_current_vectorized_field(variable_name: str) -> np.ndarray:
+        field_vector = cache["data"][variable_name][local_time_index, :]
+
+        if field_vector.shape != IN["C"].shape:
+            raise ValueError(
+                f"Vectorized `{variable_name}` must match model vector shape. "
+                f"Got {variable_name}={field_vector.shape}, model={IN['C'].shape}."
+            )
+
+        return field_vector
+
+    IN["C"][:] = np.clip(read_current_vectorized_field("C"), 0.0, 1.0)
+    IN["T"][:] = read_current_vectorized_field("T")
+    IN["Pres"][:] = read_current_vectorized_field("Pres")
+    IN["WS"][:] = read_current_vectorized_field("WS")
+    IN["P"][:] = read_current_vectorized_field("P")
+    IN["q"][:] = read_current_vectorized_field("q")
+
+    IN["snow"] = IN["P"] * (IN["T"] < C["rainsnowT"] - 1)
+    IN["rain"] = IN["P"] * (IN["T"] > C["rainsnowT"] + 1)
+    in_between_mask = (IN["T"] < C["rainsnowT"] + 1) & (IN["T"] > C["rainsnowT"] - 1)
+    IN["snow"] += IN["P"] * (C["rainsnowT"] - IN["T"] + 1) / 2 * in_between_mask
+    IN["rain"] += IN["P"] * (1 + IN["T"] - C["rainsnowT"]) / 2 * in_between_mask
+
+    return IN
 
 
 def set_random_weather_data(IN, C, time, grid):

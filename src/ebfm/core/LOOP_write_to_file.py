@@ -19,7 +19,7 @@ def is_supported_grid_type(grid_type: GridInputType):
 
     @return True if provided grid_type supports writing to file; False if not
     """
-    return grid_type is GridInputType.MATLAB
+    return grid_type in (GridInputType.MATLAB, GridInputType.NETCDF)
 
 
 def main(OUTFILE, io, OUT, grid, t, time, column):
