@@ -18,6 +18,7 @@ from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 from ebfm.elmer.mesh import Mesh
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, number_of_columns, validate_grid
+from .restart import validate_all_variables_present, validate_variable_shape
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
@@ -545,6 +546,7 @@ def init_initial_conditions(
 
     gpsum = number_of_columns(grid)
     nl = column.nl
+    logger.info(f"Column discretization: {gpsum} columns of {nl} layers each.")
 
     ##########################################################
     # Initialize conditions from restart file or set manually
@@ -554,6 +556,7 @@ def init_initial_conditions(
 
         # Open the NetCDF file
         with Dataset(io["bootfilein"], "r") as ncfile:
+            validate_all_variables_present(ncfile.variables, io["bootfilein"])
             # Iterate through all variables in the file
             for var_name in ncfile.variables:
                 # Read the variable data. netCDF4 returns a numpy.ma.MaskedArray
@@ -574,21 +577,7 @@ def init_initial_conditions(
                     var_data = var_data.data
 
                 # Perform consistency checks
-                if var_data.ndim > 2:
-                    raise ValueError(
-                        f"Restart variable '{var_name}' in {io['bootfilein']} has {var_data.ndim} dimensions; "
-                        "restart files hold per-column and per-layer variables only."
-                    )
-                if var_data.ndim == 1 and var_data.shape != (gpsum,):
-                    raise ValueError(
-                        f"Restart variable '{var_name}' in {io['bootfilein']} has shape {var_data.shape}, "
-                        f"but every per-column variable must have shape {(gpsum,)}."
-                    )
-                if var_data.ndim == 2 and var_data.shape != (gpsum, nl):
-                    raise ValueError(
-                        f"Restart variable '{var_name}' in {io['bootfilein']} has shape {var_data.shape}, "
-                        f"but every per-layer variable must have shape {(gpsum, nl)}."
-                    )
+                validate_variable_shape(var_name, var_data.shape, gpsum, nl, io["bootfilein"])
 
                 # If a variable has no dimensions (scalar), convert it to a Python scalar
                 if var_data.shape == ():  # Scalar variable
