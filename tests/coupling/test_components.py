@@ -202,10 +202,14 @@ class TestIconLandComponent(unittest.TestCase):
         icon_land = coupler.get_component("icon_land")
 
         coupler._register_fake_values(
-            FakeFieldConfig(coupled_component=icon_land, name="t_srf", value=260.0, exchange_type=GenericExchangeType.TARGET)
+            FakeFieldConfig(
+                coupled_component=icon_land, name="t_srf", value=260.0, exchange_type=GenericExchangeType.TARGET
+            )
         )
         coupler._register_fake_values(
-            FakeFieldConfig(coupled_component=icon_land, name="melt", value=2.0, exchange_type=GenericExchangeType.TARGET)
+            FakeFieldConfig(
+                coupled_component=icon_land, name="melt", value=2.0, exchange_type=GenericExchangeType.TARGET
+            )
         )
         coupler._register_fake_values(
             FakeFieldConfig(
