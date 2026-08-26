@@ -16,7 +16,7 @@ from ebfm.core import (
     LOOP_mass_balance,
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
-from ebfm.core.grid import GridInputType
+from ebfm.core.grid import GridInputType, number_of_columns
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
@@ -78,7 +78,7 @@ def dump_reference(logger, OUT, filepath: str):
 def print_diagnostics(grid, OUT, t):
     """Log key diagnostic values each timestep for performance and correctness analysis."""
 
-    gpsum = grid.get("gpsum", "N/A")
+    gpsum = number_of_columns(grid)
     has_shading = grid.get("has_shading", False)
     smb = OUT.get("smb")
     smb_cum = OUT.get("smb_cumulative")
