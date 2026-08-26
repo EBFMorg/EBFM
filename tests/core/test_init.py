@@ -33,6 +33,15 @@ def _make_column():
     return ColumnDiscretizationConfig(nl=NL, split=(2,))
 
 
+def _make_grid(number_of_columns: int = GPSUM) -> dict:
+    """A minimal grid carrying `number_of_columns` columns.
+
+    `init_initial_conditions` derives the column count from the grid via
+    `ebfm.core.grid.number_of_columns`, so the mask is what sets it.
+    """
+    return {"mask": np.ones(number_of_columns, dtype=int)}
+
+
 def _build_out_dict() -> dict:
     return {
         "subZ": np.full((GPSUM, NL), 1.0),
@@ -89,7 +98,7 @@ class TestInitFromRestartFile(unittest.TestCase):
 
     def test_restart_arrays_are_not_masked(self):
         C = {"alb_ice": 0.5}
-        grid = {"mask": np.ones(GPSUM, dtype=int)}
+        grid = _make_grid()
         io = {"bootfilein": self.bootfile}
         time = {}
 
@@ -102,7 +111,7 @@ class TestInitFromRestartFile(unittest.TestCase):
 
     def test_restart_arrays_keep_their_values(self):
         C = {"alb_ice": 0.5}
-        grid = {"mask": np.ones(GPSUM, dtype=int)}
+        grid = _make_grid()
         io = {"bootfilein": self.bootfile}
         time = {}
 
@@ -116,12 +125,119 @@ class TestInitFromRestartFile(unittest.TestCase):
         _write_restart_file(bootfile_with_gap, with_missing_value=True)
 
         C = {"alb_ice": 0.5}
-        grid = {"mask": np.ones(GPSUM, dtype=int)}
+        grid = _make_grid()
         io = {"bootfilein": bootfile_with_gap}
         time = {}
 
         with self.assertRaises(AssertionError):
             init_initial_conditions(C, grid, io, time, _make_column(), init_with_restart_file=True)
+
+
+class TestRestartFileShapeValidation(unittest.TestCase):
+    """
+    A restart file must match the configured column discretization.
+
+    The restart branch of `init_initial_conditions` takes its array shapes from the file, while the
+    tail shared with the manual branch allocates `subK`, `subCeff` and `subWvol` at the configured
+    `(gpsum, nl)`. Without this check a mismatched file leaves `OUT` holding two different column or
+    layer counts at once, and nothing downstream reports it usefully: a wrong column count fails on
+    the first timestep with an `IndexError` naming neither the file nor the cause, and a wrong layer
+    count runs the whole simulation before failing in the output writer -- or completes with no error
+    at all when output writing never triggers, writing a fresh restart file as if nothing were wrong.
+
+    The matching case is covered by `TestInitFromRestartFile`, which loads the same files with the
+    same grid and column config; those tests fail if this validation is too strict.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.bootfile = Path(self.tmpdir.name) / "restart_test.nc"
+        _write_restart_file(self.bootfile)
+        self.C = {"alb_ice": 0.5}
+        self.io = {"bootfilein": self.bootfile}
+        self.time = {}
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_restart_file_with_wrong_layer_count_is_rejected(self):
+        for nl in (NL - 1, NL + 1):
+            with self.subTest(nl=nl):
+                column = ColumnDiscretizationConfig(nl=nl, split=(2,))
+                with self.assertRaisesRegex(ValueError, r"'subZ'.*must have shape"):
+                    init_initial_conditions(
+                        self.C, _make_grid(), self.io, self.time, column, init_with_restart_file=True
+                    )
+
+    def test_restart_file_with_wrong_column_count_is_rejected(self):
+        # A single column is included as the extreme case: it is the one where the per-layer arrays
+        # would broadcast against the configured `(gpsum, nl)` rather than fail to align.
+        for number_of_columns in (1, GPSUM - 1, GPSUM + 1):
+            with self.subTest(number_of_columns=number_of_columns):
+                with self.assertRaisesRegex(ValueError, r"'subZ'.*must have shape"):
+                    init_initial_conditions(
+                        self.C,
+                        _make_grid(number_of_columns),
+                        self.io,
+                        self.time,
+                        _make_column(),
+                        init_with_restart_file=True,
+                    )
+
+    def test_restart_file_with_wrong_length_per_column_variable_is_rejected(self):
+        # Every per-layer variable matches here, so only the per-column check can catch this.
+        bootfile_short = Path(self.tmpdir.name) / "restart_test_short.nc"
+        _write_restart_file(bootfile_short)
+        with Dataset(bootfile_short, "r+") as ncfile:
+            ncfile.createDimension("short", GPSUM - 2)
+            ncfile.createVariable("ys_short", "f8", ("short",))[:] = 1.0
+
+        with self.assertRaisesRegex(ValueError, r"'ys_short'.*per-column variable must have shape"):
+            init_initial_conditions(
+                self.C,
+                _make_grid(),
+                {"bootfilein": bootfile_short},
+                self.time,
+                _make_column(),
+                init_with_restart_file=True,
+            )
+
+    def test_restart_file_with_too_many_dimensions_is_rejected(self):
+        bootfile_3d = Path(self.tmpdir.name) / "restart_test_3d.nc"
+        _write_restart_file(bootfile_3d)
+        with Dataset(bootfile_3d, "r+") as ncfile:
+            # Correct column and layer count, but one dimension too many.
+            ncfile.createDimension("extra", 2)
+            variable = ncfile.createVariable("subZ_3d", "f8", ("subZ_dim0", "subZ_dim1", "extra"))
+            variable[:] = 1.0
+
+        with self.assertRaisesRegex(ValueError, r"'subZ_3d' .*has 3 dimensions"):
+            init_initial_conditions(
+                self.C,
+                _make_grid(),
+                {"bootfilein": bootfile_3d},
+                self.time,
+                _make_column(),
+                init_with_restart_file=True,
+            )
+
+    def test_restart_file_with_a_scalar_variable_is_accepted(self):
+        # The writer stores scalars as 0-d variables, which carry no column or layer axis to check.
+        bootfile_scalar = Path(self.tmpdir.name) / "restart_test_scalar.nc"
+        _write_restart_file(bootfile_scalar)
+        with Dataset(bootfile_scalar, "r+") as ncfile:
+            ncfile.createVariable("a_scalar", "f8", ()).assignValue(1.0)
+
+        OUT, _, _ = init_initial_conditions(
+            self.C,
+            _make_grid(),
+            {"bootfilein": bootfile_scalar},
+            self.time,
+            _make_column(),
+            init_with_restart_file=True,
+        )
+
+        self.assertEqual(OUT["a_scalar"], 1.0)
 
 
 class TestMatlabShadingLookupTable(unittest.TestCase):

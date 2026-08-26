@@ -525,7 +525,7 @@ def init_initial_conditions(
 
     Parameters:
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
-        grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
+        grid (dict): Dictionary representing the grid.
         io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         time (dict): Dictionary with time-related parameters (e.g. ts).
         column (ColumnDiscretizationConfig): How each column is divided into layers.
@@ -535,6 +535,9 @@ def init_initial_conditions(
         OUT (dict): Dictionary containing model outputs initialized with default or restart file values.
         IN (dict): Dictionary containing model inputs initialized with default values.
         OUTFILE (dict): Placeholder dictionary for output file management.
+
+    Raises:
+        ValueError: if a restart file holds an array that does not match the configured `(gpsum, nl)`.
     """
 
     OUT = {}  # Dictionary to hold model output variables
@@ -569,6 +572,24 @@ def init_initial_conditions(
                 )
                 if isinstance(var_data, np.ma.MaskedArray):
                     var_data = var_data.data
+
+                # Perform consistency checks
+                if var_data.ndim > 2:
+                    raise ValueError(
+                        f"Restart variable '{var_name}' in {io['bootfilein']} has {var_data.ndim} dimensions; "
+                        "restart files hold per-column and per-layer variables only."
+                    )
+                if var_data.ndim == 1 and var_data.shape != (gpsum,):
+                    raise ValueError(
+                        f"Restart variable '{var_name}' in {io['bootfilein']} has shape {var_data.shape}, "
+                        f"but every per-column variable must have shape {(gpsum,)}."
+                    )
+                if var_data.ndim == 2 and var_data.shape != (gpsum, nl):
+                    raise ValueError(
+                        f"Restart variable '{var_name}' in {io['bootfilein']} has shape {var_data.shape}, "
+                        f"but every per-layer variable must have shape {(gpsum, nl)}."
+                    )
+
                 # If a variable has no dimensions (scalar), convert it to a Python scalar
                 if var_data.shape == ():  # Scalar variable
                     var_data = var_data.item()
