@@ -15,6 +15,8 @@ import unittest
 
 import numpy as np
 
+from ebfm.core.config import ColumnDiscretizationConfig
+
 GPSUM, NL = 4, 20
 _SCHEMES = ("bucket", "normal", "linear")
 # Layer thickness per column (m), constant over depth: the columns differ in thickness only.
@@ -26,15 +28,10 @@ _EXPECTED_CUTOFF = np.array([8, 8, 4, 4])
 
 def _make_case(C):
     """A cold, dry, uniformly layered column set whose only water input is rain."""
-    grid = {
-        "gpsum": GPSUM,
-        "nl": NL,
-        "max_subZ": 1.5,
-        # No layer merging/splitting, so the grid stays exactly as built here.
-        "doubledepth": False,
-        "split": np.array([15]),
-        "mask": np.ones(GPSUM, dtype=int),
-    }
+    # max_subZ is above _THICKNESS so nothing shifts, and doubledepth off means no
+    # layer merging/splitting: the column stays exactly as built here.
+    column = ColumnDiscretizationConfig(nl=NL, max_subZ=1.5, doubledepth=False, split=(15,))
+    grid = {"mask": np.ones(GPSUM, dtype=int)}
     OUT = {
         "subZ": np.repeat(_THICKNESS[:, None], NL, axis=1),
         "subT": np.full((GPSUM, NL), C["T0"] - 10.0),
@@ -62,7 +59,7 @@ def _make_case(C):
         "yearsnow": np.tile(yearsnow[:, None], (1, NL)),
         "logyearsnow": np.tile(np.log(yearsnow)[:, None], (1, NL)),
     }
-    return grid, OUT, IN
+    return grid, column, OUT, IN
 
 
 class TestPercolationSchemes(unittest.TestCase):
@@ -74,10 +71,10 @@ class TestPercolationSchemes(unittest.TestCase):
 
     def _run(self, percolation):
         """Advance the case by one hourly time step and return the state before and after."""
-        grid, OUT, IN = _make_case(self.C)
+        grid, column, OUT, IN = _make_case(self.C)
         phys = {"snow_compaction": "firn+snow", "percolation": percolation}
         subT_before = OUT["subT"].copy()
-        self.LOOP_SNOW.main(self.C, OUT, IN, 1.0 / 24.0, grid, phys)
+        self.LOOP_SNOW.main(self.C, OUT, IN, 1.0 / 24.0, grid, phys, column)
         return subT_before, OUT
 
     def test_supported_schemes_run(self):

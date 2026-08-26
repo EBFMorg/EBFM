@@ -16,8 +16,8 @@ from datetime import datetime
 from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
-from .config import TimeConfig, GridConfig, iso8601
-from .grid import GridInputType, GridDict, ShadingMethod
+from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
+from .grid import GridInputType, GridDict, ShadingMethod, number_of_columns, validate_grid
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
@@ -53,17 +53,14 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
         grid (dict): Grid-related parameters.
         io (dict): Input/output parameters.
         phys (dict): Model physics settings.
+        column_config (ColumnDiscretizationConfig): How each column is divided into layers.
     """
 
     # ---------------------------------------------------------------------
     # Grid parameters
     # ---------------------------------------------------------------------
+    column_config = ColumnDiscretizationConfig()  # validates on construction
     grid: GridDict = {}
-    grid["utmzone"] = 33  # UTM zone
-    grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
-    grid["nl"] = 50  # Number of vertical layers
-    grid["doubledepth"] = True  # Double vertical layer depth at specified layers (True/False)
-    grid["split"] = np.array([15, 25, 35])  # Vertical layer numbers at which layer depth doubles
 
     # ---------------------------------------------------------------------
     # Model physics
@@ -116,7 +113,7 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     os.makedirs(io["outdir"], exist_ok=True)
 
     # Return the initialized parameters
-    return grid, io, phys
+    return grid, io, phys, column_config
 
 
 def init_constants():
@@ -185,19 +182,6 @@ def init_constants():
     return C
 
 
-def compute_number_of_glacier_cells(grid: GridDict) -> int:
-    """
-    Computes the number of glacier cells in the grid based on the mask.
-
-    Parameters:
-        grid (GridDict): containing grid-related parameters
-
-    Returns:
-        int: Number of glacier cells (gpsum)
-    """
-    return np.sum(grid["mask"] == 1)
-
-
 def init_grid(grid: GridDict, io, config: GridConfig):
     """
     Initializes the GridDict based on the given GridConfig.
@@ -251,11 +235,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         if "mask" not in grid:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
 
-        if config.grid_type is GridInputType.ELMERXIOS:
-            grid["gpsum"] = grid["z"].shape[0]
-        else:
-            grid["gpsum"] = compute_number_of_glacier_cells(grid)
-
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
@@ -281,7 +260,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
@@ -316,8 +294,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
                 mask_2D = np.fliplr(mask_2D)
 
             # Calculate latitude & longitude fields (from the original UTM coordinates)
-            utmzone = grid["utmzone"]  # Assume this is already part of the grid
-            utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + utmzone}", "EPSG:4326", always_xy=True)
+            utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
             x_coords = grid["x_2D"].ravel()
             y_coords = grid["y_2D"].ravel()
             lon, lat = utm_to_latlon.transform(x_coords, y_coords)
@@ -344,7 +321,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
 
         # Create 1-D mask
         grid["mask"] = mask_2D[mask_2D == 1]
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # Store 1-D (vectorized) grid information
         mask_flat = mask_2D.flatten()
@@ -429,6 +405,8 @@ def init_grid(grid: GridDict, io, config: GridConfig):
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
+    validate_grid(grid)
+
     return grid
 
 
@@ -454,9 +432,10 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
     xl, yl = grid["x_2D"].shape
 
     # loop over the azimuth angles to determine gridded maximum grid angles per angle
-    grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
+    gpsum = number_of_columns(grid)
+    grid["maxgridangle"] = np.zeros((gpsum, grid["nr_az_steps"]), dtype=np.float64)
     for n in range(grid["nr_az_steps"]):
-        az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
+        az = np.full(gpsum, grid["az_array"][n], dtype=float)
 
         # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
         ddx, ddy = calculate_step_sizes(az)
@@ -464,9 +443,9 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
         # from every grid cell step in the direction of the azimuth until the grid end is reached
         # and detect maximum grid angle along the path
         i0, j0 = np.where(mask_2D == 1)
-        max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
+        max_angle = np.full(gpsum, -np.inf, dtype=np.float64)
         count = 1
-        active = np.ones(grid["gpsum"], dtype=bool)
+        active = np.ones(gpsum, dtype=bool)
         max_walk_distance = 5e4  # maximum walk distance in meters along the azimuth
         while active.any() and count * grid["dx"] < max_walk_distance:
             j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
@@ -660,28 +639,34 @@ def read_NETCDF_grid(gridfile: Path):
     return input_data
 
 
-def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file: bool):
+def init_initial_conditions(
+    C, grid: GridDict, io, time, column: ColumnDiscretizationConfig, init_with_restart_file: bool
+):
     """
     Sets the model's initial conditions at the start of the simulation.
 
     Parameters:
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
-        grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
+        grid (dict): Dictionary representing the grid.
         io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         time (dict): Dictionary with time-related parameters (e.g. ts).
+        column (ColumnDiscretizationConfig): How each column is divided into layers.
         init_with_restart_file (bool): Flag indicating whether to initialize from a restart file or set manually.
 
     Returns:
         OUT (dict): Dictionary containing model outputs initialized with default or restart file values.
         IN (dict): Dictionary containing model inputs initialized with default values.
         OUTFILE (dict): Placeholder dictionary for output file management.
+
+    Raises:
+        ValueError: if a restart file holds an array that does not match the configured `(gpsum, nl)`.
     """
 
     OUT = {}  # Dictionary to hold model output variables
     IN = {}  # Dictionary to hold model input variables
 
-    gpsum = grid["gpsum"]
-    nl = grid["nl"]
+    gpsum = number_of_columns(grid)
+    nl = column.nl
 
     ##########################################################
     # Initialize conditions from restart file or set manually
@@ -709,6 +694,24 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
                 )
                 if isinstance(var_data, np.ma.MaskedArray):
                     var_data = var_data.data
+
+                # Perform consistency checks
+                if var_data.ndim > 2:
+                    raise ValueError(
+                        f"Restart variable '{var_name}' in {io['bootfilein']} has {var_data.ndim} dimensions; "
+                        "restart files hold per-column and per-layer variables only."
+                    )
+                if var_data.ndim == 1 and var_data.shape != (gpsum,):
+                    raise ValueError(
+                        f"Restart variable '{var_name}' in {io['bootfilein']} has shape {var_data.shape}, "
+                        f"but every per-column variable must have shape {(gpsum,)}."
+                    )
+                if var_data.ndim == 2 and var_data.shape != (gpsum, nl):
+                    raise ValueError(
+                        f"Restart variable '{var_name}' in {io['bootfilein']} has shape {var_data.shape}, "
+                        f"but every per-layer variable must have shape {(gpsum, nl)}."
+                    )
+
                 # If a variable has no dimensions (scalar), convert it to a Python scalar
                 if var_data.shape == ():  # Scalar variable
                     var_data = var_data.item()
@@ -732,18 +735,18 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
         OUT["subD"] = np.full((gpsum, nl), C["Dice"])  # Vertical densities (kg m-3)
         OUT["timelastsnow"] = np.full((gpsum,), time["ts"])  # Timestep of last snowfall (days)
         OUT["ys"] = np.full((gpsum,), 500.0)  # Annual snowfall (mm water equivalent)
-        OUT["subZ"] = np.full((gpsum, nl), grid["max_subZ"])  # Vertical layer depths (m)
+        OUT["subZ"] = np.full((gpsum, nl), column.max_subZ)  # Vertical layer depths (m)
         OUT["alb_snow"] = np.full((gpsum,), C["alb_fresh"])  # Snow albedo
         OUT["snowmass"] = np.zeros((gpsum,))  # Snow mass (m water equivalent)
 
-        if grid.get("doubledepth", False):  # Sets layer thicknesses when 'double depth' is active
+        if column.doubledepth:  # Sets layer thicknesses when 'double depth' is active
             mask_indices = np.where(grid["mask"] == 1)
-            split = grid["split"] - 1
+            split = column.split - 1
             for n, split_start in enumerate(split[:-1]):
-                depth_value = (2.0 ** (n + 1)) * grid["max_subZ"]
+                depth_value = (2.0 ** (n + 1)) * column.max_subZ
                 OUT["subZ"][mask_indices[0], split_start : split[n + 1]] = depth_value
 
-            final_depth_value = (2.0 ** len(split)) * grid["max_subZ"]
+            final_depth_value = (2.0 ** len(split)) * column.max_subZ
             OUT["subZ"][mask_indices[0], split[-1] :] = final_depth_value
 
     ######################################################

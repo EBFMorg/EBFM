@@ -51,7 +51,7 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
             parse_cli_args([])
         self.assertEqual(ctx.exception.code, 2)
 
-    def test_two_grid_options_rejected_matlab_elmer(self):
+    def test_two_grid_options_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(_MATLAB + _ELMER)
         self.assertEqual(ctx.exception.code, 2)

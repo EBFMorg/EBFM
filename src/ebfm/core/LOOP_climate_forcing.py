@@ -58,8 +58,9 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
     # Annual snow accumulation
     OUT["ys"] = (1.0 - (1.0 / (C["yeardays"] / time["dt"]))) * OUT["ys"] + IN["P"] * 1e3
     logys = np.log(OUT["ys"])
-    IN["yearsnow"] = np.tile(OUT["ys"][:, np.newaxis], (1, grid["nl"]))
-    IN["logyearsnow"] = np.tile(logys[:, np.newaxis], (1, grid["nl"]))
+    nl = OUT["subT"].shape[1]
+    IN["yearsnow"] = np.tile(OUT["ys"][:, np.newaxis], (1, nl))
+    IN["logyearsnow"] = np.tile(logys[:, np.newaxis], (1, nl))
 
     # Vapor pressure, relative and specific humidity
     VPsat = C["VP0"] * np.exp(C["Lv"] / C["Rv"] * (1.0 / 273.15 - 1.0 / IN["T"])) * (IN["T"] >= 273.15) + C[

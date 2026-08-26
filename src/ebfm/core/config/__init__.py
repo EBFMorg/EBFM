@@ -6,3 +6,4 @@ from ebfm.core.config.time import TimeConfig, Calendar, DEFAULT_TZ, iso8601  # n
 from ebfm.core.config.coupling import CouplingConfig, ComponentId, FieldValidationLevel  # noqa: F401
 from ebfm.core.config.grid import GridConfig, GridInputType  # noqa: F401
 from ebfm.core.config.forcing import ForcingConfig, ForcingType  # noqa: F401
+from ebfm.core.config.column import ColumnDiscretizationConfig  # noqa: F401

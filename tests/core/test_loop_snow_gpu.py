@@ -55,18 +55,13 @@ def _make_case(gpsum=48, nl=50, seed=7, snow_compaction="firn+snow", percolation
     take; see _SNOW_COMPACTION_MODES / _PERCOLATION_MODES below.
     """
     from ebfm.core import INIT
+    from ebfm.core.config import ColumnDiscretizationConfig
 
     rng = np.random.default_rng(seed)
     C = INIT.init_constants()
 
-    grid = {
-        "gpsum": gpsum,
-        "nl": nl,
-        "max_subZ": 0.1,
-        "doubledepth": True,
-        "split": np.array([15, 25, 35]),
-        "mask": np.ones(gpsum, dtype=int),
-    }
+    column = ColumnDiscretizationConfig(nl=nl)
+    grid = {"mask": np.ones(gpsum, dtype=int)}
     # A few inactive columns, so the kernel's mask early-out is exercised.
     grid["mask"][:3] = 0
 
@@ -80,13 +75,13 @@ def _make_case(gpsum=48, nl=50, seed=7, snow_compaction="firn+snow", percolation
     # Force a spread of regimes: pure snow, firn, and fully compacted ice.
     OUT["subD"][::4, :] = rng.uniform(250.0, 480.0, OUT["subD"][::4, :].shape)
     OUT["subD"][1::4, :] = C["Dice"]
-    OUT["subZ"] = np.full((gpsum, nl), grid["max_subZ"])
-    for n, split in enumerate(grid["split"]):
-        OUT["subZ"][:, split - 1 :] = (2.0 ** (n + 1)) * grid["max_subZ"]
-    OUT["subZ"][:, -1] = (2.0 ** len(grid["split"])) * grid["max_subZ"]
+    OUT["subZ"] = np.full((gpsum, nl), column.max_subZ)
+    for n, split in enumerate(column.split):
+        OUT["subZ"][:, split - 1 :] = (2.0 ** (n + 1)) * column.max_subZ
+    OUT["subZ"][:, -1] = (2.0 ** len(column.split)) * column.max_subZ
     # Push some columns over the merge threshold and some under the split one.
-    OUT["subZ"][::5, grid["split"]] = grid["max_subZ"] * 0.5
-    OUT["subZ"][2::5, np.array(grid["split"]) - 2] = grid["max_subZ"] * 8.0
+    OUT["subZ"][::5, column.split] = column.max_subZ * 0.5
+    OUT["subZ"][2::5, np.array(column.split) - 2] = column.max_subZ * 8.0
     OUT["subW"] = rng.uniform(0.0, 3.0, (gpsum, nl))
     OUT["subW"][::3, :] = 0.0
     OUT["subS"] = rng.uniform(0.0, 2.0, (gpsum, nl))
@@ -124,7 +119,7 @@ def _make_case(gpsum=48, nl=50, seed=7, snow_compaction="firn+snow", percolation
     IN["yearsnow"] = np.tile(ys[:, None], (1, nl))
     IN["logyearsnow"] = np.tile(np.log(ys)[:, None], (1, nl))
 
-    return C, OUT, IN, dt, grid, phys
+    return C, OUT, IN, dt, grid, phys, column
 
 
 def _deepcopy_state(OUT, IN):
@@ -194,13 +189,13 @@ class TestLoopSnowGPUMatchesNumPy(unittest.TestCase):
 
     def _run(self, backend, steps, **case):
         """Run `steps` LOOP_SNOW timesteps on `backend` from a fixed state."""
-        C, OUT, IN, dt, grid, phys = _make_case(**case)
+        C, OUT, IN, dt, grid, phys, column = _make_case(**case)
         self.compute_backend._backend = backend
         for _ in range(steps):
             # Fresh copies of the per-step forcing, so both backends see the
             # same inputs even though LOOP_SNOW overwrites some of them.
             _, IN_step = _deepcopy_state(OUT, IN)
-            self.LOOP_SNOW.main(C, OUT, IN_step, dt, grid, phys)
+            self.LOOP_SNOW.main(C, OUT, IN_step, dt, grid, phys, column)
         return OUT
 
     def _assert_matches(self, ref, got, context):

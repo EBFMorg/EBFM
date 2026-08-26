@@ -9,7 +9,7 @@ from netCDF4 import Dataset, date2num
 from .LOOP_general_functions import is_first_time_step, is_final_time_step
 
 
-def main(OUTFILE, io, OUT, grid, t, time):
+def main(OUTFILE, io, OUT, grid, t, time, column):
     # Specify variables to be written
     if is_first_time_step(t):
         OUTFILE["varsout"] = [
@@ -155,7 +155,7 @@ def main(OUTFILE, io, OUT, grid, t, time):
                 io["nc_file"].createDimension("y", grid["x_2D"].shape[0])  # 2D grid rows
                 io["nc_file"].createDimension("x", grid["x_2D"].shape[1])  # 2D grid columns
 
-            io["nc_file"].createDimension("nl", grid["nl"])  # Vertical layers for `sub` variables
+            io["nc_file"].createDimension("nl", column.nl)  # Vertical layers for `sub` variables
 
             # Define standard output variables
             for entry in OUTFILE["varsout"]:
@@ -171,7 +171,7 @@ def main(OUTFILE, io, OUT, grid, t, time):
                     if varname.startswith("sub"):
                         # Define variable as 3D: (time, y, nl)
                         dimensions = ("time", "y", "nl")
-                        chunksizes = (1, grid["lat"].shape[0], grid["nl"])
+                        chunksizes = (1, grid["lat"].shape[0], column.nl)
                     else:
                         # Define variable as 2D: (time, y)
                         dimensions = ("time", "y")
@@ -181,7 +181,7 @@ def main(OUTFILE, io, OUT, grid, t, time):
                     if varname.startswith("sub"):
                         # Define variable as 4D: (time, y, x, nl)
                         dimensions = ("time", "y", "x", "nl")
-                        chunksizes = (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1], grid["nl"])
+                        chunksizes = (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1], column.nl)
                     else:
                         # Define variable as 3D: (time, y, x)
                         dimensions = ("time", "y", "x")
@@ -223,9 +223,9 @@ def main(OUTFILE, io, OUT, grid, t, time):
 
                 # Handle `sub` variables (4D: time, y, x, nl)
                 if varname.startswith("sub"):
-                    var_3D = np.full((grid["x_2D"].size, grid["nl"]), -9999.0)
+                    var_3D = np.full((grid["x_2D"].size, column.nl), -9999.0)
                     var_3D[grid["ind"], :] = var_1D
-                    var_4D = var_3D.reshape(-1, grid["nl"]).reshape(*grid["x_2D"].shape, grid["nl"])
+                    var_4D = var_3D.reshape(-1, column.nl).reshape(*grid["x_2D"].shape, column.nl)
                     io["nc_file"][varname][time_index, :, :, :] = var_4D
                 else:
                     var_2D = np.full(grid["x_2D"].shape, -9999.0)
