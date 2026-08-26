@@ -182,6 +182,15 @@ def _main_impl():
 
     coupler.setup(grid, time_config)
 
+    # Warn once up front, rather than every timestep, about output that is written but not covered by tests.
+    # TODO: drop this once output writing is tested for an unstructured Elmer grid in a coupled run with ICON forcing.
+    is_coupled = not isinstance(coupler, ebfm.coupling.DummyCoupler)
+    if not grid["is_partitioned"] and (is_coupled or grid["is_unstructured"]):
+        logger.warning(
+            "Writing output to file is only tested for uncoupled runs on a structured grid; "
+            "check the contents of the output file."
+        )
+
     # Time-loop
     logger.info("Entering time loop...")
     for t in range(time["tn"]):
@@ -269,25 +278,19 @@ def _main_impl():
             OUT["y"] = grid["y"]
             OUT["surface_elevation"] = grid["z"]
 
-        # Write output to files (only in uncoupled run and for unpartitioned grid)
-        # TODO: should be supported for all cases to avoid case distinction here
-        if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
-            if LOOP_write_to_file.is_supported_grid_type(grid_config.grid_type):
-                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
-            else:
-                logger.warning("Skipping writing output to file for Elmer input grids.")
-        elif grid["is_partitioned"] or not isinstance(coupler, ebfm.coupling.DummyCoupler):
-            logger.warning("Skipping writing output to file for coupled or partitioned runs.")
+        # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
+        # TODO: partitioned output should be supported in a dedicated parallel-safe writer.
+        if not grid["is_partitioned"]:
+            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
         else:
-            logger.error("Unhandled case in output writing.")
-            raise Exception("Unhandled case in output writing.")
+            logger.warning("Skipping writing output to file for partitioned runs.")
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
     if not grid["is_partitioned"]:
         FINAL_create_restart_file.main(OUT, io, args.restart_dir)
     else:
-        logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
+        logger.warning("Skipping writing of restart file for partitioned runs.")
 
     logger.info("Time loop completed.")
 
