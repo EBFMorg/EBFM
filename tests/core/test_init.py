@@ -89,7 +89,7 @@ class TestInitFromRestartFile(unittest.TestCase):
 
     def test_restart_arrays_are_not_masked(self):
         C = {"alb_ice": 0.5}
-        grid = {"gpsum": GPSUM}
+        grid = {"mask": np.ones(GPSUM, dtype=int)}
         io = {"bootfilein": self.bootfile}
         time = {}
 
@@ -102,7 +102,7 @@ class TestInitFromRestartFile(unittest.TestCase):
 
     def test_restart_arrays_keep_their_values(self):
         C = {"alb_ice": 0.5}
-        grid = {"gpsum": GPSUM}
+        grid = {"mask": np.ones(GPSUM, dtype=int)}
         io = {"bootfilein": self.bootfile}
         time = {}
 
@@ -116,7 +116,7 @@ class TestInitFromRestartFile(unittest.TestCase):
         _write_restart_file(bootfile_with_gap, with_missing_value=True)
 
         C = {"alb_ice": 0.5}
-        grid = {"gpsum": GPSUM}
+        grid = {"mask": np.ones(GPSUM, dtype=int)}
         io = {"bootfilein": bootfile_with_gap}
         time = {}
 
