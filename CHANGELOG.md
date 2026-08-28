@@ -4,6 +4,12 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# Unreleased
+
+* Added coupling to the ICON land model (ICON-Land/JSBACH) as a separate component (`--couple-to-icon-land`, component `icon_land`): EBFM sends the ice-covered fraction of its grid cells (`icefract`) and the surface albedo (`albedo`). The provisional albedo field of the `icon_atmo` component was removed. The abbreviation `--couple-to-icon` is now ambiguous and must be spelled out as `--couple-to-icon-atmo`.
+* The `icon_land` component also receives the surface energy balance results of ICON-Land's glacier tile, averaged over the EBFM time step: `t_srf` (K), `melt` and `evapotrans` (converted to m w.e. per time step, evapotrans negative upward). When received, they drive the snow/firn model and the mass balance instead of EBFM's own energy balance (`LOOP_EBM_icon_land`): `Tsurf`, `melt` and the `moist_*` terms are taken from ICON-Land (evapotranspiration partitioned by the surface temperature as before). EBFM's own energy balance is still computed as a diagnostic and kept as `ebm_Tsurf`, `ebm_melt`, `ebm_Emelt` (written to the output) and `ebm_moist_*`.
+* The `icon_land` component sends EBFM's firn state and mass balance to ICON-Land: `t_sub` (first subsurface layer temperature), `ghf_cond` (conductance, factored out of `LOOP_EBM` into `LOOP_EBM_GHF.conductance`), `runoff`, `smb` (kg m-2 s-1) and `snowmass` (kg m-2).
+
 # v0.7.0
 
 * Loading a restart file (`--restart-init`) now also rejects a file that is missing a required variable, or that stores a per-layer variable per-column (or vice versa). Both previously loaded without complaint and only surfaced much later, if at all. The number of columns and layers a run uses is now logged during initialization. https://github.com/EBFMorg/EBFM/pull/169

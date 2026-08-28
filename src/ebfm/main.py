@@ -12,6 +12,7 @@ from ebfm.core import (
     LOOP_general_functions,
     LOOP_climate_forcing,
     LOOP_EBM,
+    LOOP_EBM_GHF,
     LOOP_SNOW,
     LOOP_mass_balance,
 )
@@ -190,15 +191,41 @@ def _main_impl():
 
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
+        # Send the ice fraction of the EBFM grid cells to ICON-Land (JSBACH)
+        # (done before the exchange with the ICON atmosphere, see coupling sequence)
+        if coupler.has_coupling_to("icon_land"):
+            icon_land = coupler.get_component("icon_land")
+            logger.info("Data exchange with ICON-Land")
+            logger.debug("Started...")
+            _, ghf_cond, hcap_sub = LOOP_EBM_GHF.conductance(OUT)
+            data_to_icon_land = {
+                "icefract": grid["mask"].astype(float),
+                "albedo": OUT["albedo"],
+                "t_sub": OUT["subT"][:, 1],
+                "ghf_cond": ghf_cond,
+                "hcap_sub": hcap_sub,
+                "runoff": OUT.get("runoff", np.zeros_like(grid["x"])),  # not yet computed in the first step
+                "smb": OUT["smb"],
+                "snowmass": OUT["snowmass"],
+            }
+            data_from_icon_land = icon_land.exchange(data_to_icon_land)
+            logger.debug("Done.")
+            # The received surface energy balance results replace EBFM's own energy balance
+            # (see LOOP_EBM_icon_land).
+            for name, values in data_from_icon_land.items():
+                IN[f"lice_{name}"] = values
+                logger.debug(
+                    f"Received {name} from ICON-Land: min={np.min(values):.4g} mean={np.mean(values):.4g} "
+                    f"max={np.max(values):.4g}"
+                )
+
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
             # Exchange data with ICON
             icon_atmo = coupler.get_component("icon_atmo")
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
-            data_to_icon = {
-                "albedo": OUT["albedo"],
-            }
+            data_to_icon = {}
 
             fallback_values = {
                 "rlds": IN["LWin"],
@@ -269,18 +296,12 @@ def _main_impl():
             OUT["y"] = grid["y"]
             OUT["surface_elevation"] = grid["z"]
 
-        # Write output to files (only in uncoupled run and for unpartitioned grid)
-        # TODO: should be supported for all cases to avoid case distinction here
-        if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
-            if LOOP_write_to_file.is_supported_grid_type(grid_config.grid_type):
-                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
-            else:
-                logger.warning("Skipping writing output to file for Elmer input grids.")
-        elif grid["is_partitioned"] or not isinstance(coupler, ebfm.coupling.DummyCoupler):
-            logger.warning("Skipping writing output to file for coupled or partitioned runs.")
+        # Write output to files (unpartitioned grids only; works for coupled runs and for
+        # Elmer/unstructured grids, which are written as netCDF with a cell dimension)
+        if not grid["is_partitioned"]:
+            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
         else:
-            logger.error("Unhandled case in output writing.")
-            raise Exception("Unhandled case in output writing.")
+            logger.warning("Skipping writing output to file for partitioned runs.")
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here

@@ -12,7 +12,7 @@ from . import (
     LOOP_EBM_LWout,
     LOOP_EBM_SWin,
 )
-from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation
+from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation, LOOP_EBM_icon_land
 
 from ebfm.coupling import Coupler
 
@@ -52,10 +52,8 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
         LWin = LOOP_EBM_LWin.main(C, IN)
 
     SWout, OUT = LOOP_EBM_SWout.main(C, time2, OUT, SWin)
-    GHF_k = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2
-    GHF_C = (GHF_k[:, 0] * OUT["subZ"][:, 0] + 0.5 * GHF_k[:, 1] * OUT["subZ"][:, 1]) / (
-        OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1]
-    ) ** 2
+
+    GHF_k, GHF_C, _ = LOOP_EBM_GHF.conductance(OUT)
 
     # Precompute reusable constant arrays
     gpsum = OUT["subT"].shape[0]
@@ -152,5 +150,11 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     OUT["LWout"] = LWout
     OUT["SHF"] = SHF
     OUT["GHF"] = GHF
+
+    # When coupled to ICON-Land, the surface energy balance computed by JSBACH on its glacier
+    # tile drives the firn model; EBFM's own energy balance computed above is kept as a
+    # diagnostic (OUT["ebm_*"]) for comparison.
+    if LOOP_EBM_icon_land.is_available(IN, cpl):
+        OUT = LOOP_EBM_icon_land.main(C, OUT, IN, time2)
 
     return OUT

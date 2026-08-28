@@ -8,19 +8,6 @@ from netCDF4 import Dataset, date2num
 
 from .LOOP_general_functions import is_first_time_step, is_final_time_step
 
-from ebfm.core.grid import GridInputType
-
-
-def is_supported_grid_type(grid_type: GridInputType):
-    """
-    Check if provided grid input type supports writing to file
-
-    @param[in] grid_type GridInputType of used grid
-
-    @return True if provided grid_type supports writing to file; False if not
-    """
-    return grid_type is GridInputType.MATLAB
-
 
 def main(OUTFILE, io, OUT, grid, t, time, column):
     # Specify variables to be written
@@ -59,6 +46,14 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
             ["subW", "mm w.e.", "sample", "Irreducible water"],
             ["subZ", "m", "sample", "Layer thickness"],
         ]
+        if "ebm_Tsurf" in OUT:
+            # Coupled to ICON-Land: Tsurf/melt are taken from ICON-Land, EBFM's own energy
+            # balance is kept as a diagnostic
+            OUTFILE["varsout"] += [
+                ["ebm_Tsurf", "K", "mean", "Surface temperature of EBFM's own energy balance"],
+                ["ebm_melt", "m w.e.", "sum", "Melt of EBFM's own energy balance"],
+                ["ebm_Emelt", "W m^-2", "mean", "Melt energy of EBFM's own energy balance"],
+            ]
 
         io["varsout"] = [
             {"varname": v[0], "units": v[1], "type": v[2], "description": v[3]} for v in OUTFILE["varsout"]
@@ -212,6 +207,19 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
                 # Assign metadata
                 nc_var.units = var_units
                 nc_var.description = var_desc
+                if grid["is_unstructured"]:
+                    nc_var.coordinates = "lon lat"
+
+            if grid["is_unstructured"]:
+                # Coordinates of the mesh cells, so the output is georeferenced
+                nc_lat = io["nc_file"].createVariable("lat", np.float64, ("y",), zlib=True)
+                nc_lat.units = "degrees_north"
+                nc_lat.standard_name = "latitude"
+                nc_lat[:] = grid["lat"]
+                nc_lon = io["nc_file"].createVariable("lon", np.float64, ("y",), zlib=True)
+                nc_lon.units = "degrees_east"
+                nc_lon.standard_name = "longitude"
+                nc_lon[:] = grid["lon"]
 
             # Define a time variable to track simulation steps
             nc_time = io["nc_file"].createVariable("time", np.float64, ("time",), zlib=True, fill_value=-9999.0)
@@ -234,8 +242,14 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
                 varname = entry[0]
                 var_1D = OUTFILE["TEMP"][varname]  # 1D data
 
+                if grid["is_unstructured"]:
+                    # Unstructured (Elmer) grid: write the cell vector directly
+                    if varname.startswith("sub"):
+                        io["nc_file"][varname][time_index, :, :] = var_1D
+                    else:
+                        io["nc_file"][varname][time_index, :] = var_1D
                 # Handle `sub` variables (4D: time, y, x, nl)
-                if varname.startswith("sub"):
+                elif varname.startswith("sub"):
                     var_3D = np.full((grid["x_2D"].size, column.nl), -9999.0)
                     var_3D[grid["ind"], :] = var_1D
                     var_4D = var_3D.reshape(-1, column.nl).reshape(*grid["x_2D"].shape, column.nl)

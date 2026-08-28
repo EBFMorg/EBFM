@@ -48,7 +48,7 @@ jobs:
           .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --restart-init --start-time "02-Jan-1979 00:00" --end-time "03-Jan-1979 00:00"
           test -f Reboot/restart_1979-01-03T00:00:00Z.nc
       - name: Run example with (pseudo) coupling
-        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon --couple-to-elmer --fake-coupling --no-shading
+        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon-atmo --couple-to-elmer-ice --fake-coupling --no-shading
       - name: Run example with MPI handshake
         if: ${{ matrix.run_mpi }}
         run: |
