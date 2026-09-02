@@ -5,7 +5,8 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from collections.abc import Collection, Mapping, Callable, Set as AbstractSet
+from collections.abc import Collection, Mapping, Callable
+from collections.abc import Set as AbstractSet  # set-like types (set, frozenset, dict keys), not the set builtin
 import numpy as np
 
 from ebfm.core import logging
