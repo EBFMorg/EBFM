@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# develop
+
+* The exchange with a coupled component can now be split into multiple phases (e.g. `send -> do computation -> receive`). `Component.exchange` accepts an optional `get_keys` argument listing the fields to be received, next to `data_to_exchange` which defines the fields to be sent. A component may internally enforce additional conditions (i.e., collections of send/receive pairs that must be communicated together) and raise a `ValueError` if requirements are not fulfilled. `icon_atmo` and `elmer_ice` support expect a single exchange where all fields are exchanged in one phase, as before. https://github.com/EBFMorg/EBFM/pull/175
+
 # v0.7.0
 
 * Loading a restart file (`--restart-init`) now also rejects a file that is missing a required variable, or that stores a per-layer variable per-column (or vice versa). Both previously loaded without complaint and only surfaced much later, if at all. The number of columns and layers a run uses is now logged during initialization. https://github.com/EBFMorg/EBFM/pull/169
