@@ -10,7 +10,7 @@ from ebfm.core.constants import SECONDS_PER_DAY
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
 
-from .base import Component
+from .base import Component, ExchangeKeySet
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
 from ebfm.core.config import ComponentId, TimeConfig
@@ -20,6 +20,15 @@ class IconAtmo(Component):
     """
     Component class for ICON atmosphere model coupling.
     """
+
+    accepted_exchange_key_sets = (
+        # All data is exchanged at once, i.e. the caller has to put and get everything in a single call.
+        ExchangeKeySet(
+            name="exchange",
+            put_keys={"albedo"},
+            get_keys={"pr", "pr_snow", "rsds", "rlds", "sfcwind", "clt", "tas", "huss", "sfcpres"},
+        ),
+    )
 
     def __init__(self, coupler: "Coupler", name: str = ComponentId.ICON_ATMO.value):
         super().__init__(coupler, name)
@@ -113,16 +122,23 @@ class IconAtmo(Component):
         mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
         return mwe_per_timestep
 
-    def exchange(
-        self, data_to_exchange: Mapping[str, np.ndarray], fallback_values: Mapping[str, np.ndarray] = {}
+    def _exchange(
+        self,
+        data_to_exchange: Mapping[str, np.ndarray],
+        fallback_values: Mapping[str, np.ndarray],
+        requested_key_set: ExchangeKeySet,
     ) -> dict[str, np.ndarray]:
         """
         Exchange data with IconAtmo.
 
-        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
-        @param[in] fallback_values optional Mapping of field names to fallback values to use if get fails
+        This component accepts a single key set, so everything is put and got here.
 
-        @returns dictionary of received field data
+        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
+        @param[in] fallback_values Mapping of field names to fallback values to use if get fails
+        @param[in] requested_key_set key set to be communicated, the only one this component accepts
+
+        @returns dictionary of received field data. A requested field is not contained if it is not coupled, or
+                 if no data was received for it and no fallback value was given.
         """
         received_data: dict[str, np.ndarray] = {}
 

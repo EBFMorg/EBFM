@@ -199,6 +199,27 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         """
         raise NotImplementedError("get method must be implemented in subclasses.")
 
+    def get_field_names(self, component_name: str, exchange_type: GenericExchangeType) -> set[str]:
+        """
+        Get the names of all coupled fields of a component with the given exchange type.
+
+        @note Fields are only known after setup() has been called.
+
+        @param[in] component_name name of the component
+        @param[in] exchange_type exchange type to filter for
+
+        @returns names of the coupled fields with that exchange type, empty if the component is not coupled
+        """
+        if not self.has_coupling_to(component_name):
+            return set()
+
+        expected_exchange_type = self._map_exchange_type(exchange_type)
+        component = self._coupled_components[component_name]
+        fields = self._fields.filter(
+            lambda f: f.coupled_component == component and f.exchange_type == expected_exchange_type
+        )
+        return {f.name for f in fields}
+
     def has_field(self, component_name: str, field_name: str, exchange_type: GenericExchangeType) -> bool:
         """
         Check whether a field with given name and exchange type exists for a coupled component.
@@ -209,17 +230,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         @returns True if such a field exists, otherwise False
         """
-        if not self.has_coupling_to(component_name):
-            return False
-
-        expected_exchange_type = self._map_exchange_type(exchange_type)
-        component = self._coupled_components[component_name]
-        fields = self._fields.filter(
-            lambda f: f.coupled_component == component
-            and f.name == field_name
-            and f.exchange_type == expected_exchange_type
-        )
-        return not fields.is_empty()
+        return field_name in self.get_field_names(component_name, exchange_type)
 
     @abstractmethod
     def finalize(self):
