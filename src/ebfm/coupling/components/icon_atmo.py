@@ -21,10 +21,10 @@ class IconAtmo(Component):
     """
 
     accepted_exchange_key_sets = (
-        # All data is exchanged at once, i.e. the caller has to send and receive everything in a single call.
+        # Nothing is sent (surface fields like albedo and ice fraction go to IconLand instead); all data is
+        # received at once, i.e. the caller has to receive everything in a single call.
         ExchangeKeySet(
             name="exchange",
-            source_keys={"albedo"},
             target_keys={"pr", "pr_snow", "rsds", "rlds", "sfcwind", "clt", "tas", "huss", "sfcpres"},
         ),
     )
@@ -40,13 +40,6 @@ class IconAtmo(Component):
 
         return FieldSet(
             {
-                # Field(
-                #     name="albedo",
-                #     coupled_component=self,
-                #     timestep=timestep,
-                #     metadata="Albedo of the ice surface",
-                #     exchange_type=ExchangeType.SOURCE,
-                # ),
                 Field(
                     name="pr",
                     coupled_component=self,
@@ -116,9 +109,7 @@ class IconAtmo(Component):
     # We need to convert precipitation received from ICON from kg / m^2 / s
     # to m w.e. (per EBFM timestep)
     def _map_pr_to_ebfm(self, precipitation: np.ndarray) -> np.ndarray:
-        mwe_per_second = precipitation * 1e-3
-        mwe_per_timestep = mwe_per_second * self.ebfm_time.time_step_in_seconds()
-        return mwe_per_timestep
+        return self._map_mass_flux_to_ebfm(precipitation)
 
     def _exchange(
         self,
@@ -140,8 +131,7 @@ class IconAtmo(Component):
         """
         received_data: dict[str, np.ndarray] = {}
 
-        # Put data to IconAtmo
-        self._put_if_coupled("albedo", data_to_exchange)
+        # Put data to IconAtmo: nothing (surface fields like albedo and ice fraction go to IconLand)
 
         # Get data from IconAtmo
         pr = self._get_if_coupled("pr", transform=self._map_pr_to_ebfm, fallback_values=fallback_values)
