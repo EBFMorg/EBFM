@@ -181,6 +181,12 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     )
 
     primary_grid_group.add_argument(
+        mesh_opts[GridInputType.NETCDF],
+        type=Path,
+        help="Path to the mesh file and climate data for a test on Greenland. ",
+    )
+
+    primary_grid_group.add_argument(
         mesh_opts[GridInputType.ELMER],
         type=Path,
         help="Path to the Elmer mesh file.",
@@ -239,6 +245,12 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         help="EPSG code of the input Elmer mesh coordinate reference system."
         " Used to convert mesh x/y coordinates to lon/lat."
         " Required when using --elmer-mesh.",
+    )
+
+    input_group.add_argument(
+        "--forcing-dir",
+        type=Path,
+        help="Path to the folder containing NetCDF forcing files with meteorological data.",
     )
 
     time_group = parser.add_argument_group("time configuration")

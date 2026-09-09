@@ -72,16 +72,44 @@ If during the installation of EBFM it appears that `yac` is missing, please doub
 
 ## Running EBFM
 
-After installation, a basic, uncoupled simulation can be run with the following command, provided you cloned this repository:
+### Test experiments
+
+After installation, you are able to perform two basic uncoupled simulations, provided you cloned this repository. Every run produces an output file (`/Output/model_output.nc`), which contains daily output and can be viewed with tools like Ncview. The first test runs EBFM for all glaciers in Svalbard for 1-Jan-1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing:
 
 ```sh
 ebfm --matlab-mesh examples/dem_and_mask.mat
 ```
 
+Another test applies EBFM to the Greenland Ice Sheet and forces it with Copernicus CARRA2 meteorological data for the month May 1990 on a 10-km resolution grid:
+
+```sh
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-05-01T00:00:00 --end-time 1990-06-01T00:00:00
+```
+
+Two more tests can be done, simulating the Greenland Ice Sheet for a full year (1990) at spatial resolutions of 2.5 km or 10 km. The faster 10-km resolution test requires this [package](https://drive.google.com/file/d/1bZUKxQ7QgQjwwPA8jTHqlJ-mXhwsU_OP/view?usp=sharing), whereas the computationally more expensive high-resolution 2.5-km resolution test requires this downloadable [package](https://drive.google.com/file/d/1fTFMt0QzGTrQFfzOmBC4xk1OonFsH9ZQ/view?usp=sharing). The zip-files need to be extracted so that the `.nc` files are in the `/examples/` folder prior to running the model with the following commands:
+
+```sh
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
+```
+
+for the 10-km resolution experiment, and as:
+
+```sh
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --forcing-dir examples/Greenland_CARRA2/forcing_fine --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
+```
+
+for the 2.5-km resolution experiment.
+
+Please note that runs become significantly faster (~3 times) when running with performance optimization (see also **Performance and Profiling Runs** below), e.g.:
+
+```sh
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --forcing-dir examples/Greenland_CARRA2/forcing_fine --numba-threads 2 --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
+```
+
 ### Mesh data
 
-The arguments `--matlab-mesh` and `--elmer-mesh` allow to provide different kinds of mesh data.
-The arguments `--netcdf-dem-mesh` and `--netcdf-dem-mesh-unstructured` allow to add a Digital Elevation Model (DEM) for meshes that come without elevation information.
+The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data.
+The arguments `--netcdf-dem-mesh` and `--netcdf-dem-mesh-unstructured` allow to add a Digital Elevation Model (DEM) for `--elmer-mesh` since it comes without elevation information.
 EBFM supports the following formats:
 
 For Elmer-based inputs, the argument `--elmer-mesh-crs-epsg` is needed to define the coordinate reference system (CRS)
