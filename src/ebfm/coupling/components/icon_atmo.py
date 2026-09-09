@@ -22,11 +22,11 @@ class IconAtmo(Component):
     """
 
     accepted_exchange_key_sets = (
-        # All data is exchanged at once, i.e. the caller has to put and get everything in a single call.
+        # All data is exchanged at once, i.e. the caller has to send and receive everything in a single call.
         ExchangeKeySet(
             name="exchange",
-            put_keys={"albedo"},
-            get_keys={"pr", "pr_snow", "rsds", "rlds", "sfcwind", "clt", "tas", "huss", "sfcpres"},
+            source_keys={"albedo"},
+            target_keys={"pr", "pr_snow", "rsds", "rlds", "sfcwind", "clt", "tas", "huss", "sfcpres"},
         ),
     )
 
@@ -131,7 +131,7 @@ class IconAtmo(Component):
         """
         Exchange data with IconAtmo.
 
-        This component accepts a single key set, so everything is put and got here.
+        This component accepts a single key set, so everything is sent and received here.
 
         @param[in] data_to_exchange read-only Mapping of field names to data to be sent
         @param[in] fallback_values Mapping of field names to fallback values to use if get fails

@@ -22,11 +22,11 @@ class ElmerIce(Component):
     """
 
     accepted_exchange_key_sets = (
-        # All data is exchanged at once, i.e. the caller has to put and get everything in a single call.
+        # All data is exchanged at once, i.e. the caller has to send and receive everything in a single call.
         ExchangeKeySet(
             name="exchange",
-            put_keys={"T_ice", "smb", "runoff"},
-            get_keys={
+            source_keys={"T_ice", "smb", "runoff"},
+            target_keys={
                 "surface_elevation",
                 # Enable together with their field definitions and their gets in _exchange below.
                 # "dhdx",
@@ -100,7 +100,7 @@ class ElmerIce(Component):
         """
         Exchange data with Elmer/Ice.
 
-        This component accepts a single key set, so everything is put and got here.
+        This component accepts a single key set, so everything is sent and received here.
 
         @param[in] data_to_exchange read-only Mapping of field names to data to be sent
         @param[in] fallback_values Mapping of field names to fallback values to use if get fails
@@ -129,7 +129,7 @@ class ElmerIce(Component):
             received_data["surface_elevation"] = surface_elevation
 
         # The gradient fields have no field definition yet, so these two gets do nothing. Enabling their field
-        # definitions also requires uncommenting them in the accepted key set above, because the get keys a
+        # definitions also requires uncommenting them in the accepted key set above, because the target keys a
         # caller requests by default are the coupled fields of this component.
         dhdx = self._get_if_coupled("dhdx", fallback_values=fallback_values)
         if dhdx is not None:
