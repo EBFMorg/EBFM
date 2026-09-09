@@ -218,7 +218,7 @@ def _main_impl():
                 "t_sub": OUT["subT"][:, 1],
                 "ghf_cond": ghf_cond,
                 "hcap_sub": hcap_sub,
-                "runoff": OUT.get("runoff", np.zeros_like(grid["x"])),  # not yet computed in the first step
+                "runoff": OUT["runoff"],
                 "smb": OUT["smb"],
                 "snowmass": OUT["snowmass"],
             }
@@ -231,7 +231,7 @@ def _main_impl():
             icon_atmo = coupler.get_component("icon_atmo")
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
-            data_to_icon = {}
+            data_to_icon_atmo = {}
 
             fallback_values = {
                 "rlds": IN["LWin"],
@@ -241,21 +241,21 @@ def _main_impl():
                 "sfcpres": IN["T"] * 0.0 + 101500.0,
             }
 
-            data_from_icon = icon_atmo.exchange(data_to_icon, fallback_values)
+            data_from_icon_atmo = icon_atmo.exchange(data_to_icon_atmo, fallback_values)
 
             logger.debug("Done.")
-            logger.debug(f"Received the following data from ICON: {data_from_icon}")
+            logger.debug(f"Received the following data from ICON: {data_from_icon_atmo}")
 
-            IN["P"] = data_from_icon["pr"]
-            IN["snow"] = data_from_icon["pr_snow"]
-            IN["SWin"] = data_from_icon["rsds"]
-            IN["LWin"] = data_from_icon["rlds"]
-            IN["C"] = data_from_icon["clt"]
-            IN["WS"] = data_from_icon["sfcwind"]
-            IN["T"] = data_from_icon["tas"]
+            IN["P"] = data_from_icon_atmo["pr"]
+            IN["snow"] = data_from_icon_atmo["pr_snow"]
+            IN["SWin"] = data_from_icon_atmo["rsds"]
+            IN["LWin"] = data_from_icon_atmo["rlds"]
+            IN["C"] = data_from_icon_atmo["clt"]
+            IN["WS"] = data_from_icon_atmo["sfcwind"]
+            IN["T"] = data_from_icon_atmo["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"] = data_from_icon["huss"]
-            IN["Pres"] = data_from_icon["sfcpres"]
+            IN["q"] = data_from_icon_atmo["huss"]
+            IN["Pres"] = data_from_icon_atmo["sfcpres"]
 
         # Receive the surface energy balance ICON-Land computed from the state sent above.
         if coupler.has_coupling_to("icon_land"):
