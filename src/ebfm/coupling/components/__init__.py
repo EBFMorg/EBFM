@@ -4,7 +4,7 @@
 
 from ...core.config import ComponentId
 
-from .base import Component  # noqa: F401
+from .base import Component, ExchangeKeySet  # noqa: F401
 from .icon_atmo import IconAtmo
 from .elmer_ice import ElmerIce
 

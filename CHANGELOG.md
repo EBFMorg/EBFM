@@ -4,8 +4,9 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
-# Develop
+# develop
 
+* The exchange with a coupled component can now be split into multiple phases (e.g. `send -> do computation -> receive`). `Component.exchange` accepts an optional `get_keys` argument listing the fields to be received, next to `data_to_exchange` which defines the fields to be sent. A component may internally enforce additional conditions (i.e., collections of send/receive pairs that must be communicated together) and raise a `ValueError` if requirements are not fulfilled. `icon_atmo` and `elmer_ice` support expect a single exchange where all fields are exchanged in one phase, as before. https://github.com/EBFMorg/EBFM/pull/175
 * NetCDF output writing now supports unstructured Elmer-based grids in addition to MATLAB grids (previously skipped with a warning), including mesh topology when available. Output is now written for any non-partitioned run regardless of grid type or coupling, with a one-time startup warning that non-structured or coupled output is not yet covered by tests. https://github.com/EBFMorg/EBFM/pull/135
 
 # v0.7.0
