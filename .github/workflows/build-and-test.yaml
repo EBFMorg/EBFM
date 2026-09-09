@@ -56,11 +56,11 @@ jobs:
           .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --restart-init --start-time "02-Jan-1979 00:00" --end-time "03-Jan-1979 00:00"
           test -f Reboot/restart_1979-01-03T00:00:00Z.nc
       - name: Run example with (pseudo) coupling on an Elmer grid
-        run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --elmer-mesh-crs-epsg 3413 --couple-to-icon --couple-to-elmer --fake-coupling --no-shading
+        run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --elmer-mesh-crs-epsg 3413 --couple-to-icon-atmo --couple-to-icon-land --couple-to-elmer-ice --fake-coupling --no-shading
       # No --couple-to-elmer-ice here: its surface elevation updates grid["z"], which a MATLAB grid cannot follow with
       # its slopes and 2-D elevation, so ElmerIce.validate_grid rejects the combination.
       - name: Run example with (pseudo) coupling on a MATLAB grid
-        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon --fake-coupling --no-shading
+        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon-atmo --couple-to-icon-land --fake-coupling --no-shading
       - name: Run example with MPI handshake
         if: ${{ matrix.run_mpi }}
         run: |
