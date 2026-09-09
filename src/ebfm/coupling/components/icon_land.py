@@ -155,6 +155,8 @@ class IconLand(Component):
                  that are actually coupled; empty for surface_state
         """
         if requested_key_set == self.surface_state:
+            from ebfm.core.constants import WATER_DENSITY
+
             self._put_if_coupled("icefract", data_to_exchange)
             self._put_if_coupled("albedo", data_to_exchange)
             self._put_if_coupled("t_sub", data_to_exchange)
@@ -162,7 +164,7 @@ class IconLand(Component):
             self._put_if_coupled("hcap_sub", data_to_exchange)
             self._put_if_coupled("runoff", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
             self._put_if_coupled("smb", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
-            self._put_if_coupled("snowmass", data_to_exchange, transform=lambda x: x * 1e3)
+            self._put_if_coupled("snowmass", data_to_exchange, transform=lambda x: x * WATER_DENSITY)
             return {}
 
         # exchange() only calls _exchange for an accepted key set, so this is energy_balance.
