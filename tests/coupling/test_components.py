@@ -56,8 +56,10 @@ class TestExchangeKeySet(unittest.TestCase):
         Test that key sets compare by their keys only, so that the key set a component declares matches the one
         requested by a caller of exchange, which is unnamed and built from frozensets.
         """
-        accepted = ExchangeKeySet(name="exchange", put_keys={"smb", "runoff"}, get_keys={"surface_elevation"})
-        requested = ExchangeKeySet(put_keys=frozenset({"runoff", "smb"}), get_keys=frozenset({"surface_elevation"}))
+        accepted = ExchangeKeySet(name="exchange", source_keys={"smb", "runoff"}, target_keys={"surface_elevation"})
+        requested = ExchangeKeySet(
+            source_keys=frozenset({"runoff", "smb"}), target_keys=frozenset({"surface_elevation"})
+        )
 
         self.assertEqual(requested, accepted)
         self.assertIn(requested, (accepted,))
@@ -66,10 +68,13 @@ class TestExchangeKeySet(unittest.TestCase):
         """
         Test that key sets with different keys are not equal, so that an unexpected key is not accepted.
         """
-        accepted = ExchangeKeySet(name="exchange", put_keys={"smb"}, get_keys={"surface_elevation"})
+        accepted = ExchangeKeySet(name="exchange", source_keys={"smb"}, target_keys={"surface_elevation"})
 
-        self.assertNotEqual(ExchangeKeySet(put_keys=frozenset({"smb", "runoff"}), get_keys=accepted.get_keys), accepted)
-        self.assertNotEqual(ExchangeKeySet(put_keys=accepted.put_keys, get_keys=frozenset()), accepted)
+        more_source_keys = ExchangeKeySet(source_keys=frozenset({"smb", "runoff"}), target_keys=accepted.target_keys)
+        no_target_keys = ExchangeKeySet(source_keys=accepted.source_keys, target_keys=frozenset())
+
+        self.assertNotEqual(more_source_keys, accepted)
+        self.assertNotEqual(no_target_keys, accepted)
 
 
 class TestIconAtmoComponent(unittest.TestCase):
@@ -180,9 +185,9 @@ class TestIconAtmoComponent(unittest.TestCase):
         print(fallback_values["pr_snow"])
         self.assertTrue(np.array_equal(data_from_icon["pr_snow"], fallback_values["pr_snow"]))
 
-    def test_exchange_without_get_keys(self):
+    def test_exchange_without_target_keys(self):
         """
-        Test that omitting get_keys receives all coupled fields and that fallback_values stays the second
+        Test that omitting target_keys receives all coupled fields and that fallback_values stays the second
         positional argument of exchange (as used in main.py).
         """
         coupler = RecordingFakeCoupler(self.coupling_config)  # provides fake values for all TARGET fields
@@ -195,23 +200,23 @@ class TestIconAtmoComponent(unittest.TestCase):
         self.assertEqual(sorted(data_from_icon), self.all_icon_atmo_fields)
         self.assertEqual(sorted(coupler.get_fields), self.all_icon_atmo_fields)
 
-    def test_exchange_with_get_keys(self):
+    def test_exchange_with_target_keys(self):
         """
-        Test that requesting exactly the get keys of the valid exchange of IconAtmo works.
+        Test that requesting exactly the target keys of the key set IconAtmo accepts works.
         """
         coupler = RecordingFakeCoupler(self.coupling_config)
         icon_atmo = coupler.get_component("icon_atmo")
 
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
-        data_from_icon = icon_atmo.exchange({"albedo": 0.5}, get_keys=self.all_icon_atmo_fields)
+        data_from_icon = icon_atmo.exchange({"albedo": 0.5}, target_keys=self.all_icon_atmo_fields)
 
         self.assertEqual(sorted(data_from_icon), self.all_icon_atmo_fields)
         self.assertEqual(sorted(coupler.get_fields), self.all_icon_atmo_fields)
 
-    def test_exchange_with_unexpected_get_keys(self):
+    def test_exchange_with_unexpected_target_keys(self):
         """
-        Test that requesting only a subset of the get keys of IconAtmo is rejected, since IconAtmo cannot
+        Test that requesting only a subset of the target keys of IconAtmo is rejected, since IconAtmo cannot
         exchange that subset.
         """
         coupler = RecordingFakeCoupler(self.coupling_config)
@@ -220,11 +225,11 @@ class TestIconAtmoComponent(unittest.TestCase):
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
         with self.assertRaises(ValueError) as context:
-            icon_atmo.exchange({"albedo": 0.5}, get_keys={"rsds", "tas"})
+            icon_atmo.exchange({"albedo": 0.5}, target_keys={"rsds", "tas"})
 
         message = str(context.exception)
-        # The error has to name the missing keys and the exchange that would have been valid.
-        self.assertIn("missing get keys", message)
+        # The error has to name the missing keys and the key set that would have been accepted.
+        self.assertIn("missing target keys", message)
         self.assertIn("'huss'", message)
         self.assertIn("'exchange'", message)
         # Nothing is communicated if the requested keys are rejected.
@@ -244,7 +249,7 @@ class TestIconAtmoComponent(unittest.TestCase):
             icon_atmo.exchange({})
 
         message = str(context.exception)
-        self.assertIn("missing put keys: {'albedo'}", message)
+        self.assertIn("missing source keys: {'albedo'}", message)
 
     def test_exchange_with_unknown_field(self):
         """
@@ -259,7 +264,7 @@ class TestIconAtmoComponent(unittest.TestCase):
             icon_atmo.exchange({"albedo": 0.5, "albdeo": 0.5})
 
         message = str(context.exception)
-        self.assertIn("unexpected put keys: {'albdeo'}", message)
+        self.assertIn("unexpected source keys: {'albdeo'}", message)
 
 
 class TestElmerIceComponent(unittest.TestCase):
@@ -312,7 +317,7 @@ class TestElmerIceComponent(unittest.TestCase):
 
     def test_exchange(self):
         """
-        Test that ElmerIce puts and gets all its data in a single exchange.
+        Test that ElmerIce sends and receives all its data in a single exchange.
         """
         coupler, surface_elevation_fake_field = self._create_coupler()
         elmer_ice = coupler.get_component("elmer_ice")
@@ -332,15 +337,15 @@ class TestElmerIceComponent(unittest.TestCase):
         coupler, _ = self._create_coupler()
         elmer_ice = coupler.get_component("elmer_ice")
 
-        # Putting without getting.
+        # Sending without receiving.
         with self.assertRaises(ValueError) as context:
-            elmer_ice.exchange(self.data_to_elmer, get_keys={})
-        self.assertIn("missing get keys: {'surface_elevation'}", str(context.exception))
+            elmer_ice.exchange(self.data_to_elmer, target_keys={})
+        self.assertIn("missing target keys: {'surface_elevation'}", str(context.exception))
 
-        # Getting without putting.
+        # Receiving without sending.
         with self.assertRaises(ValueError) as context:
-            elmer_ice.exchange({}, get_keys={"surface_elevation"})
-        self.assertIn("missing put keys: {'T_ice', 'runoff', 'smb'}", str(context.exception))
+            elmer_ice.exchange({}, target_keys={"surface_elevation"})
+        self.assertIn("missing source keys: {'T_ice', 'runoff', 'smb'}", str(context.exception))
 
         # Nothing is communicated if the requested keys are rejected.
         self.assertEqual(coupler.put_fields, [])
@@ -351,18 +356,18 @@ class SurfaceEnergyBalanceComponent(Component):
     """
     Test component that cannot communicate all of its data in a single exchange.
 
-    Mimics the coupling to a land model: EBFM puts its surface state, the component computes the surface energy
-    balance from it and EBFM gets the results in a separate exchange. Putting and getting in one exchange is not
-    valid, because the results are only available once the surface state has been sent.
+    Mimics the coupling to a land model: EBFM sends its surface state, the component computes the surface energy
+    balance from it and EBFM receives the results in a separate exchange. Sending and receiving in one exchange
+    is not accepted, because the results are only available once the surface state has been sent.
     """
 
     SOURCE_FIELDS = {"icefract", "albedo"}
     TARGET_FIELDS = {"t_srf", "melt"}
 
-    put_state = ExchangeKeySet(name="put surface state", put_keys=SOURCE_FIELDS)
-    get_results = ExchangeKeySet(name="get surface energy balance", get_keys=TARGET_FIELDS)
+    surface_state = ExchangeKeySet(name="surface state", source_keys=SOURCE_FIELDS)
+    energy_balance = ExchangeKeySet(name="surface energy balance", target_keys=TARGET_FIELDS)
 
-    accepted_exchange_key_sets = (put_state, get_results)
+    accepted_exchange_key_sets = (surface_state, energy_balance)
 
     def get_field_definitions(self, time: TimeConfig) -> FieldSet:
         timestep = Timestep(value=time.time_step_iso8601())
@@ -385,9 +390,9 @@ class SurfaceEnergyBalanceComponent(Component):
         requested_key_set: ExchangeKeySet,
     ) -> dict[str, np.ndarray]:
         """
-        Put the surface state or get the surface energy balance, depending on the requested key set.
+        Send the surface state or receive the surface energy balance, depending on the requested key set.
         """
-        if requested_key_set == self.put_state:
+        if requested_key_set == self.surface_state:
             self._put_if_coupled("icefract", data_to_exchange)
             self._put_if_coupled("albedo", data_to_exchange)
             return {}
@@ -432,7 +437,7 @@ class TestSplitExchange(unittest.TestCase):
 
     fake_values = {"t_srf": 270.0, "melt": 1.0}
 
-    surface_state = {
+    surface_state_data = {
         "icefract": np.array([1.0]),
         "albedo": np.array([0.5]),
     }
@@ -453,25 +458,25 @@ class TestSplitExchange(unittest.TestCase):
 
         return coupler, component
 
-    def test_put_only_exchange(self):
+    def test_exchange_of_source_keys_only(self):
         """
-        Test that an exchange with empty get_keys puts the surface state and gets nothing.
+        Test that an exchange with empty target_keys sends the surface state and receives nothing.
         """
         coupler, component = self._create_coupler()
 
-        received_data = component.exchange(self.surface_state, get_keys={})
+        received_data = component.exchange(self.surface_state_data, target_keys={})
 
         self.assertEqual(received_data, {})
         self.assertEqual(sorted(coupler.put_fields), ["albedo", "icefract"])
         self.assertEqual(coupler.get_fields, [])
 
-    def test_get_only_exchange(self):
+    def test_exchange_of_target_keys_only(self):
         """
-        Test that an exchange with empty data_to_exchange gets the surface energy balance and puts nothing.
+        Test that an exchange with empty data_to_exchange receives the surface energy balance and sends nothing.
         """
         coupler, component = self._create_coupler()
 
-        received_data = component.exchange({}, get_keys={"t_srf", "melt"})
+        received_data = component.exchange({}, target_keys={"t_srf", "melt"})
 
         self.assertEqual(sorted(received_data), ["melt", "t_srf"])
         for name, value in self.fake_values.items():
@@ -479,10 +484,10 @@ class TestSplitExchange(unittest.TestCase):
         self.assertEqual(coupler.put_fields, [])
         self.assertEqual(sorted(coupler.get_fields), ["melt", "t_srf"])
 
-    def test_default_get_keys(self):
+    def test_default_target_keys(self):
         """
-        Test that omitting get_keys requests all get keys of the component. For this component that is the
-        exchange getting the surface energy balance, so an exchange that only puts has to pass get_keys.
+        Test that omitting target_keys requests all target keys of the component. For this component that is the
+        key set receiving the surface energy balance, so an exchange that only sends has to pass target_keys.
         """
         coupler, component = self._create_coupler()
 
@@ -491,23 +496,23 @@ class TestSplitExchange(unittest.TestCase):
         self.assertEqual(sorted(coupler.get_fields), ["melt", "t_srf"])
 
         with self.assertRaises(ValueError) as context:
-            component.exchange(self.surface_state)
-        self.assertIn("unexpected get keys: {'melt', 't_srf'}", str(context.exception))
+            component.exchange(self.surface_state_data)
+        self.assertIn("unexpected target keys: {'melt', 't_srf'}", str(context.exception))
 
     def test_combined_exchange_is_rejected(self):
         """
-        Test that putting and getting in one exchange is rejected and that the error names both valid exchanges.
+        Test that sending and receiving in one exchange is rejected and that the error names both key sets.
         """
         coupler, component = self._create_coupler()
 
         with self.assertRaises(ValueError) as context:
-            component.exchange(self.surface_state, get_keys={"t_srf", "melt"})
+            component.exchange(self.surface_state_data, target_keys={"t_srf", "melt"})
 
         message = str(context.exception)
-        self.assertIn("'put surface state'", message)
-        self.assertIn("'get surface energy balance'", message)
-        self.assertIn("unexpected get keys: {'melt', 't_srf'}", message)
-        self.assertIn("unexpected put keys: {'albedo', 'icefract'}", message)
+        self.assertIn("'surface state'", message)
+        self.assertIn("'surface energy balance'", message)
+        self.assertIn("unexpected target keys: {'melt', 't_srf'}", message)
+        self.assertIn("unexpected source keys: {'albedo', 'icefract'}", message)
         self.assertEqual(coupler.put_fields, [])
         self.assertEqual(coupler.get_fields, [])
 
@@ -518,12 +523,12 @@ class TestSplitExchange(unittest.TestCase):
         coupler, component = self._create_coupler()
 
         with self.assertRaises(ValueError) as context:
-            component.exchange({"icefract": np.array([1.0])}, get_keys={})
-        self.assertIn("missing put keys: {'albedo'}", str(context.exception))
+            component.exchange({"icefract": np.array([1.0])}, target_keys={})
+        self.assertIn("missing source keys: {'albedo'}", str(context.exception))
 
         with self.assertRaises(ValueError) as context:
-            component.exchange({}, get_keys={"melt"})
-        self.assertIn("missing get keys: {'t_srf'}", str(context.exception))
+            component.exchange({}, target_keys={"melt"})
+        self.assertIn("missing target keys: {'t_srf'}", str(context.exception))
 
         self.assertEqual(coupler.put_fields, [])
         self.assertEqual(coupler.get_fields, [])
