@@ -183,9 +183,9 @@ def _main_impl():
     coupler.setup(grid, time_config)
 
     # Warn once up front, rather than every timestep, about output that is written but not covered by tests.
-    # TODO: drop this once output writing is tested for an unstructured Elmer grid in a coupled run with ICON forcing.
     is_coupled = not isinstance(coupler, ebfm.coupling.DummyCoupler)
-    if not grid["is_partitioned"] and (is_coupled or grid["is_unstructured"]):
+    if is_coupled or grid["is_unstructured"]:
+        # TODO: see https://github.com/EBFMorg/EBFM/issues/176
         logger.warning(
             "Writing output to file is only tested for uncoupled runs on a structured grid; "
             "check the contents of the output file."
