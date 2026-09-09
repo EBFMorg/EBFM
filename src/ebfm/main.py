@@ -201,7 +201,35 @@ def _main_impl():
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
         # Cache GHF conductance to make it publicly available
-        OUT["ghf_k"], OUT["ghf_cond"] = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
+
+        # Send the ice fraction of the EBFM grid cells to ICON-Land (JSBACH)
+        # (done before the exchange with the ICON atmosphere, see coupling sequence)
+        if coupler.has_coupling_to("icon_land"):
+            icon_land = coupler.get_component("icon_land")
+            logger.info("Data exchange with ICON-Land")
+            logger.debug("Started...")
+            _, ghf_cond, hcap_sub = LOOP_EBM_GHF.conductance(OUT)
+            data_to_icon_land = {
+                "icefract": grid["mask"].astype(float),
+                "albedo": OUT["albedo"],
+                "t_sub": OUT["subT"][:, 1],
+                "ghf_cond": ghf_cond,
+                "hcap_sub": hcap_sub,
+                "runoff": OUT.get("runoff", np.zeros_like(grid["x"])),  # not yet computed in the first step
+                "smb": OUT["smb"],
+                "snowmass": OUT["snowmass"],
+            }
+            data_from_icon_land = icon_land.exchange(data_to_icon_land)
+            logger.debug("Done.")
+            # The received surface energy balance results replace EBFM's own energy balance
+            # (see LOOP_EBM_icon_land).
+            for name, values in data_from_icon_land.items():
+                IN[f"lice_{name}"] = values
+                logger.debug(
+                    f"Received {name} from ICON-Land: min={np.min(values):.4g} mean={np.mean(values):.4g} "
+                    f"max={np.max(values):.4g}"
+                )
 
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
@@ -209,9 +237,7 @@ def _main_impl():
             icon_atmo = coupler.get_component("icon_atmo")
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
-            data_to_icon = {
-                "albedo": OUT["albedo"],
-            }
+            data_to_icon = {}
 
             fallback_values = {
                 "rlds": IN["LWin"],
