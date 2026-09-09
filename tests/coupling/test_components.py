@@ -535,6 +535,13 @@ class TestSplitExchange(unittest.TestCase):
 
 
 class TestIconLandComponent(unittest.TestCase):
+    """
+    Test IconLand, whose state (surface_state) and surface energy balance results (energy_balance)
+    have to be exchanged in two separate calls: the results are only available once ICON-Land has
+    processed the state, so a single combined exchange (as EBFM used before the exchange API
+    supported phases) is rejected.
+    """
+
     args = Namespace(
         start_time="2025-01-01T00:00:00Z",
         end_time="2025-01-02T00:00:00Z",
@@ -558,6 +565,17 @@ class TestIconLandComponent(unittest.TestCase):
 
     # just fake values to get coupler._n_points set
     grid_dict = {"x": np.array([0, 1, 2])}
+
+    data_to_icon_land = {
+        "icefract": np.array([1.0, 0.0, 1.0]),
+        "albedo": np.array([0.8, 0.3, 0.6]),
+        "t_sub": np.array([250.0, 255.0, 260.0]),
+        "ghf_cond": np.array([1.0, 2.0, 3.0]),
+        "hcap_sub": np.array([5e4, 1e5, 1.5e5]),
+        "runoff": np.array([0.0, 1e-3, 2e-3]),
+        "smb": np.array([1e-3, -1e-3, 0.0]),
+        "snowmass": np.array([0.5, 0.0, 2.0]),
+    }
 
     def test_field_definitions(self):
         """
@@ -597,90 +615,121 @@ class TestIconLandComponent(unittest.TestCase):
         for name in ("t_sub", "ghf_cond", "hcap_sub", "runoff", "smb", "snowmass"):
             self.assertTrue(coupler.has_field("icon_land", name, GenericExchangeType.SOURCE))
 
-    def test_exchange(self):
+    def _create_coupler(self) -> RecordingFakeCoupler:
         """
-        Test that the IconLand component sends icefract/albedo and receives the surface energy
-        balance fields; mass fluxes are converted from kg m-2 s-1 to m w.e. per time step.
+        Create a coupler that provides fake surface energy balance results for IconLand.
         """
-        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        coupler = RecordingFakeCoupler(self.coupling_config, fake_fields={})
         icon_land = coupler.get_component("icon_land")
 
-        coupler._register_fake_values(
-            FakeFieldConfig(
-                coupled_component=icon_land, name="t_srf", value=260.0, exchange_type=GenericExchangeType.TARGET
+        for name, value in {"t_srf": 260.0, "melt": 2.0, "evapotrans": -1.0}.items():
+            coupler._register_fake_values(
+                FakeFieldConfig(
+                    coupled_component=icon_land, name=name, value=value, exchange_type=GenericExchangeType.TARGET
+                )
             )
-        )
-        coupler._register_fake_values(
-            FakeFieldConfig(
-                coupled_component=icon_land, name="melt", value=2.0, exchange_type=GenericExchangeType.TARGET
-            )
-        )
-        coupler._register_fake_values(
-            FakeFieldConfig(
-                coupled_component=icon_land, name="evapotrans", value=-1.0, exchange_type=GenericExchangeType.TARGET
-            )
-        )
 
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
-        data_to_icon_land = {
-            "icefract": np.array([1.0, 0.0, 1.0]),
-            "albedo": np.array([0.8, 0.3, 0.6]),
-            "t_sub": np.array([250.0, 255.0, 260.0]),
-            "ghf_cond": np.array([1.0, 2.0, 3.0]),
-            "hcap_sub": np.array([5e4, 1e5, 1.5e5]),
-            "runoff": np.array([0.0, 1e-3, 2e-3]),
-            "smb": np.array([1e-3, -1e-3, 0.0]),
-            "snowmass": np.array([0.5, 0.0, 2.0]),
-        }
+        return coupler
 
-        data_from_icon_land = icon_land.exchange(data_to_icon_land)
+    def test_surface_state(self):
+        """
+        Test that surface_state sends icefract/albedo and the firn state, and receives nothing.
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
 
-        # only the fields with a fake source are received
+        received_data = icon_land.exchange(self.data_to_icon_land, target_keys=set())
+
+        self.assertEqual(received_data, {})
+        self.assertEqual(
+            sorted(coupler.put_fields),
+            ["albedo", "ghf_cond", "hcap_sub", "icefract", "runoff", "smb", "snowmass", "t_sub"],
+        )
+        self.assertEqual(coupler.get_fields, [])
+
+    def test_energy_balance(self):
+        """
+        Test that energy_balance receives the surface energy balance and sends nothing; mass fluxes
+        are converted from kg m-2 s-1 to m w.e. per time step.
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+
+        data_from_icon_land = icon_land.exchange({}, target_keys={"t_srf", "melt", "evapotrans"})
+
         self.assertEqual(set(data_from_icon_land), {"t_srf", "melt", "evapotrans"})
         self.assertTrue(np.allclose(data_from_icon_land["t_srf"], 260.0))
         # 2 kg m-2 s-1 over a 1 h time step = 7.2 m w.e. per time step
         self.assertTrue(np.allclose(data_from_icon_land["melt"], 2.0 * 1e-3 * 3600.0))
         self.assertTrue(np.allclose(data_from_icon_land["evapotrans"], -1.0 * 1e-3 * 3600.0))
+        self.assertEqual(coupler.put_fields, [])
+        self.assertEqual(sorted(coupler.get_fields), ["evapotrans", "melt", "t_srf"])
+
+    def test_default_target_keys_is_energy_balance(self):
+        """
+        Test that omitting target_keys requests all target keys of IconLand, i.e. the surface energy
+        balance, so a surface_state exchange has to pass target_keys=set() explicitly (as main.py
+        does).
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+
+        self.assertEqual(sorted(icon_land.exchange({})), ["evapotrans", "melt", "t_srf"])
+
+        with self.assertRaises(ValueError) as context:
+            icon_land.exchange(self.data_to_icon_land)
+        self.assertIn("unexpected target keys", str(context.exception))
+
+    def test_combined_exchange_is_rejected(self):
+        """
+        Test that sending the state and receiving the results in a single exchange is rejected,
+        since the results are only available once ICON-Land has processed the state sent via
+        surface_state.
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+
+        with self.assertRaises(ValueError) as context:
+            icon_land.exchange(self.data_to_icon_land, target_keys={"t_srf", "melt", "evapotrans"})
+
+        message = str(context.exception)
+        self.assertIn("'surface state'", message)
+        self.assertIn("'surface energy balance'", message)
+        self.assertEqual(coupler.put_fields, [])
+        self.assertEqual(coupler.get_fields, [])
 
     def test_exchange_nothing_received(self):
         """
-        Test that without coupled target fields nothing is received.
+        Test that energy_balance returns nothing when no fake target values are registered.
         """
-        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        coupler = RecordingFakeCoupler(self.coupling_config, fake_fields={})
         icon_land = coupler.get_component("icon_land")
-
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
-        data_from_icon_land = icon_land.exchange(
-            {
-                "icefract": np.array([1.0, 0.0, 1.0]),
-                "albedo": np.array([0.8, 0.3, 0.6]),
-                "t_sub": np.zeros(3),
-                "ghf_cond": np.zeros(3),
-                "hcap_sub": np.zeros(3),
-                "runoff": np.zeros(3),
-                "smb": np.zeros(3),
-                "snowmass": np.zeros(3),
-            }
-        )
+        data_from_icon_land = icon_land.exchange({}, target_keys={"t_srf", "melt", "evapotrans"})
 
         self.assertEqual(data_from_icon_land, {})
 
     def test_exchange_missing_data(self):
         """
-        Test that exchanging without providing all the source data is rejected before anything is
-        communicated.
+        Test that surface_state without providing all the state fields is rejected before anything
+        is communicated.
         """
-        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        coupler = self._create_coupler()
         icon_land = coupler.get_component("icon_land")
 
-        coupler.setup(grid=self.grid_dict, time=self.time_config)
+        with self.assertRaises(ValueError) as context:
+            icon_land.exchange({}, target_keys=set())
+        self.assertIn("missing source keys", str(context.exception))
 
-        with self.assertRaises(ValueError):
-            icon_land.exchange({})
-        with self.assertRaises(ValueError):
-            icon_land.exchange({"icefract": np.ones(3), "albedo": np.ones(3)})
+        with self.assertRaises(ValueError) as context:
+            icon_land.exchange({"icefract": np.ones(3), "albedo": np.ones(3)}, target_keys=set())
+        self.assertIn("missing source keys", str(context.exception))
+
+        self.assertEqual(coupler.put_fields, [])
+        self.assertEqual(coupler.get_fields, [])
 
     def test_mass_flux_conversions(self):
         """

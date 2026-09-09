@@ -203,11 +203,13 @@ def _main_impl():
         # Cache GHF conductance to make it publicly available
         OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
 
-        # Send the ice fraction of the EBFM grid cells to ICON-Land (JSBACH)
-        # (done before the exchange with the ICON atmosphere, see coupling sequence)
+        # Send the surface/firn state of the EBFM grid cells to ICON-Land (JSBACH). Receiving the
+        # resulting surface energy balance is deferred until after the icon_atmo exchange below, so
+        # ICON-Land can compute it while EBFM exchanges with the ICON atmosphere instead of EBFM
+        # blocking on ICON-Land right here.
         if coupler.has_coupling_to("icon_land"):
             icon_land = coupler.get_component("icon_land")
-            logger.info("Data exchange with ICON-Land")
+            logger.info("Sending state to ICON-Land")
             logger.debug("Started...")
             _, ghf_cond, hcap_sub = LOOP_EBM_GHF.conductance(OUT)
             data_to_icon_land = {
@@ -220,16 +222,8 @@ def _main_impl():
                 "smb": OUT["smb"],
                 "snowmass": OUT["snowmass"],
             }
-            data_from_icon_land = icon_land.exchange(data_to_icon_land)
+            icon_land.exchange(data_to_icon_land, target_keys=set())
             logger.debug("Done.")
-            # The received surface energy balance results replace EBFM's own energy balance
-            # (see LOOP_EBM_icon_land).
-            for name, values in data_from_icon_land.items():
-                IN[f"lice_{name}"] = values
-                logger.debug(
-                    f"Received {name} from ICON-Land: min={np.min(values):.4g} mean={np.mean(values):.4g} "
-                    f"max={np.max(values):.4g}"
-                )
 
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
@@ -262,6 +256,22 @@ def _main_impl():
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
             IN["q"] = data_from_icon["huss"]
             IN["Pres"] = data_from_icon["sfcpres"]
+
+        # Receive the surface energy balance ICON-Land computed from the state sent above.
+        if coupler.has_coupling_to("icon_land"):
+            icon_land = coupler.get_component("icon_land")
+            logger.info("Receiving surface energy balance from ICON-Land")
+            logger.debug("Started...")
+            data_from_icon_land = icon_land.exchange({}, target_keys={"t_srf", "melt", "evapotrans"})
+            logger.debug("Done.")
+            # The received surface energy balance results replace EBFM's own energy balance
+            # (see LOOP_EBM_icon_land).
+            for name, values in data_from_icon_land.items():
+                IN[f"lice_{name}"] = values
+                logger.debug(
+                    f"Received {name} from ICON-Land: min={np.min(values):.4g} mean={np.mean(values):.4g} "
+                    f"max={np.max(values):.4g}"
+                )
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config)

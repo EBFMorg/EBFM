@@ -24,19 +24,25 @@ class IconLand(Component):
 
     EBFM sends its surface and firn state (ice fraction, surface albedo, first firn layer
     temperature, conductance and heat capacity, runoff, surface mass balance, snow mass) to ICON-Land
-    and receives the
-    results of the surface energy balance computed by ICON-Land (JSBACH) on its glacier tile,
-    averaged over the EBFM time step: surface temperature, melt and evapotranspiration.
+    and receives the results of the surface energy balance computed by ICON-Land (JSBACH) on its
+    glacier tile, averaged over the EBFM time step: surface temperature, melt and evapotranspiration.
+
+    The results depend on the state, so the two are communicated in separate phases: surface_state,
+    then (once ICON-Land has computed the surface energy balance from it) energy_balance. This lets
+    the caller send the state, do other independent work (e.g. exchange with icon_atmo) while
+    ICON-Land computes, and only then receive the results, instead of blocking on ICON-Land right
+    after sending to it.
     """
 
-    accepted_exchange_key_sets = (
-        # All data is exchanged at once, i.e. the caller has to send and receive everything in a single call.
-        ExchangeKeySet(
-            name="exchange",
-            source_keys={"icefract", "albedo", "t_sub", "ghf_cond", "hcap_sub", "runoff", "smb", "snowmass"},
-            target_keys={"t_srf", "melt", "evapotrans"},
-        ),
+    surface_state = ExchangeKeySet(
+        name="surface state",
+        source_keys={"icefract", "albedo", "t_sub", "ghf_cond", "hcap_sub", "runoff", "smb", "snowmass"},
     )
+    energy_balance = ExchangeKeySet(
+        name="surface energy balance",
+        target_keys={"t_srf", "melt", "evapotrans"},
+    )
+    accepted_exchange_key_sets = (surface_state, energy_balance)
 
     def __init__(self, coupler: "Coupler", name: str = ComponentId.ICON_LAND.value):
         super().__init__(coupler, name)
@@ -137,31 +143,32 @@ class IconLand(Component):
         requested_key_set: ExchangeKeySet,
     ) -> dict[str, np.ndarray]:
         """
-        Exchange data with IconLand.
-
-        This component accepts a single key set, so everything is sent and received here.
+        Send the surface/firn state to IconLand, or receive the surface energy balance results,
+        depending on the requested key set.
 
         @param[in] data_to_exchange read-only Mapping of field names to data to be sent
         @param[in] fallback_values Mapping of field names to fallback values to use if get fails
-        @param[in] requested_key_set key set to be communicated, the only one this component accepts
+        @param[in] requested_key_set key set to be communicated: surface_state or energy_balance
 
-        @returns dictionary of received field data: "t_srf" (K), "melt" and "evapotrans"
-                 (m w.e. per EBFM time step, evapotrans negative upward); only the fields
-                 that are actually coupled
+        @returns for energy_balance, a dictionary of received field data: "t_srf" (K), "melt" and
+                 "evapotrans" (m w.e. per EBFM time step, evapotrans negative upward), only the fields
+                 that are actually coupled; empty for surface_state
         """
+        if requested_key_set == self.surface_state:
+            self._put_if_coupled("icefract", data_to_exchange)
+            self._put_if_coupled("albedo", data_to_exchange)
+            self._put_if_coupled("t_sub", data_to_exchange)
+            self._put_if_coupled("ghf_cond", data_to_exchange)
+            self._put_if_coupled("hcap_sub", data_to_exchange)
+            self._put_if_coupled("runoff", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
+            self._put_if_coupled("smb", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
+            self._put_if_coupled("snowmass", data_to_exchange, transform=lambda x: x * 1e3)
+            return {}
+
+        # exchange() only calls _exchange for an accepted key set, so this is energy_balance.
+
         received_data: dict[str, np.ndarray] = {}
 
-        # Put data to IconLand (state at the start of the EBFM time step)
-        self._put_if_coupled("icefract", data_to_exchange)
-        self._put_if_coupled("albedo", data_to_exchange)
-        self._put_if_coupled("t_sub", data_to_exchange)
-        self._put_if_coupled("ghf_cond", data_to_exchange)
-        self._put_if_coupled("hcap_sub", data_to_exchange)
-        self._put_if_coupled("runoff", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
-        self._put_if_coupled("smb", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
-        self._put_if_coupled("snowmass", data_to_exchange, transform=lambda x: x * 1e3)
-
-        # Get data from IconLand
         t_srf = self._get_if_coupled("t_srf", fallback_values=fallback_values)
         if t_srf is not None:
             received_data["t_srf"] = t_srf
