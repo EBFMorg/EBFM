@@ -9,9 +9,12 @@ SPDX-License-Identifier: CC-BY-4.0
 * Introduce coarse-resolution (10-km) and fine-resolution (2.5-km) test cases for Greenland forced with meteorological data from CARRA2. https://github.com/EBFMorg/EBFM/pull/128
     * Add feature to use NetCDF meshes with DEM as input (`--netcdf-mesh`)
     * Add feature to read forcing files from folder (`--forcing-dir`)
+* NetCDF output writing now supports unstructured Elmer-based grids in addition to MATLAB grids (previously skipped with a warning), including mesh topology when available. Output is now written for any non-partitioned run regardless of grid type or coupling, with a one-time startup warning that non-structured or coupled output is not yet covered by tests. https://github.com/EBFMorg/EBFM/pull/135
 
 # v0.7.0
 
+* Loading a restart file (`--restart-init`) now also rejects a file that is missing a required variable, or that stores a per-layer variable per-column (or vice versa). Both previously loaded without complaint and only surfaced much later, if at all. The number of columns and layers a run uses is now logged during initialization. https://github.com/EBFMorg/EBFM/pull/169
+* Loading a restart file (`--restart-init`) now rejects files whose arrays do not match the configured column discretization, instead of loading them and mixing two different column or layer counts into the model state. https://github.com/EBFMorg/EBFM/pull/167
 * Moved performance and profiling sections out of `README.md` into `docs/Performance.md`, together with the GPU setup and CUDA runtime troubleshooting entry. https://github.com/EBFMorg/EBFM/pull/161
 * Removed the `uniform` percolation scheme (not used in practice, `normal` and `bucket` are typically chosen). `phys["percolation"]` now accepts `bucket`, `normal` and `linear`. Adapted tests. https://github.com/EBFMorg/EBFM/pull/160
 * Fixed `phys["percolation"] = "uniform"` raising `TypeError` on the first timestep in `LOOP_SNOW.py` (only in NumPy path). `test_loop_snow_percolation.py` added. https://github.com/EBFMorg/EBFM/pull/158
