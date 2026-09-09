@@ -20,6 +20,7 @@ def is_supported_grid_type(grid_type: GridInputType):
     """
     return grid_type in (GridInputType.MATLAB, GridInputType.NETCDF)
 
+
 _FILL_VALUE = -9999.0
 
 
