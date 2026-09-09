@@ -38,6 +38,7 @@ class ComponentId(Enum):
     """
 
     ICON_ATMO = "icon_atmo"
+    ICON_LAND = "icon_land"
     ELMER_ICE = "elmer_ice"
 
 
@@ -68,6 +69,7 @@ class CouplingConfig:
 
         self._coupled_components = {
             ComponentId.ICON_ATMO: args.couple_to_icon_atmo,
+            ComponentId.ICON_LAND: args.couple_to_icon_land,
             ComponentId.ELMER_ICE: args.couple_to_elmer_ice,
         }
 
@@ -150,6 +152,11 @@ class CouplingConfig:
     def couple_to_icon_atmo(self):
         """Whether to couple this component to ICON atmosphere."""
         return self._active_coupling_to(ComponentId.ICON_ATMO)
+
+    @property
+    def couple_to_icon_land(self):
+        """Whether to couple this component to ICON-Land (JSBACH)."""
+        return self._active_coupling_to(ComponentId.ICON_LAND)
 
     @property
     def couple_to_elmer_ice(self):

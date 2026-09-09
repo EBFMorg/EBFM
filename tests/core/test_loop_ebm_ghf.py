@@ -18,7 +18,7 @@ import numpy as np
 from ebfm.core import LOOP_EBM_GHF
 
 
-def _reference_conductance(subD, subZ):
+def _reference_conductance(subD, subZ, subT):
     """Point-by-point transcription of the formula in LOOP_EBM_GHF.conductance. Independent
     of the vectorized implementation, so an indexing or broadcasting slip there (e.g. mixing
     up layers 0/1, or an axis) shows up as a mismatch instead of being self-consistent."""
@@ -30,12 +30,17 @@ def _reference_conductance(subD, subZ):
             GHF_k[i, layer] = 0.138 - 1.01e-3 * d + 3.233e-6 * d**2
 
     GHF_C = np.empty(gpsum)
+    hcap_sub = np.empty(gpsum)
     for i in range(gpsum):
         k0, k1 = GHF_k[i, 0], GHF_k[i, 1]
         z0, z1 = subZ[i, 0], subZ[i, 1]
         GHF_C[i] = (k0 * z0 + 0.5 * k1 * z1) / (z0 + 0.5 * z1) ** 2
 
-    return GHF_k, GHF_C
+        c0 = subD[i, 0] * (152.2 + 7.122 * subT[i, 0])
+        c1 = subD[i, 1] * (152.2 + 7.122 * subT[i, 1])
+        hcap_sub[i] = c0 * z0 + 0.5 * c1 * z1
+
+    return GHF_k, GHF_C, hcap_sub
 
 
 class TestConductance(unittest.TestCase):
@@ -54,28 +59,37 @@ class TestConductance(unittest.TestCase):
                 [0.05, 0.40, 3.0],
             ]
         )
-        OUT = {"subD": subD, "subZ": subZ}
+        subT = np.array(
+            [
+                [260.0, 262.0, 265.0],
+                [268.0, 270.0, 272.0],
+            ]
+        )
+        OUT = {"subD": subD, "subZ": subZ, "subT": subT}
 
-        GHF_k, GHF_C = LOOP_EBM_GHF.conductance(OUT)
-        expected_k, expected_C = _reference_conductance(subD, subZ)
+        GHF_k, GHF_C, hcap_sub = LOOP_EBM_GHF.conductance(OUT)
+        expected_k, expected_C, expected_hcap_sub = _reference_conductance(subD, subZ, subT)
 
         np.testing.assert_allclose(GHF_k, expected_k)
         np.testing.assert_allclose(GHF_C, expected_C)
+        np.testing.assert_allclose(hcap_sub, expected_hcap_sub)
 
     def test_shapes(self):
-        """GHF_k keeps one conductivity per layer; GHF_C collapses to one conductance per
-        grid point."""
+        """GHF_k keeps one conductivity per layer; GHF_C and hcap_sub collapse to one value
+        per grid point."""
         gpsum, nl = 4, 5
         rng = np.random.default_rng(0)
         OUT = {
             "subD": rng.uniform(100.0, 900.0, size=(gpsum, nl)),
             "subZ": rng.uniform(0.05, 0.5, size=(gpsum, nl)),
+            "subT": rng.uniform(250.0, 273.0, size=(gpsum, nl)),
         }
 
-        GHF_k, GHF_C = LOOP_EBM_GHF.conductance(OUT)
+        GHF_k, GHF_C, hcap_sub = LOOP_EBM_GHF.conductance(OUT)
 
         self.assertEqual(GHF_k.shape, (gpsum, nl))
         self.assertEqual(GHF_C.shape, (gpsum,))
+        self.assertEqual(hcap_sub.shape, (gpsum,))
 
 
 def _make_out():
@@ -89,13 +103,13 @@ def _make_out():
 class TestCacheIsValid(unittest.TestCase):
     def test_valid_when_cache_matches_fresh_computation(self):
         OUT = _make_out()
-        OUT["ghf_k"], OUT["ghf_cond"] = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
 
         self.assertTrue(LOOP_EBM_GHF.cache_is_valid(OUT))
 
     def test_invalid_when_subsurface_state_changes_after_caching(self):
         OUT = _make_out()
-        OUT["ghf_k"], OUT["ghf_cond"] = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
 
         # Simulate LOOP_SNOW.main updating the firn column without the cache being refreshed.
         OUT["subD"] = OUT["subD"] + 50.0
@@ -106,7 +120,7 @@ class TestCacheIsValid(unittest.TestCase):
 class TestMainRejectsStaleCache(unittest.TestCase):
     def test_main_runs_with_valid_cache(self):
         OUT = _make_out()
-        OUT["ghf_k"], OUT["ghf_cond"] = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
         cond = np.ones(2, dtype=bool)
 
         GHF = LOOP_EBM_GHF.main(OUT["subT"][:, 1] - 1.0, OUT, cond, OUT["ghf_k"], OUT["ghf_cond"])
@@ -115,7 +129,7 @@ class TestMainRejectsStaleCache(unittest.TestCase):
 
     def test_main_raises_on_stale_cache(self):
         OUT = _make_out()
-        OUT["ghf_k"], OUT["ghf_cond"] = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
         cond = np.ones(2, dtype=bool)
 
         # Simulate LOOP_SNOW.main updating the firn column without the cache being refreshed.
