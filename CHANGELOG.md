@@ -4,6 +4,10 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
+# Develop
+
+* NetCDF output writing now supports unstructured Elmer-based grids in addition to MATLAB grids (previously skipped with a warning), including mesh topology when available. Output is now written for any non-partitioned run regardless of grid type or coupling, with a one-time startup warning that non-structured or coupled output is not yet covered by tests. https://github.com/EBFMorg/EBFM/pull/135
+
 # v0.7.0
 
 * Loading a restart file (`--restart-init`) now also rejects a file that is missing a required variable, or that stores a per-layer variable per-column (or vice versa). Both previously loaded without complaint and only surfaced much later, if at all. The number of columns and layers a run uses is now logged during initialization. https://github.com/EBFMorg/EBFM/pull/169
