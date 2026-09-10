@@ -88,6 +88,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         calendar="proleptic_gregorian",
         component_name="ebfm",
         couple_to_icon_atmo=True,
+        couple_to_icon_land=False,
         couple_to_elmer_ice=False,
         fake_coupling=True,
         field_validation_level=FieldValidationLevel("FATAL"),
@@ -128,18 +129,18 @@ class TestIconAtmoComponent(unittest.TestCase):
 
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
-        data_to_icon = {
-            "albedo": 0.5,
-        }
+        data_to_icon = {}
 
         # Simulate data exchange
         data_from_icon = icon_atmo.exchange(data_to_icon)
 
         # Check that the data is received correctly
         self.assertIsNotNone(data_from_icon)
-        expected_pr = icon_atmo._map_pr_to_ebfm(np.full(self.grid_dict["x"].shape, pr_fake_field.value))
+        expected_pr = icon_atmo._map_mass_flux_to_ebfm(np.full(self.grid_dict["x"].shape, pr_fake_field.value))
         self.assertTrue(np.array_equal(data_from_icon["pr"], expected_pr))
-        expected_pr_snow = icon_atmo._map_pr_to_ebfm(np.full(self.grid_dict["x"].shape, pr_snow_fake_field.value))
+        expected_pr_snow = icon_atmo._map_mass_flux_to_ebfm(
+            np.full(self.grid_dict["x"].shape, pr_snow_fake_field.value)
+        )
         self.assertTrue(np.array_equal(data_from_icon["pr_snow"], expected_pr_snow))
 
     def test_fallback_values(self):
@@ -163,9 +164,7 @@ class TestIconAtmoComponent(unittest.TestCase):
             time=self.time_config,
         )
 
-        data_to_icon = {
-            "albedo": 0.5,
-        }
+        data_to_icon = {}
 
         fallback_values = {
             "pr": [10],
@@ -178,7 +177,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         # Check that the data is received correctly
         self.assertIsNotNone(data_from_icon)
         # For 'pr' data is given; so no fallback should be used.
-        expected_pr = icon_atmo._map_pr_to_ebfm(np.full(self.grid_dict["x"].shape, pr_fake_field.value))
+        expected_pr = icon_atmo._map_mass_flux_to_ebfm(np.full(self.grid_dict["x"].shape, pr_fake_field.value))
         self.assertTrue(np.array_equal(data_from_icon["pr"], expected_pr))
         # For 'pr_snow' data is not given; so fallback should be used.
         print(data_from_icon["pr_snow"])
@@ -195,7 +194,7 @@ class TestIconAtmoComponent(unittest.TestCase):
 
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
-        data_from_icon = icon_atmo.exchange({"albedo": 0.5}, {})
+        data_from_icon = icon_atmo.exchange({}, {})
 
         self.assertEqual(sorted(data_from_icon), self.all_icon_atmo_fields)
         self.assertEqual(sorted(coupler.get_fields), self.all_icon_atmo_fields)
@@ -209,7 +208,7 @@ class TestIconAtmoComponent(unittest.TestCase):
 
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
-        data_from_icon = icon_atmo.exchange({"albedo": 0.5}, target_keys=self.all_icon_atmo_fields)
+        data_from_icon = icon_atmo.exchange({}, target_keys=self.all_icon_atmo_fields)
 
         self.assertEqual(sorted(data_from_icon), self.all_icon_atmo_fields)
         self.assertEqual(sorted(coupler.get_fields), self.all_icon_atmo_fields)
@@ -225,7 +224,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
         with self.assertRaises(ValueError) as context:
-            icon_atmo.exchange({"albedo": 0.5}, target_keys={"rsds", "tas"})
+            icon_atmo.exchange({}, target_keys={"rsds", "tas"})
 
         message = str(context.exception)
         # The error has to name the missing keys and the key set that would have been accepted.
@@ -236,9 +235,10 @@ class TestIconAtmoComponent(unittest.TestCase):
         self.assertEqual(coupler.put_fields, [])
         self.assertEqual(coupler.get_fields, [])
 
-    def test_exchange_with_missing_data(self):
+    def test_exchange_rejects_source_data(self):
         """
-        Test that not providing the data IconAtmo puts is rejected.
+        Test that IconAtmo rejects any source data: surface fields like albedo are sent to IconLand
+        instead, so IconAtmo itself sends nothing.
         """
         coupler = RecordingFakeCoupler(self.coupling_config)
         icon_atmo = coupler.get_component("icon_atmo")
@@ -246,10 +246,10 @@ class TestIconAtmoComponent(unittest.TestCase):
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
         with self.assertRaises(ValueError) as context:
-            icon_atmo.exchange({})
+            icon_atmo.exchange({"albedo": 0.5})
 
         message = str(context.exception)
-        self.assertIn("missing source keys: {'albedo'}", message)
+        self.assertIn("unexpected source keys: {'albedo'}", message)
 
     def test_exchange_with_unknown_field(self):
         """
@@ -261,7 +261,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
         with self.assertRaises(ValueError) as context:
-            icon_atmo.exchange({"albedo": 0.5, "albdeo": 0.5})
+            icon_atmo.exchange({"albdeo": 0.5})
 
         message = str(context.exception)
         self.assertIn("unexpected source keys: {'albdeo'}", message)
@@ -275,6 +275,7 @@ class TestElmerIceComponent(unittest.TestCase):
         calendar="proleptic_gregorian",
         component_name="ebfm",
         couple_to_icon_atmo=False,
+        couple_to_icon_land=False,
         couple_to_elmer_ice=True,
         fake_coupling=True,
         field_validation_level=FieldValidationLevel("FATAL"),
@@ -292,9 +293,9 @@ class TestElmerIceComponent(unittest.TestCase):
     grid_dict = {"x": np.array([0])}
 
     data_to_elmer = {
-        "smb": np.array([1.0]),
+        "smb_to_elmer": np.array([1.0]),
         "T_ice": np.array([260.0]),
-        "runoff": np.array([0.5]),
+        "runoff_to_elmer": np.array([0.5]),
     }
 
     def _create_coupler(self) -> tuple[RecordingFakeCoupler, FakeFieldConfig]:
@@ -327,7 +328,7 @@ class TestElmerIceComponent(unittest.TestCase):
         self.assertEqual(list(data_from_elmer), ["surface_elevation"])
         expected_surface_elevation = np.full(self.grid_dict["x"].shape, surface_elevation_fake_field.value)
         self.assertTrue(np.array_equal(data_from_elmer["surface_elevation"], expected_surface_elevation))
-        self.assertEqual(sorted(coupler.put_fields), ["T_ice", "runoff", "smb"])
+        self.assertEqual(sorted(coupler.put_fields), ["T_ice", "runoff_to_elmer", "smb_to_elmer"])
         self.assertEqual(coupler.get_fields, ["surface_elevation"])
 
     def test_split_exchange_is_rejected(self):
@@ -345,11 +346,32 @@ class TestElmerIceComponent(unittest.TestCase):
         # Receiving without sending.
         with self.assertRaises(ValueError) as context:
             elmer_ice.exchange({}, target_keys={"surface_elevation"})
-        self.assertIn("missing source keys: {'T_ice', 'runoff', 'smb'}", str(context.exception))
+        self.assertIn("missing source keys: {'T_ice', 'runoff_to_elmer', 'smb_to_elmer'}", str(context.exception))
 
         # Nothing is communicated if the requested keys are rejected.
         self.assertEqual(coupler.put_fields, [])
         self.assertEqual(coupler.get_fields, [])
+
+    def test_put_and_get_warn_and_skip_for_unregistered_field_name(self):
+        """
+        Regression test for a stale name reaching put()/get() directly: after the elmer_ice/icon_land
+        rename, "smb" is no longer a registered field for "elmer_ice" (only "smb_to_elmer" is). A hard
+        failure here would be too strict -- e.g. commenting a Field out of get_field_definitions() to
+        disable it for debugging would then crash every put/get for it, rather than just leaving it
+        unsent/unreceived -- so put()/get() log a warning and skip the operation instead of raising.
+        """
+        coupler, _ = self._create_coupler()
+
+        with self.assertLogs(level="WARNING") as logs:
+            put_result = coupler.put("elmer_ice", "smb", np.array([1.0]))
+        self.assertEqual(put_result, CouplerExitCode.UNKNOWN_FIELD)
+        self.assertTrue(any("smb" in message and "elmer_ice" in message for message in logs.output))
+
+        with self.assertLogs(level="WARNING") as logs:
+            data, err = coupler.get("elmer_ice", "smb")
+        self.assertIsNone(data)
+        self.assertEqual(err, CouplerExitCode.UNKNOWN_FIELD)
+        self.assertTrue(any("smb" in message and "elmer_ice" in message for message in logs.output))
 
 
 class SurfaceEnergyBalanceComponent(Component):
@@ -419,6 +441,7 @@ class TestSplitExchange(unittest.TestCase):
         calendar="proleptic_gregorian",
         component_name="ebfm",
         couple_to_icon_atmo=False,
+        couple_to_icon_land=False,
         couple_to_elmer_ice=False,
         fake_coupling=True,
         field_validation_level=FieldValidationLevel("FATAL"),
@@ -532,6 +555,226 @@ class TestSplitExchange(unittest.TestCase):
 
         self.assertEqual(coupler.put_fields, [])
         self.assertEqual(coupler.get_fields, [])
+
+
+class TestIconLandComponent(unittest.TestCase):
+    """
+    Test IconLand, whose state (surface_state) and surface energy balance results (energy_balance)
+    have to be exchanged in two separate calls: the results are only available once ICON-Land has
+    processed the state, so a single combined exchange (as EBFM used before the exchange API
+    supported phases) is rejected.
+    """
+
+    args = Namespace(
+        start_time="2025-01-01T00:00:00Z",
+        end_time="2025-01-02T00:00:00Z",
+        time_step="PT1H",
+        calendar="proleptic_gregorian",
+        component_name="ebfm",
+        couple_to_icon_atmo=False,
+        couple_to_icon_land=True,
+        couple_to_elmer_ice=False,
+        fake_coupling=True,
+        field_validation_level=FieldValidationLevel("FATAL"),
+        coupler_config=None,
+    )
+
+    time_config = TimeConfig(args=args)
+
+    coupling_config = CouplingConfig(
+        args=args,
+        time_config=time_config,
+    )
+
+    # just fake values to get coupler._n_points set
+    grid_dict = {"x": np.array([0, 1, 2])}
+
+    data_to_icon_land = {
+        "icefract": np.array([1.0, 0.0, 1.0]),
+        "albedo": np.array([0.8, 0.3, 0.6]),
+        "t_sub": np.array([250.0, 255.0, 260.0]),
+        "ghf_cond": np.array([1.0, 2.0, 3.0]),
+        "hcap_sub": np.array([5e4, 1e5, 1.5e5]),
+        "runoff_to_icon_land": np.array([0.0, 1e-3, 2e-3]),
+        "smb_to_icon_land": np.array([1e-3, -1e-3, 0.0]),
+        "snowmass": np.array([0.5, 0.0, 2.0]),
+    }
+
+    def test_field_definitions(self):
+        """
+        Test that the IconLand component defines icefract as a source field only.
+        """
+        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        icon_land = coupler.get_component("icon_land")
+
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        self.assertTrue(coupler.has_coupling_to("icon_land"))
+        self.assertFalse(coupler.has_coupling_to("icon_atmo"))
+        self.assertTrue(coupler.has_field("icon_land", "icefract", GenericExchangeType.SOURCE))
+        self.assertTrue(coupler.has_field("icon_land", "albedo", GenericExchangeType.SOURCE))
+        self.assertFalse(coupler.has_field("icon_land", "icefract", GenericExchangeType.TARGET))
+
+        self.assertTrue(coupler.has_field("icon_land", "t_srf", GenericExchangeType.TARGET))
+        self.assertTrue(coupler.has_field("icon_land", "melt", GenericExchangeType.TARGET))
+
+        field_names = {field.name for field in icon_land.get_field_definitions(self.time_config)}
+        self.assertEqual(
+            field_names,
+            {
+                "icefract",
+                "albedo",
+                "t_sub",
+                "ghf_cond",
+                "hcap_sub",
+                "runoff_to_icon_land",
+                "smb_to_icon_land",
+                "snowmass",
+                "t_srf",
+                "melt",
+                "evapotrans",
+            },
+        )
+        for name in ("t_sub", "ghf_cond", "hcap_sub", "runoff_to_icon_land", "smb_to_icon_land", "snowmass"):
+            self.assertTrue(coupler.has_field("icon_land", name, GenericExchangeType.SOURCE))
+
+    def _create_coupler(self) -> RecordingFakeCoupler:
+        """
+        Create a coupler that provides fake surface energy balance results for IconLand.
+        """
+        coupler = RecordingFakeCoupler(self.coupling_config, fake_fields={})
+        icon_land = coupler.get_component("icon_land")
+
+        for name, value in {"t_srf": 260.0, "melt": 2.0, "evapotrans": -1.0}.items():
+            coupler._register_fake_values(
+                FakeFieldConfig(
+                    coupled_component=icon_land, name=name, value=value, exchange_type=GenericExchangeType.TARGET
+                )
+            )
+
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        return coupler
+
+    def test_surface_state(self):
+        """
+        Test that surface_state sends icefract/albedo and the firn state, and receives nothing.
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+
+        received_data = icon_land.exchange(self.data_to_icon_land, target_keys=set())
+
+        self.assertEqual(received_data, {})
+        self.assertEqual(
+            sorted(coupler.put_fields),
+            [
+                "albedo",
+                "ghf_cond",
+                "hcap_sub",
+                "icefract",
+                "runoff_to_icon_land",
+                "smb_to_icon_land",
+                "snowmass",
+                "t_sub",
+            ],
+        )
+        self.assertEqual(coupler.get_fields, [])
+
+    def test_energy_balance(self):
+        """
+        Test that energy_balance receives the surface energy balance and sends nothing; mass fluxes
+        are converted from kg m-2 s-1 to m w.e. per time step.
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+
+        data_from_icon_land = icon_land.exchange({}, target_keys={"t_srf", "melt", "evapotrans"})
+
+        self.assertEqual(set(data_from_icon_land), {"t_srf", "melt", "evapotrans"})
+        self.assertTrue(np.allclose(data_from_icon_land["t_srf"], 260.0))
+        # 2 kg m-2 s-1 over a 1 h time step = 7.2 m w.e. per time step
+        self.assertTrue(np.allclose(data_from_icon_land["melt"], 2.0 * 1e-3 * 3600.0))
+        self.assertTrue(np.allclose(data_from_icon_land["evapotrans"], -1.0 * 1e-3 * 3600.0))
+        self.assertEqual(coupler.put_fields, [])
+        self.assertEqual(sorted(coupler.get_fields), ["evapotrans", "melt", "t_srf"])
+
+    def test_default_target_keys_is_energy_balance(self):
+        """
+        Test that omitting target_keys requests all target keys of IconLand, i.e. the surface energy
+        balance, so a surface_state exchange has to pass target_keys=set() explicitly (as main.py
+        does).
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+
+        self.assertEqual(sorted(icon_land.exchange({})), ["evapotrans", "melt", "t_srf"])
+
+        with self.assertRaises(ValueError) as context:
+            icon_land.exchange(self.data_to_icon_land)
+        self.assertIn("unexpected target keys", str(context.exception))
+
+    def test_combined_exchange_is_rejected(self):
+        """
+        Test that sending the state and receiving the results in a single exchange is rejected,
+        since the results are only available once ICON-Land has processed the state sent via
+        surface_state.
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+
+        with self.assertRaises(ValueError) as context:
+            icon_land.exchange(self.data_to_icon_land, target_keys={"t_srf", "melt", "evapotrans"})
+
+        message = str(context.exception)
+        self.assertIn("'surface state'", message)
+        self.assertIn("'surface energy balance'", message)
+        self.assertEqual(coupler.put_fields, [])
+        self.assertEqual(coupler.get_fields, [])
+
+    def test_exchange_nothing_received(self):
+        """
+        Test that energy_balance returns nothing when no fake target values are registered.
+        """
+        coupler = RecordingFakeCoupler(self.coupling_config, fake_fields={})
+        icon_land = coupler.get_component("icon_land")
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        data_from_icon_land = icon_land.exchange({}, target_keys={"t_srf", "melt", "evapotrans"})
+
+        self.assertEqual(data_from_icon_land, {})
+
+    def test_exchange_missing_data(self):
+        """
+        Test that surface_state without providing all the state fields is rejected before anything
+        is communicated.
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+
+        with self.assertRaises(ValueError) as context:
+            icon_land.exchange({}, target_keys=set())
+        self.assertIn("missing source keys", str(context.exception))
+
+        with self.assertRaises(ValueError) as context:
+            icon_land.exchange({"icefract": np.ones(3), "albedo": np.ones(3)}, target_keys=set())
+        self.assertIn("missing source keys", str(context.exception))
+
+        self.assertEqual(coupler.put_fields, [])
+        self.assertEqual(coupler.get_fields, [])
+
+    def test_mass_flux_conversions(self):
+        """
+        m w.e. per time step <-> kg m-2 s-1 (time step 1 h in this test configuration)
+        """
+        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        icon_land = coupler.get_component("icon_land")
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        mwe = np.array([3.6e-3])  # 3.6 mm per hour = 1e-3 kg m-2 s-1
+        flux = icon_land._map_mass_flux_from_ebfm(mwe)
+        np.testing.assert_allclose(flux, [1e-3])
+        np.testing.assert_allclose(icon_land._map_mass_flux_to_ebfm(flux), mwe)
 
 
 if __name__ == "__main__":

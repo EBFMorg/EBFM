@@ -45,7 +45,7 @@ class DummyCoupler(Coupler):
         """
         return exchange_type
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
+    def _put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Put data to another component
 
@@ -59,7 +59,7 @@ class DummyCoupler(Coupler):
         logger.debug("Do nothing for DummyCoupler.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
+    def _get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Get data from another component
 

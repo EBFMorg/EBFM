@@ -235,8 +235,17 @@ allow to configure the coupling:
 ebfm ...
   --couple-to-elmer-ice
   --couple-to-icon-atmo
+  --couple-to-icon-land
   --coupler-config /path/to/coupling/config.yaml
 ```
+
+With `--couple-to-icon-land`, EBFM sends the ice-covered fraction of its grid cells
+(`icefract`, `albedo`, `t_sub`, `ghf_cond`, `runoff`, `smb`, `snowmass`) to the ICON land model
+(ICON-Land/JSBACH) and receives the surface energy balance results of its glacier tile (`t_srf`,
+`melt`, `evapotrans`, averaged over the EBFM time step), which then drive the firn model instead
+of EBFM's own energy balance (kept as diagnostic `ebm_*`). ICON-Land is coupled as a
+separate YAC component (`icon-land`) independent of the ICON atmosphere coupling.
+Note that the abbreviation `--couple-to-icon` is ambiguous and no longer accepted.
 
 Note that the coupling uses the Python bindings of YAC. Additionally, EBFM must
 be run in a MPMD (multiple process multiple data) run.
@@ -247,7 +256,7 @@ mpirun -np 1 ebfm \
   --elmer-mesh $MESHES/greenland_mesh_v0/MESH/partitioning.128/ \
   --netcdf-dem-mesh $DATA/BedMachineGreenland-v5.nc \
   --is-partitioned-elmer-mesh --use-part 1 \
-  --coupler-config $CPL_CONFIG --couple-to-elmer --couple-to-icon \
+  --coupler-config $CPL_CONFIG --couple-to-elmer-ice --couple-to-icon-atmo \
   : \
   -np 1 $ELMER_ROOT/src/elmer_dummy_f.x $MESHES/greenland_mesh_v0/MESH/partitioning.128 1 $CPL_CONFIG \
   : \

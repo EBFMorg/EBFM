@@ -12,7 +12,7 @@ from . import (
     LOOP_EBM_LWout,
     LOOP_EBM_SWin,
 )
-from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation
+from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation, LOOP_EBM_icon_land
 
 from ebfm.coupling import Coupler
 
@@ -150,5 +150,11 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     OUT["LWout"] = LWout
     OUT["SHF"] = SHF
     OUT["GHF"] = GHF
+
+    # When coupled to ICON-Land, the surface energy balance computed by JSBACH on its glacier
+    # tile drives the firn model; EBFM's own energy balance computed above is kept as a
+    # diagnostic (OUT["ebm_diagnostics"]) for comparison.
+    if LOOP_EBM_icon_land.is_available(IN, cpl):
+        OUT = LOOP_EBM_icon_land.main(C, OUT, IN, time2)
 
     return OUT

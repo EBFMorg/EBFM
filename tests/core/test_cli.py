@@ -148,6 +148,7 @@ class TestDefaults(unittest.TestCase):
     def test_no_coupling_by_default(self):
         self.assertFalse(self.args.couple_to_elmer_ice)
         self.assertFalse(self.args.couple_to_icon_atmo)
+        self.assertFalse(self.args.couple_to_icon_land)
 
     def test_netcdf_dem_mesh_default_none(self):
         self.assertIsNone(self.args.netcdf_dem_mesh)
@@ -222,6 +223,19 @@ class TestCouplingOptions(unittest.TestCase):
     def test_couple_to_icon_atmo(self):
         args = _parse("--couple-to-icon-atmo")
         self.assertTrue(args.couple_to_icon_atmo)
+        self.assertFalse(args.couple_to_icon_land)
+
+    def test_couple_to_icon_land(self):
+        args = _parse("--couple-to-icon-land")
+        self.assertTrue(args.couple_to_icon_land)
+        self.assertFalse(args.couple_to_icon_atmo)
+
+    def test_couple_to_icon_prefix_is_ambiguous(self):
+        # '--couple-to-icon' used to be accepted as an abbreviation of '--couple-to-icon-atmo';
+        # with '--couple-to-icon-land' it is ambiguous and must be rejected.
+        with self.assertRaises(SystemExit) as ctx:
+            _parse("--couple-to-icon")
+        self.assertEqual(ctx.exception.code, 2)
 
     def test_fake_coupling(self):
         args = _parse("--fake-coupling")
@@ -256,15 +270,20 @@ class TestExtractActiveCouplingFeatures(unittest.TestCase):
         args = _parse("--couple-to-icon-atmo")
         self.assertIn("--couple-to-icon-atmo", extract_active_coupling_features(args))
 
+    def test_couple_to_icon_land(self):
+        args = _parse("--couple-to-icon-land")
+        self.assertIn("--couple-to-icon-land", extract_active_coupling_features(args))
+
     def test_coupler_config(self):
         args = _parse("--coupler-config", "coupler.yaml")
         self.assertIn("--coupler-config", extract_active_coupling_features(args))
 
     def test_multiple_coupling_flags(self):
-        args = _parse("--couple-to-elmer-ice", "--couple-to-icon-atmo")
+        args = _parse("--couple-to-elmer-ice", "--couple-to-icon-atmo", "--couple-to-icon-land")
         features = extract_active_coupling_features(args)
         self.assertIn("--couple-to-elmer-ice", features)
         self.assertIn("--couple-to-icon-atmo", features)
+        self.assertIn("--couple-to-icon-land", features)
 
 
 class TestValidateShadingCouplingCompat(unittest.TestCase):

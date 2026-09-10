@@ -49,6 +49,11 @@ class CouplerExitCode(Enum):
     NO_DATA_RECEIVED = "no_data_received"
     """No data was received from the other component at this point in time."""
 
+    UNKNOWN_FIELD = "unknown_field"
+    """No field with this name is registered for this component (e.g. a stale name, or its Field
+    definition was commented out in get_field_definitions() while data for it is still being passed
+    in). put()/get() log a warning and skip the operation rather than fail."""
+
 
 class Coupler(ABC, Generic[CouplerExchangeType]):
     """
@@ -174,7 +179,22 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         """
         raise NotImplementedError("_map_exchange_type must be implemented in subclasses.")
 
-    @abstractmethod
+    def _registered_field_names(self, component_name: str) -> set[str]:
+        """
+        Names of all fields registered for a coupled component, regardless of exchange type.
+
+        Used by put()/get() to reject a field name that was never declared by the component (e.g. after a
+        rename in the coupling layer), instead of a backend silently discarding or defaulting it.
+
+        @param[in] component_name name of the component
+
+        @returns registered field names, empty if the component is not coupled
+        """
+        if not self.has_coupling_to(component_name):
+            return set()
+        component = self._coupled_components[component_name]
+        return {f.name for f in self._fields.filter(lambda f: f.coupled_component == component)}
+
     def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Put data to another component
@@ -185,9 +205,22 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         @returns exit code, or None if put successfully completed.
         """
-        raise NotImplementedError("put method must be implemented in subclasses.")
+        if field_name not in self._registered_field_names(component_name):
+            logger.warning(
+                f"Cannot put data for field '{field_name}': component '{component_name}' has no field with "
+                f"that name (skipping this put). Registered fields: "
+                f"{sorted(self._registered_field_names(component_name))}."
+            )
+            return CouplerExitCode.UNKNOWN_FIELD
+        return self._put(component_name, field_name, data)
 
     @abstractmethod
+    def _put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
+        """
+        Backend-specific implementation of put(), only called once field_name is known to be registered.
+        """
+        raise NotImplementedError("_put method must be implemented in subclasses.")
+
     def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Get data from another component
@@ -197,7 +230,21 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         @returns tuple of (field data, exit code). Exit code is None if get successfully received data.
         """
-        raise NotImplementedError("get method must be implemented in subclasses.")
+        if field_name not in self._registered_field_names(component_name):
+            logger.warning(
+                f"Cannot get data for field '{field_name}': component '{component_name}' has no field with "
+                f"that name (skipping this get). Registered fields: "
+                f"{sorted(self._registered_field_names(component_name))}."
+            )
+            return None, CouplerExitCode.UNKNOWN_FIELD
+        return self._get(component_name, field_name)
+
+    @abstractmethod
+    def _get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
+        """
+        Backend-specific implementation of get(), only called once field_name is known to be registered.
+        """
+        raise NotImplementedError("_get method must be implemented in subclasses.")
 
     def get_field_names(self, component_name: str, exchange_type: GenericExchangeType) -> set[str]:
         """

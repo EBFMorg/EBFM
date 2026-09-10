@@ -109,15 +109,25 @@ def _unstructured_grid():
     }
 
 
-def _write_single_step(outdir, grid):
+def _write_single_step(outdir, grid, extra_out=None):
     """
     Run the writer for a one-step simulation and return the closed output file.
 
     With freqout=1 and tn=1 the single call at t=0 creates the file, defines the
     variables, writes time index 0 and closes the file again.
+
+    @param[in] outdir directory to write the NetCDF file into
+    @param[in] grid structured or unstructured grid dict (_structured_grid()/_unstructured_grid())
+    @param[in] extra_out optional dict merged into the fabricated OUT before writing, for keys
+                         _fake_out() doesn't declare (e.g. the conditional "ebm_diagnostics")
+
+    @returns (path to the written NetCDF file, the writer's outfile dict, the OUT dict
+             actually written)
     """
     column = _make_column()
     out = _fake_out(GPSUM, NL)
+    if extra_out:
+        out.update(extra_out)
     io = {"outdir": str(outdir), "freqout": 1, "output_type": _NETCDF_OUTPUT}
     time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
 
@@ -190,6 +200,31 @@ class TestNetCDFOutputSmoke(unittest.TestCase):
                 flat = sub_t.reshape(NY * NX, NL)
                 np.testing.assert_allclose(flat[list(GLACIER_INDICES), :], out["subT"])
                 self.assertEqual(sub_t.count(), GPSUM * NL)
+
+    def test_ebm_diagnostics_written_when_coupled_to_icon_land(self):
+        """
+        When coupled to ICON-Land, OUT["ebm_diagnostics"] (LOOP_EBM_icon_land's
+        diagnostic dict) is unpacked onto the ebm_Tsurf/ebm_melt/ebm_Emelt output
+        variables instead of being read as flat OUT["ebm_<name>"] keys.
+        """
+        ebm_diagnostics = {
+            "Tsurf": np.arange(GPSUM, dtype=np.float64) + 250.0,
+            "melt": np.arange(GPSUM, dtype=np.float64) * 1e-3,
+            "Emelt": np.arange(GPSUM, dtype=np.float64) * 10.0,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path, outfile, _ = _write_single_step(
+                tmp, _structured_grid(), extra_out={"ebm_diagnostics": ebm_diagnostics}
+            )
+
+            varnames = [entry[0] for entry in outfile["varsout"]]
+            self.assertIn("ebm_Tsurf", varnames)
+            self.assertIn("ebm_melt", varnames)
+            self.assertIn("ebm_Emelt", varnames)
+
+            with Dataset(path) as nc:
+                for varname, key in (("ebm_Tsurf", "Tsurf"), ("ebm_melt", "melt"), ("ebm_Emelt", "Emelt")):
+                    np.testing.assert_allclose(nc[varname][0].compressed(), ebm_diagnostics[key])
 
     def test_layer_count_comes_from_the_column_not_the_grid(self):
         """

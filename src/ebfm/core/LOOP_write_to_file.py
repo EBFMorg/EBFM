@@ -177,6 +177,14 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
             ["subW", "mm w.e.", "sample", "Irreducible water"],
             ["subZ", "m", "sample", "Layer thickness"],
         ]
+        if "ebm_diagnostics" in OUT:
+            # Coupled to ICON-Land: Tsurf/melt are taken from ICON-Land, EBFM's own energy
+            # balance is kept as a diagnostic
+            OUTFILE["varsout"] += [
+                ["ebm_Tsurf", "K", "mean", "Surface temperature of EBFM's own energy balance"],
+                ["ebm_melt", "m w.e.", "sum", "Melt of EBFM's own energy balance"],
+                ["ebm_Emelt", "W m^-2", "mean", "Melt energy of EBFM's own energy balance"],
+            ]
 
         io["varsout"] = [
             {"varname": v[0], "units": v[1], "type": v[2], "description": v[3]} for v in OUTFILE["varsout"]
@@ -185,9 +193,15 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
     # Update OUTFILE.TEMP with variables to be stored
     for entry in OUTFILE["varsout"]:
         varname, var_type = entry[0], entry[2]
-        # "shade" is written as a fraction but sourced from the boolean OUT["is_shaded"]
-        source_key = "is_shaded" if varname == "shade" else varname
-        temp_long = np.float64(OUT[source_key])
+        if varname == "shade":
+            # "shade" is written as a fraction but sourced from the boolean OUT["is_shaded"]
+            source = OUT["is_shaded"]
+        elif varname.startswith("ebm_"):
+            # EBFM's own energy balance, kept as a diagnostic under OUT["ebm_diagnostics"]
+            source = OUT["ebm_diagnostics"][varname.removeprefix("ebm_")]
+        else:
+            source = OUT[varname]
+        temp_long = np.float64(source)
 
         # Initialize TEMP storage
         if t % io["freqout"] == 0:

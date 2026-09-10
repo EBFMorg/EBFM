@@ -20,7 +20,7 @@ from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, number_of_columns, validate_grid
 from .restart import validate_all_variables_present, validate_variable_shape
 
-from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
+from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY, WATER_DENSITY
 
 import logging
 
@@ -167,7 +167,7 @@ def init_constants():
     C["Dfreshsnow"] = 350.0  # Density of fresh snow (kg m-3)
     C["Dice"] = 900.0  # Density of ice (kg m-3)
     C["Dfirn"] = 500.0  # Density of firn (kg m-3)
-    C["Dwater"] = 1000.0  # Density of water (kg m-3)
+    C["Dwater"] = WATER_DENSITY  # Density of water (kg m-3)
     C["Ec"] = 60000  # Gravitational densification factor
     C["Eg"] = 42400  # Gravitational densification factor
     C["Trunoff"] = 0.001  # Slush runoff time-scale (days)
@@ -623,6 +623,7 @@ def init_initial_conditions(
     ######################################################
     OUT["smb_cumulative"] = np.zeros((gpsum,))  # Cumulative climatic mass balance (m w.e.)
     OUT["smb"] = np.zeros((gpsum,))  # Climatic mass balance (m w.e.)
+    OUT["runoff"] = np.zeros((gpsum,))  # Runoff from the firn column (m w.e. per timestep)
     OUT["subK"] = np.zeros((gpsum, nl))  # Vertical conductivity (m2 s-1)
     OUT["subCeff"] = np.zeros((gpsum, nl))  # Vertical effective heat capacity (J m-3 K)
     OUT["subWvol"] = np.zeros((gpsum, nl))  # Vertical volumetric water content (fraction)

@@ -14,6 +14,13 @@ if coupling_supported:
     from ebfm.coupling.couplers.yacCoupler import YACCoupler
 
 
+class _StubTime:
+    """Stand-in for TimeConfig: get_field_definitions only ever calls time_step_iso8601()."""
+
+    def time_step_iso8601(self) -> str:
+        return "PT1H"
+
+
 class _StubComponent(Component):
     """
     Component that only exists to give Field.coupled_component a name; it never exchanges data.
@@ -93,6 +100,36 @@ class TestYACCouplerFieldRegistration(unittest.TestCase):
         self.assertIn("shared", message)
         self.assertIn("partner_a", message)
         self.assertIn("partner_b", message)
+
+    def test_elmer_ice_and_icon_land_field_definitions_do_not_collide(self):
+        """
+        Regression test using the real component classes rather than _StubComponent: ElmerIce and
+        IconLand used to both declare "smb" and "runoff" as field names, so enabling
+        --couple-to-elmer-ice and --couple-to-icon-land together tripped this guard. Their
+        coupling-layer names are now disambiguated ("_to_elmer" / "_to_icon_land", see
+        elmer_ice.py/icon_land.py) while staying plain "smb"/"runoff" inside EBFM, so registering
+        both components together must succeed without hitting the double-registration guard.
+        """
+        from ebfm.coupling.components.elmer_ice import ElmerIce
+        from ebfm.coupling.components.icon_land import IconLand
+
+        coupler, _ = _bare_yac_coupler([])
+        # Unlike _field()'s synthetic fields, ElmerIce's and IconLand's real fields carry metadata, which
+        # construct_yac_field reports to self.interface; a Mock stands in for the live YAC interface bare_yac_coupler
+        # doesn't have.
+        coupler.interface = mock.Mock()
+        elmer_ice = ElmerIce(coupler=coupler, name="elmer_ice")
+        icon_land = IconLand(coupler=coupler, name="icon_land")
+        coupler._coupled_components = {"elmer_ice": elmer_ice, "icon_land": icon_land}
+
+        field_definitions = elmer_ice.get_field_definitions(_StubTime()) | icon_land.get_field_definitions(_StubTime())
+
+        # Unlike the other tests here, these fields carry metadata, so construct_yac_field also reads
+        # component_name/grid_name/name off the created field; a Mock() (rather than object()) answers those.
+        with mock.patch.object(yac.Field, "create", side_effect=lambda *a, **k: mock.Mock()):
+            coupler._construct_coupling_pre_sync(field_definitions)  # must not raise
+
+        self.assertEqual(len(coupler._fields.all()), len(field_definitions.all()))
 
 
 if __name__ == "__main__":
