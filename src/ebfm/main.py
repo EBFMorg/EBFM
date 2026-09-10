@@ -201,7 +201,7 @@ def _main_impl():
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
         # Cache GHF conductance to make it publicly available
-        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], OUT["hcap_sub"] = LOOP_EBM_GHF.conductance(OUT)
 
         # Send the surface/firn state of the EBFM grid cells to ICON-Land (JSBACH). Receiving the
         # resulting surface energy balance is deferred until after the icon_atmo exchange below, so
@@ -211,13 +211,12 @@ def _main_impl():
             icon_land = coupler.get_component("icon_land")
             logger.info("Sending state to ICON-Land")
             logger.debug("Started...")
-            _, ghf_cond, hcap_sub = LOOP_EBM_GHF.conductance(OUT)
             data_to_icon_land = {
                 "icefract": grid["mask"].astype(float),
                 "albedo": OUT["albedo"],
                 "t_sub": OUT["subT"][:, 1],
-                "ghf_cond": ghf_cond,
-                "hcap_sub": hcap_sub,
+                "ghf_cond": OUT["ghf_cond"],
+                "hcap_sub": OUT["hcap_sub"],
                 "runoff": OUT["runoff"],
                 "smb": OUT["smb"],
                 "snowmass": OUT["snowmass"],
