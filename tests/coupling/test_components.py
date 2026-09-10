@@ -136,9 +136,11 @@ class TestIconAtmoComponent(unittest.TestCase):
 
         # Check that the data is received correctly
         self.assertIsNotNone(data_from_icon)
-        expected_pr = icon_atmo._map_pr_to_ebfm(np.full(self.grid_dict["x"].shape, pr_fake_field.value))
+        expected_pr = icon_atmo._map_mass_flux_to_ebfm(np.full(self.grid_dict["x"].shape, pr_fake_field.value))
         self.assertTrue(np.array_equal(data_from_icon["pr"], expected_pr))
-        expected_pr_snow = icon_atmo._map_pr_to_ebfm(np.full(self.grid_dict["x"].shape, pr_snow_fake_field.value))
+        expected_pr_snow = icon_atmo._map_mass_flux_to_ebfm(
+            np.full(self.grid_dict["x"].shape, pr_snow_fake_field.value)
+        )
         self.assertTrue(np.array_equal(data_from_icon["pr_snow"], expected_pr_snow))
 
     def test_fallback_values(self):
@@ -175,7 +177,7 @@ class TestIconAtmoComponent(unittest.TestCase):
         # Check that the data is received correctly
         self.assertIsNotNone(data_from_icon)
         # For 'pr' data is given; so no fallback should be used.
-        expected_pr = icon_atmo._map_pr_to_ebfm(np.full(self.grid_dict["x"].shape, pr_fake_field.value))
+        expected_pr = icon_atmo._map_mass_flux_to_ebfm(np.full(self.grid_dict["x"].shape, pr_fake_field.value))
         self.assertTrue(np.array_equal(data_from_icon["pr"], expected_pr))
         # For 'pr_snow' data is not given; so fallback should be used.
         print(data_from_icon["pr_snow"])

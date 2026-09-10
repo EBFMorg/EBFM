@@ -106,11 +106,6 @@ class IconAtmo(Component):
             }
         )
 
-    # We need to convert precipitation received from ICON from kg / m^2 / s
-    # to m w.e. (per EBFM timestep)
-    def _map_pr_to_ebfm(self, precipitation: np.ndarray) -> np.ndarray:
-        return self._map_mass_flux_to_ebfm(precipitation)
-
     def _exchange(
         self,
         data_to_exchange: Mapping[str, np.ndarray],
@@ -134,11 +129,13 @@ class IconAtmo(Component):
         # Put data to IconAtmo: nothing (surface fields like albedo and ice fraction go to IconLand)
 
         # Get data from IconAtmo
-        pr = self._get_if_coupled("pr", transform=self._map_pr_to_ebfm, fallback_values=fallback_values)
+        pr = self._get_if_coupled("pr", transform=self._map_mass_flux_to_ebfm, fallback_values=fallback_values)
         if pr is not None:
             received_data["pr"] = pr
 
-        pr_snow = self._get_if_coupled("pr_snow", transform=self._map_pr_to_ebfm, fallback_values=fallback_values)
+        pr_snow = self._get_if_coupled(
+            "pr_snow", transform=self._map_mass_flux_to_ebfm, fallback_values=fallback_values
+        )
         if pr_snow is not None:
             received_data["pr_snow"] = pr_snow
 
