@@ -153,7 +153,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
 
     # When coupled to ICON-Land, the surface energy balance computed by JSBACH on its glacier
     # tile drives the firn model; EBFM's own energy balance computed above is kept as a
-    # diagnostic (OUT["ebm_*"]) for comparison.
+    # diagnostic (OUT["ebm_diagnostics"]) for comparison.
     if LOOP_EBM_icon_land.is_available(IN, cpl):
         OUT = LOOP_EBM_icon_land.main(C, OUT, IN, time2)
 
