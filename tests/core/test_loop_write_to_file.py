@@ -29,29 +29,58 @@ def _make_column():
     return ColumnDiscretizationConfig(nl=NL, split=(2,))
 
 
-class _AutoOut(dict):
-    """
-    An OUT dict that fabricates plausible data for whatever the writer asks for.
+# Mirrors the varname column of LOOP_write_to_file.main()'s varsout list, with
+# "shade" replaced by "is_shaded": the writer reads shade's data from that key
+# (see the source_key remap in main()), not from "shade" itself.
+# Update this alongside varsout when a variable is added, renamed or removed -
+# a stale entry here surfaces as a KeyError naming the missing key.
+_OUTPUT_VARIABLES = (
+    "smb",
+    "Tsurf",
+    "climT",
+    "climP",
+    "climC",
+    "climRH",
+    "climWS",
+    "climPres",
+    "climrain",
+    "climsnow",
+    "snowmass",
+    "smb_cumulative",
+    "melt",
+    "refr",
+    "runoff",
+    "runoff_surf",
+    "runoff_slush",
+    "SWin",
+    "SWout",
+    "LWin",
+    "LWout",
+    "SHF",
+    "LHF",
+    "GHF",
+    "surfH",
+    "albedo",
+    "is_shaded",
+    "subD",
+    "subT",
+    "subS",
+    "subW",
+    "subZ",
+)
 
-    The writer declares its own variable list, so deriving the data from the
-    requested key keeps these tests exercising every output variable, including
-    ones added later.
-    """
 
-    def __init__(self, gpsum, nl):
-        super().__init__()
-        self._gpsum = gpsum
-        self._nl = nl
-
-    def __missing__(self, key):
+def _fake_out(gpsum, nl):
+    """Build an OUT dict with plausible data for every variable the writer declares."""
+    out = {}
+    for key in _OUTPUT_VARIABLES:
         if key.startswith("sub"):
-            value = np.arange(self._gpsum * self._nl, dtype=np.float64).reshape(self._gpsum, self._nl)
+            out[key] = np.arange(gpsum * nl, dtype=np.float64).reshape(gpsum, nl)
         elif key == "is_shaded":
-            value = np.zeros(self._gpsum, dtype=bool)
+            out[key] = np.zeros(gpsum, dtype=bool)
         else:
-            value = np.arange(self._gpsum, dtype=np.float64)
-        self[key] = value
-        return value
+            out[key] = np.arange(gpsum, dtype=np.float64)
+    return out
 
 
 def _structured_grid():
@@ -88,7 +117,7 @@ def _write_single_step(outdir, grid):
     variables, writes time index 0 and closes the file again.
     """
     column = _make_column()
-    out = _AutoOut(GPSUM, NL)
+    out = _fake_out(GPSUM, NL)
     io = {"outdir": str(outdir), "freqout": 1, "output_type": _NETCDF_OUTPUT}
     time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
 
