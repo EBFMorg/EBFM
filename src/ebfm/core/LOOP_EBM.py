@@ -41,7 +41,8 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     # SOLVE THE SURFACE ENERGY BALANCE
     ###########################################################
 
-    # Compute SWin, SWout, LWin and GHF (independent of surface temperature)
+    # Compute SWin, SWout, LWin (independent of surface temperature); GHF conductance comes
+    # from OUT's per-time-step cache.
     OUT = LOOP_EBM_insolation.main(grid, time2, OUT)
     SWin, OUT = LOOP_EBM_SWin.main(C, OUT, IN, grid, cpl)
 
@@ -52,7 +53,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
         LWin = LOOP_EBM_LWin.main(C, IN)
 
     SWout, OUT = LOOP_EBM_SWout.main(C, time2, OUT, SWin)
-    GHF_k, GHF_C = LOOP_EBM_GHF.conductance(OUT)
+    GHF_k, GHF_C = OUT["ghf_k"], OUT["ghf_cond"]
 
     # Precompute reusable constant arrays
     gpsum = OUT["subT"].shape[0]
