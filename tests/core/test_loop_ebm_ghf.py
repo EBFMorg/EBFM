@@ -103,13 +103,13 @@ def _make_out():
 class TestCacheIsValid(unittest.TestCase):
     def test_valid_when_cache_matches_fresh_computation(self):
         OUT = _make_out()
-        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], OUT["hcap_sub"] = LOOP_EBM_GHF.conductance(OUT)
 
         self.assertTrue(LOOP_EBM_GHF.cache_is_valid(OUT))
 
     def test_invalid_when_subsurface_state_changes_after_caching(self):
         OUT = _make_out()
-        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], OUT["hcap_sub"] = LOOP_EBM_GHF.conductance(OUT)
 
         # Simulate LOOP_SNOW.main updating the firn column without the cache being refreshed.
         OUT["subD"] = OUT["subD"] + 50.0
@@ -120,7 +120,7 @@ class TestCacheIsValid(unittest.TestCase):
 class TestMainRejectsStaleCache(unittest.TestCase):
     def test_main_runs_with_valid_cache(self):
         OUT = _make_out()
-        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], OUT["hcap_sub"] = LOOP_EBM_GHF.conductance(OUT)
         cond = np.ones(2, dtype=bool)
 
         GHF = LOOP_EBM_GHF.main(OUT["subT"][:, 1] - 1.0, OUT, cond, OUT["ghf_k"], OUT["ghf_cond"])
@@ -129,7 +129,7 @@ class TestMainRejectsStaleCache(unittest.TestCase):
 
     def test_main_raises_on_stale_cache(self):
         OUT = _make_out()
-        OUT["ghf_k"], OUT["ghf_cond"], _ = LOOP_EBM_GHF.conductance(OUT)
+        OUT["ghf_k"], OUT["ghf_cond"], OUT["hcap_sub"] = LOOP_EBM_GHF.conductance(OUT)
         cond = np.ones(2, dtype=bool)
 
         # Simulate LOOP_SNOW.main updating the firn column without the cache being refreshed.
