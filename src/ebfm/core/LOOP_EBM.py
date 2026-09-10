@@ -52,10 +52,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
         LWin = LOOP_EBM_LWin.main(C, IN)
 
     SWout, OUT = LOOP_EBM_SWout.main(C, time2, OUT, SWin)
-    GHF_k = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2
-    GHF_C = (GHF_k[:, 0] * OUT["subZ"][:, 0] + 0.5 * GHF_k[:, 1] * OUT["subZ"][:, 1]) / (
-        OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1]
-    ) ** 2
+    GHF_k, GHF_C = LOOP_EBM_GHF.conductance(OUT)
 
     # Precompute reusable constant arrays
     gpsum = OUT["subT"].shape[0]
