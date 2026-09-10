@@ -217,8 +217,8 @@ def _main_impl():
                 "t_sub": OUT["subT"][:, 1],
                 "ghf_cond": OUT["ghf_cond"],
                 "hcap_sub": OUT["hcap_sub"],
-                "runoff": OUT["runoff"],
-                "smb": OUT["smb"],
+                "runoff_to_icon_land": OUT["runoff"],
+                "smb_to_icon_land": OUT["smb"],
                 "snowmass": OUT["snowmass"],
             }
             icon_land.exchange(data_to_icon_land, target_keys=set())
@@ -294,9 +294,9 @@ def _main_impl():
             logger.debug("Started...")
 
             data_to_elmer = {
-                "smb": OUT["smb"],
+                "smb_to_elmer": OUT["smb"],
                 "T_ice": OUT["T_ice"],
-                "runoff": OUT["runoff"],
+                "runoff_to_elmer": OUT["runoff"],
             }
             data_from_elmer = elmer_ice.exchange(data_to_elmer)
             logger.debug("Done.")

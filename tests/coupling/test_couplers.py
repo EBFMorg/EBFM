@@ -101,12 +101,14 @@ class TestYACCouplerFieldRegistration(unittest.TestCase):
         self.assertIn("partner_a", message)
         self.assertIn("partner_b", message)
 
-    def test_elmer_ice_and_icon_land_reject_overlapping_field_definitions(self):
+    def test_elmer_ice_and_icon_land_field_definitions_do_not_collide(self):
         """
-        Regression test using the real component classes rather than _StubComponent: nothing stops
-        --couple-to-elmer-ice and --couple-to-icon-land from both being enabled at once, and their
-        field definitions currently overlap (e.g. both declare "smb"), so this must be rejected
-        instead of silently registering the same field name with YAC twice.
+        Regression test using the real component classes rather than _StubComponent: ElmerIce and
+        IconLand used to both declare "smb" and "runoff" as field names, so enabling
+        --couple-to-elmer-ice and --couple-to-icon-land together tripped this guard. Their
+        coupling-layer names are now disambiguated ("_to_elmer" / "_to_icon_land", see
+        elmer_ice.py/icon_land.py) while staying plain "smb"/"runoff" inside EBFM, so registering
+        both components together must succeed without hitting the double-registration guard.
         """
         from ebfm.coupling.components.elmer_ice import ElmerIce
         from ebfm.coupling.components.icon_land import IconLand
@@ -125,14 +127,9 @@ class TestYACCouplerFieldRegistration(unittest.TestCase):
         # Unlike the other tests here, these fields carry metadata, so construct_yac_field also reads
         # component_name/grid_name/name off the created field; a Mock() (rather than object()) answers those.
         with mock.patch.object(yac.Field, "create", side_effect=lambda *a, **k: mock.Mock()):
-            with self.assertRaises(AssertionError) as context:
-                coupler._construct_coupling_pre_sync(field_definitions)
+            coupler._construct_coupling_pre_sync(field_definitions)  # must not raise
 
-        # Whichever field name collides first is up to FieldSet's iteration order, which isn't
-        # guaranteed, so only check that both components are named, not which field it was.
-        message = str(context.exception)
-        self.assertIn("elmer_ice", message)
-        self.assertIn("icon_land", message)
+        self.assertEqual(len(coupler._fields.all()), len(field_definitions.all()))
 
 
 if __name__ == "__main__":

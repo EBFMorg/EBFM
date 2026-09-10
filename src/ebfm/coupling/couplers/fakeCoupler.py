@@ -86,7 +86,7 @@ class FakeCoupler(Coupler):
 
         coupler.setup(grid, time)
         data, err = coupler.get("elmer_ice", "surface_elevation")   # returns np.full(n_points, 500.0)
-        coupler.put("elmer_ice", "smb", smb_data)   # silently discarded
+        coupler.put("elmer_ice", "smb_to_elmer", smb_data)   # silently discarded
     """
 
     def __init__(self, coupling_config: CouplingConfig, fake_fields: Iterable[FakeFieldConfig] = _DEFAULT_FAKE_FIELDS):

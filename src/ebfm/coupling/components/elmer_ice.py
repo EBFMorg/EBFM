@@ -25,7 +25,7 @@ class ElmerIce(Component):
         # All data is exchanged at once, i.e. the caller has to send and receive everything in a single call.
         ExchangeKeySet(
             name="exchange",
-            source_keys={"T_ice", "smb", "runoff"},
+            source_keys={"T_ice", "smb_to_elmer", "runoff_to_elmer"},
             target_keys={
                 "surface_elevation",
                 # Enable together with their field definitions and their gets in _exchange below.
@@ -54,14 +54,14 @@ class ElmerIce(Component):
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 Field(
-                    name="smb",
+                    name="smb_to_elmer",
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Surface mass balance",
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 Field(
-                    name="runoff",
+                    name="runoff_to_elmer",
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Runoff",
@@ -120,8 +120,8 @@ class ElmerIce(Component):
 
         # Put data to Elmer/Ice
         self._put_if_coupled("T_ice", data_to_exchange)
-        self._put_if_coupled("smb", data_to_exchange, transform=map_per_timestep_to_per_year)
-        self._put_if_coupled("runoff", data_to_exchange, transform=map_per_timestep_to_per_year)
+        self._put_if_coupled("smb_to_elmer", data_to_exchange, transform=map_per_timestep_to_per_year)
+        self._put_if_coupled("runoff_to_elmer", data_to_exchange, transform=map_per_timestep_to_per_year)
 
         # Get data from Elmer/Ice
         surface_elevation = self._get_if_coupled("surface_elevation", fallback_values=fallback_values)

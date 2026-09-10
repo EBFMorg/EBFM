@@ -36,7 +36,16 @@ class IconLand(Component):
 
     surface_state = ExchangeKeySet(
         name="surface state",
-        source_keys={"icefract", "albedo", "t_sub", "ghf_cond", "hcap_sub", "runoff", "smb", "snowmass"},
+        source_keys={
+            "icefract",
+            "albedo",
+            "t_sub",
+            "ghf_cond",
+            "hcap_sub",
+            "runoff_to_icon_land",
+            "smb_to_icon_land",
+            "snowmass",
+        },
     )
     energy_balance = ExchangeKeySet(
         name="surface energy balance",
@@ -91,14 +100,14 @@ class IconLand(Component):
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 Field(
-                    name="runoff",
+                    name="runoff_to_icon_land",
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Runoff from the firn column (kg m-2 s-1)",
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 Field(
-                    name="smb",
+                    name="smb_to_icon_land",
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Climatic surface mass balance (kg m-2 s-1)",
@@ -154,6 +163,8 @@ class IconLand(Component):
                  "evapotrans" (m w.e. per EBFM time step, evapotrans negative upward), only the fields
                  that are actually coupled; empty for surface_state
         """
+        received_data: dict[str, np.ndarray] = {}
+
         if requested_key_set == self.surface_state:
             from ebfm.core.constants import WATER_DENSITY
 
@@ -162,22 +173,21 @@ class IconLand(Component):
             self._put_if_coupled("t_sub", data_to_exchange)
             self._put_if_coupled("ghf_cond", data_to_exchange)
             self._put_if_coupled("hcap_sub", data_to_exchange)
-            self._put_if_coupled("runoff", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
-            self._put_if_coupled("smb", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
+            self._put_if_coupled("runoff_to_icon_land", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
+            self._put_if_coupled("smb_to_icon_land", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
             self._put_if_coupled("snowmass", data_to_exchange, transform=lambda x: x * WATER_DENSITY)
-            return {}
+        elif requested_key_set == self.energy_balance:
+            t_srf = self._get_if_coupled("t_srf", fallback_values=fallback_values)
+            if t_srf is not None:
+                received_data["t_srf"] = t_srf
 
-        # exchange() only calls _exchange for an accepted key set, so this is energy_balance.
-
-        received_data: dict[str, np.ndarray] = {}
-
-        t_srf = self._get_if_coupled("t_srf", fallback_values=fallback_values)
-        if t_srf is not None:
-            received_data["t_srf"] = t_srf
-
-        for name in ("melt", "evapotrans"):
-            data = self._get_if_coupled(name, transform=self._map_mass_flux_to_ebfm, fallback_values=fallback_values)
-            if data is not None:
-                received_data[name] = data
+            for name in ("melt", "evapotrans"):
+                data = self._get_if_coupled(
+                    name, transform=self._map_mass_flux_to_ebfm, fallback_values=fallback_values
+                )
+                if data is not None:
+                    received_data[name] = data
+        else:
+            raise RuntimeError(f"Unexpected {requested_key_set=}")
 
         return received_data

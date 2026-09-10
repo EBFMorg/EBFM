@@ -293,9 +293,9 @@ class TestElmerIceComponent(unittest.TestCase):
     grid_dict = {"x": np.array([0])}
 
     data_to_elmer = {
-        "smb": np.array([1.0]),
+        "smb_to_elmer": np.array([1.0]),
         "T_ice": np.array([260.0]),
-        "runoff": np.array([0.5]),
+        "runoff_to_elmer": np.array([0.5]),
     }
 
     def _create_coupler(self) -> tuple[RecordingFakeCoupler, FakeFieldConfig]:
@@ -328,7 +328,7 @@ class TestElmerIceComponent(unittest.TestCase):
         self.assertEqual(list(data_from_elmer), ["surface_elevation"])
         expected_surface_elevation = np.full(self.grid_dict["x"].shape, surface_elevation_fake_field.value)
         self.assertTrue(np.array_equal(data_from_elmer["surface_elevation"], expected_surface_elevation))
-        self.assertEqual(sorted(coupler.put_fields), ["T_ice", "runoff", "smb"])
+        self.assertEqual(sorted(coupler.put_fields), ["T_ice", "runoff_to_elmer", "smb_to_elmer"])
         self.assertEqual(coupler.get_fields, ["surface_elevation"])
 
     def test_split_exchange_is_rejected(self):
@@ -346,7 +346,7 @@ class TestElmerIceComponent(unittest.TestCase):
         # Receiving without sending.
         with self.assertRaises(ValueError) as context:
             elmer_ice.exchange({}, target_keys={"surface_elevation"})
-        self.assertIn("missing source keys: {'T_ice', 'runoff', 'smb'}", str(context.exception))
+        self.assertIn("missing source keys: {'T_ice', 'runoff_to_elmer', 'smb_to_elmer'}", str(context.exception))
 
         # Nothing is communicated if the requested keys are rejected.
         self.assertEqual(coupler.put_fields, [])
@@ -574,8 +574,8 @@ class TestIconLandComponent(unittest.TestCase):
         "t_sub": np.array([250.0, 255.0, 260.0]),
         "ghf_cond": np.array([1.0, 2.0, 3.0]),
         "hcap_sub": np.array([5e4, 1e5, 1.5e5]),
-        "runoff": np.array([0.0, 1e-3, 2e-3]),
-        "smb": np.array([1e-3, -1e-3, 0.0]),
+        "runoff_to_icon_land": np.array([0.0, 1e-3, 2e-3]),
+        "smb_to_icon_land": np.array([1e-3, -1e-3, 0.0]),
         "snowmass": np.array([0.5, 0.0, 2.0]),
     }
 
@@ -606,15 +606,15 @@ class TestIconLandComponent(unittest.TestCase):
                 "t_sub",
                 "ghf_cond",
                 "hcap_sub",
-                "runoff",
-                "smb",
+                "runoff_to_icon_land",
+                "smb_to_icon_land",
                 "snowmass",
                 "t_srf",
                 "melt",
                 "evapotrans",
             },
         )
-        for name in ("t_sub", "ghf_cond", "hcap_sub", "runoff", "smb", "snowmass"):
+        for name in ("t_sub", "ghf_cond", "hcap_sub", "runoff_to_icon_land", "smb_to_icon_land", "snowmass"):
             self.assertTrue(coupler.has_field("icon_land", name, GenericExchangeType.SOURCE))
 
     def _create_coupler(self) -> RecordingFakeCoupler:
@@ -647,7 +647,16 @@ class TestIconLandComponent(unittest.TestCase):
         self.assertEqual(received_data, {})
         self.assertEqual(
             sorted(coupler.put_fields),
-            ["albedo", "ghf_cond", "hcap_sub", "icefract", "runoff", "smb", "snowmass", "t_sub"],
+            [
+                "albedo",
+                "ghf_cond",
+                "hcap_sub",
+                "icefract",
+                "runoff_to_icon_land",
+                "smb_to_icon_land",
+                "snowmass",
+                "t_sub",
+            ],
         )
         self.assertEqual(coupler.get_fields, [])
 
