@@ -12,6 +12,7 @@ from ebfm.core import (
     LOOP_general_functions,
     LOOP_climate_forcing,
     LOOP_EBM,
+    LOOP_EBM_GHF,
     LOOP_SNOW,
     LOOP_mass_balance,
 )
@@ -198,6 +199,9 @@ def _main_impl():
         time["TCUR"] = LOOP_general_functions.print_time(t, time["ts"], time["dt"])
 
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
+
+        # Cache GHF conductance to make it publicly available
+        OUT["ghf_k"], OUT["ghf_cond"] = LOOP_EBM_GHF.conductance(OUT)
 
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):

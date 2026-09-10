@@ -5,6 +5,8 @@
 """GHF: ground heat flux, the conductive heat flux between the surface and the shallow
 subsurface, driven by the temperature gradient across the top two layers."""
 
+import numpy as np
+
 
 def conductance(OUT):
     """
@@ -26,6 +28,17 @@ def conductance(OUT):
     return GHF_k, GHF_C
 
 
+def cache_is_valid(OUT):
+    """
+    True if OUT["ghf_k"]/["ghf_cond"] match a fresh call to conductance(OUT).
+
+    Call this only from inside an `assert`, so the recompute it performs is compiled out
+    entirely under `python -O`, the same as the check itself.
+    """
+    GHF_k, GHF_C = conductance(OUT)
+    return np.array_equal(GHF_k, OUT["ghf_k"]) and np.array_equal(GHF_C, OUT["ghf_cond"])
+
+
 def main(Tsurf, OUT, cond, GHF_k, GHF_C):
     """
     Calculates the subsurface heat flux (GHF) based on effective conductivity
@@ -43,6 +56,7 @@ def main(Tsurf, OUT, cond, GHF_k, GHF_C):
     Returns:
         numpy.ndarray: Subsurface heat flux (GHF) for the specified points.
     """
+    assert cache_is_valid(OUT), "OUT['ghf_k']/['ghf_cond'] are stale"
 
     ###########################################################
     # Subsurface Heat Flux (bulk equation)
