@@ -352,6 +352,27 @@ class TestElmerIceComponent(unittest.TestCase):
         self.assertEqual(coupler.put_fields, [])
         self.assertEqual(coupler.get_fields, [])
 
+    def test_put_and_get_warn_and_skip_for_unregistered_field_name(self):
+        """
+        Regression test for a stale name reaching put()/get() directly: after the elmer_ice/icon_land
+        rename, "smb" is no longer a registered field for "elmer_ice" (only "smb_to_elmer" is). A hard
+        failure here would be too strict -- e.g. commenting a Field out of get_field_definitions() to
+        disable it for debugging would then crash every put/get for it, rather than just leaving it
+        unsent/unreceived -- so put()/get() log a warning and skip the operation instead of raising.
+        """
+        coupler, _ = self._create_coupler()
+
+        with self.assertLogs(level="WARNING") as logs:
+            put_result = coupler.put("elmer_ice", "smb", np.array([1.0]))
+        self.assertEqual(put_result, CouplerExitCode.UNKNOWN_FIELD)
+        self.assertTrue(any("smb" in message and "elmer_ice" in message for message in logs.output))
+
+        with self.assertLogs(level="WARNING") as logs:
+            data, err = coupler.get("elmer_ice", "smb")
+        self.assertIsNone(data)
+        self.assertEqual(err, CouplerExitCode.UNKNOWN_FIELD)
+        self.assertTrue(any("smb" in message and "elmer_ice" in message for message in logs.output))
+
 
 class SurfaceEnergyBalanceComponent(Component):
     """

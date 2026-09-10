@@ -202,7 +202,7 @@ class FakeCoupler(Coupler):
         for field in field_definitions:
             self._fields.add(field)
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
+    def _put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Log and discard outgoing data – no actual transfer is performed.
 
@@ -215,7 +215,7 @@ class FakeCoupler(Coupler):
         logger.debug(f"FakeCoupler put: field '{field_name}' -> '{component_name}' (discarded).")
         return None
 
-    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
+    def _get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Return a fake array for the requested field.
 
