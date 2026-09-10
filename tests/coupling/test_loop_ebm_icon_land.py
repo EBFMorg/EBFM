@@ -74,10 +74,10 @@ class TestIconLandEnergyBalance(unittest.TestCase):
         np.testing.assert_allclose(OUT["moist_evaporation"], [0.0, 2e-3])  # limited by melt
         np.testing.assert_allclose(OUT["Emelt"], [0.0, 2e-3 * 1e3 * 0.33e6 / (SECONDS_PER_DAY * dt)])
         # ... EBFM's own are kept as diagnostics ...
-        np.testing.assert_allclose(OUT["ebm_Tsurf"], [255.0, 270.0])
-        np.testing.assert_allclose(OUT["ebm_melt"], [1e-4, 3e-3])
-        np.testing.assert_allclose(OUT["ebm_Emelt"], [1.0, 30.0])
-        np.testing.assert_allclose(OUT["ebm_moist_sublimation"], [2e-4, 0.0])
+        np.testing.assert_allclose(OUT["ebm_diagnostics"]["Tsurf"], [255.0, 270.0])
+        np.testing.assert_allclose(OUT["ebm_diagnostics"]["melt"], [1e-4, 3e-3])
+        np.testing.assert_allclose(OUT["ebm_diagnostics"]["Emelt"], [1.0, 30.0])
+        np.testing.assert_allclose(OUT["ebm_diagnostics"]["moist_sublimation"], [2e-4, 0.0])
         # ... and the flux diagnostics of EBFM's own balance are untouched
         np.testing.assert_allclose(OUT["SHF"], [10.0, 20.0])
 
