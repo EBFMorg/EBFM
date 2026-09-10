@@ -307,7 +307,8 @@ def _main_impl():
             OUT["x"] = grid["x"]
             OUT["y"] = grid["y"]
             if coupler.has_coupling_to("icon_atmo"):
-                grid["z"] = IN["surface_elevation"][0].ravel()
+                # grid["z"] = IN["surface_elevation"][0].ravel() # I am not even sure why this is here but it certainly is a strange shape.
+                grid["z"] = IN["surface_elevation"]
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
