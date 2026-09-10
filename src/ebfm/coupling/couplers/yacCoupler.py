@@ -356,11 +356,20 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         collection_size = 1  # TODO: Dummy value for now; make configurable if needed
 
+        # store registered fields and components
+        registered_by: dict[str, str] = {}
+
         for field in field_definitions:
             assert isinstance(field, Field), f"Expected Field, got {type(field)}"
             assert self.has_coupling_to(
                 field.coupled_component.name
             ), f"Cannot add field '{field.name}' for uncoupled component '{field.coupled_component.name}'."
+            assert field.name not in registered_by, (
+                f"Field '{field.name}' is already coupled by component '{registered_by[field.name]}' "
+                f"(requested again for '{field.coupled_component.name}'). Each field name must be coupled by "
+                "exactly one component."
+            )
+            registered_by[field.name] = field.coupled_component.name
 
             yac_field = YACField.from_field(field).construct_yac_field(
                 self.interface, self.component, collection_size, self.cell_centers
