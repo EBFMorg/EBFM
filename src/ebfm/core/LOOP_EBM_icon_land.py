@@ -11,7 +11,7 @@ step (see ebfm.coupling.components.icon_land): surface temperature, melt and
 evapotranspiration. These drive EBFM's snow/firn model (LOOP_SNOW) and the mass balance.
 EBFM's own energy balance (LOOP_EBM) is still evaluated every time step from the atmospheric
 forcing and the current firn state, but only as a diagnostic: its results are kept under
-OUT["ebm_*"] so that the two energy balances can be compared.
+OUT["ebm_diagnostics"] so that the two energy balances can be compared.
 """
 
 import numpy as np
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # Fields that must have been received from ICON-Land to replace EBFM's energy balance
 REQUIRED_FIELDS = ("lice_t_srf", "lice_melt", "lice_evapotrans")
 
-# Results of EBFM's own energy balance that are kept as diagnostics (OUT["ebm_<name>"])
+# Results of EBFM's own energy balance that are kept as diagnostics (OUT["ebm_diagnostics"][<name>])
 EBM_DIAGNOSTICS = (
     "Tsurf",
     "melt",
@@ -95,7 +95,7 @@ def main(C: dict, OUT: dict, IN: dict, time2: dict) -> dict:
     Replace the results of EBFM's energy balance in OUT by the fields received from ICON-Land.
 
     Must be called after LOOP_EBM has computed EBFM's own energy balance: those results are
-    kept as OUT["ebm_*"] and Tsurf, melt, Emelt and the moist_* terms are set from ICON-Land.
+    kept as OUT["ebm_diagnostics"] and Tsurf, melt, Emelt and the moist_* terms are set from ICON-Land.
     The radiative and turbulent flux diagnostics (SWin, SWout, LWin, LWout, SHF, LHF, GHF) remain
     those of EBFM's own balance; JSBACH's fluxes are available in the ICON-Land output.
 
@@ -109,8 +109,7 @@ def main(C: dict, OUT: dict, IN: dict, time2: dict) -> dict:
     logger.debug("Using the surface energy balance received from ICON-Land...")
 
     # Keep EBFM's own results as diagnostics
-    for name in EBM_DIAGNOSTICS:
-        OUT[f"ebm_{name}"] = OUT[name]
+    OUT["ebm_diagnostics"] = {name: OUT[name] for name in EBM_DIAGNOSTICS}
 
     # Surface temperature: JSBACH limits the glacier surface temperature to the melting point;
     # the time average may not exceed it either, but guard against round-off.
@@ -132,9 +131,10 @@ def main(C: dict, OUT: dict, IN: dict, time2: dict) -> dict:
 
     logger.debug(
         "Surface energy balance ICON-Land vs EBFM (mean over grid): "
-        f"Tsurf {np.mean(Tsurf):.2f} vs {np.mean(OUT['ebm_Tsurf']):.2f} K, "
-        f"melt {np.mean(melt):.3e} vs {np.mean(OUT['ebm_melt']):.3e} m w.e., "
-        f"sublimation {np.mean(moist['moist_sublimation']):.3e} vs {np.mean(OUT['ebm_moist_sublimation']):.3e} m w.e."
+        f"Tsurf {np.mean(Tsurf):.2f} vs {np.mean(OUT['ebm_diagnostics']['Tsurf']):.2f} K, "
+        f"melt {np.mean(melt):.3e} vs {np.mean(OUT['ebm_diagnostics']['melt']):.3e} m w.e., "
+        f"sublimation {np.mean(moist['moist_sublimation']):.3e} vs "
+        f"{np.mean(OUT['ebm_diagnostics']['moist_sublimation']):.3e} m w.e."
     )
 
     return OUT
