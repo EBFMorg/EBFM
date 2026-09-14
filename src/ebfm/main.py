@@ -268,19 +268,17 @@ def _main_impl():
             logger.debug(f"Received the following data from Elmer/Ice: {data_from_elmer}")
 
             IN["surface_elevation"] = data_from_elmer["surface_elevation"]
-            OUT["surface_elevation"] = IN["surface_elevation"]
-            OUT["x"] = grid["x"]
-            OUT["y"] = grid["y"]
-            if coupler.has_coupling_to("icon_atmo"):
-                grid["z"] = IN["surface_elevation"]
+            elmer_ice.update_surface_elevation(grid, IN["surface_elevation"])
+
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
-        else:
-            # Needed by FINAL_create_restart_file.main(OUT, io)
-            OUT["x"] = grid["x"]
-            OUT["y"] = grid["y"]
-            OUT["surface_elevation"] = grid["z"]
+
+        # Needed by FINAL_create_restart_file.main(OUT, io). The grid carries the elevation of the current
+        # time step, whether it was read during initialization or received from Elmer/Ice just above.
+        OUT["x"] = grid["x"]
+        OUT["y"] = grid["y"]
+        OUT["surface_elevation"] = grid["z"]
 
         # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
         # TODO: partitioned output should be supported in a dedicated parallel-safe writer.

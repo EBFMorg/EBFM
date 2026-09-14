@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
     from ebfm.coupling.fields.base import FieldSet
+    from ebfm.core.grid import GridDict
 
 
 def identity(x: np.ndarray) -> np.ndarray:
@@ -306,5 +307,17 @@ class Component(ABC):
 
         @param[in] time dictionary with time parameters
         @returns Set of Field objects for this component
+        """
+        pass
+
+    def validate_grid(self, grid: "GridDict"):
+        """
+        Check that the grid EBFM runs on meets the requirements of this coupling.
+
+        Called once per coupled component from Coupler.setup, before any field is registered, so that an
+        incompatible grid is rejected before the time loop rather than during the first exchange. A component
+        that couples to any grid does not override this.
+
+        @param[in] grid grid EBFM runs on
         """
         pass

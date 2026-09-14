@@ -8,7 +8,7 @@ import numpy as np
 
 from ebfm.core.config import TimeConfig, CouplingConfig, FieldValidationLevel
 
-from ebfm.coupling.components import Component, ExchangeKeySet
+from ebfm.coupling.components import Component, ElmerIce, ExchangeKeySet
 from ebfm.coupling.fields import Field, FieldSet, GenericExchangeType, Timestep
 from ebfm.coupling.couplers import FakeCoupler
 from ebfm.coupling.couplers.base import CouplerExitCode
@@ -288,8 +288,17 @@ class TestElmerIceComponent(unittest.TestCase):
         time_config=time_config,
     )
 
-    # just fake values to get coupler._n_points set
-    grid_dict = {"x": np.array([0])}
+    # Just fake values to get coupler._n_points set, but complete enough for ElmerIce.validate_grid, which
+    # coupler.setup runs on it.
+    grid_dict = {
+        "x": np.array([0]),
+        "z": np.array([0.0]),
+        "has_shading": False,
+        "slope_x": np.zeros(1),
+        "slope_y": np.zeros(1),
+        "slope_beta": np.zeros(1),
+        "slope_gamma": np.zeros(1),
+    }
 
     data_to_elmer = {
         "smb": np.array([1.0]),
@@ -350,6 +359,101 @@ class TestElmerIceComponent(unittest.TestCase):
         # Nothing is communicated if the requested keys are rejected.
         self.assertEqual(coupler.put_fields, [])
         self.assertEqual(coupler.get_fields, [])
+
+    def test_setup_validates_the_grid(self):
+        """
+        Test that coupler.setup runs the grid validation of its components, so that an incompatible grid is
+        rejected before the time loop rather than during the first exchange.
+        """
+        coupler = RecordingFakeCoupler(self.coupling_config, fake_fields={})
+        incompatible_grid = dict(self.grid_dict, has_shading=True)
+
+        with self.assertRaises(AssertionError) as context:
+            coupler.setup(grid=incompatible_grid, time=self.time_config)
+        self.assertIn("Shading", str(context.exception))
+
+
+class ElmerIceGridTestCase(unittest.TestCase):
+    """
+    Base class providing an ElmerIce component and a grid as INIT builds it for an Elmer-based grid type:
+    zero slopes, no 2-D elevation, shading off (shading and coupling are mutually exclusive, see
+    cli.validate_shading_coupling_compat).
+    """
+
+    GPSUM = 3
+
+    def setUp(self):
+        # validate_grid and update_surface_elevation do not communicate, so they need no coupler.
+        self.elmer_ice = ElmerIce(coupler=None)
+
+        self.grid = {
+            "z": np.array([100.0, 250.0, 1375.5]),
+            "has_shading": False,
+        }
+        for slope_field in ("slope_x", "slope_y", "slope_beta", "slope_gamma"):
+            self.grid[slope_field] = np.zeros(self.GPSUM)
+
+
+class TestElmerIceGridValidation(ElmerIceGridTestCase):
+    """
+    ElmerIce.validate_grid rejects the grids whose quantities derived from the initial elevation would go
+    stale once update_surface_elevation lets the elevation change.
+    """
+
+    def test_compatible_grid_is_accepted(self):
+        self.elmer_ice.validate_grid(self.grid)
+
+    def test_shading_is_rejected(self):
+        self.grid["has_shading"] = True
+
+        with self.assertRaises(AssertionError) as context:
+            self.elmer_ice.validate_grid(self.grid)
+        self.assertIn("Shading", str(context.exception))
+
+    def test_non_zero_slope_is_rejected(self):
+        """
+        Test that real slopes are rejected. Zero slopes are why updating the elevation alone is admissible;
+        real ones would keep describing the initial geometry, since Elmer/Ice does not send dhdx/dhdy.
+        """
+        for slope_field in ("slope_x", "slope_y", "slope_beta", "slope_gamma"):
+            with self.subTest(slope_field=slope_field):
+                self.setUp()
+                self.grid[slope_field] = np.full(self.GPSUM, 0.01)
+
+                with self.assertRaises(AssertionError) as context:
+                    self.elmer_ice.validate_grid(self.grid)
+                self.assertIn(slope_field, str(context.exception))
+
+    def test_two_dimensional_elevation_is_rejected(self):
+        self.grid["z_2D"] = np.zeros((2, 2))
+
+        with self.assertRaises(AssertionError) as context:
+            self.elmer_ice.validate_grid(self.grid)
+        self.assertIn("2-D elevation", str(context.exception))
+
+
+class TestElmerIceSurfaceElevationUpdate(ElmerIceGridTestCase):
+    """
+    ElmerIce.update_surface_elevation lets the grid follow the ice surface Elmer/Ice reports back.
+    """
+
+    def test_elevation_follows_elmer(self):
+        surface_elevation = np.array([99.0, 248.5, 1370.0])
+
+        self.elmer_ice.update_surface_elevation(self.grid, surface_elevation)
+
+        self.assertTrue(np.array_equal(self.grid["z"], surface_elevation))
+
+    def test_single_element_elevation_is_rejected(self):
+        """
+        Test the shape a previous `IN["surface_elevation"][0].ravel()` produced. It broadcasts against every
+        per-column field, so without this check it passes through the model unnoticed.
+        """
+        surface_elevation = self.grid["z"][0].ravel()
+
+        with self.assertRaises(AssertionError) as context:
+            self.elmer_ice.update_surface_elevation(self.grid, surface_elevation)
+        self.assertIn("one value per column", str(context.exception))
 
 
 class SurfaceEnergyBalanceComponent(Component):
