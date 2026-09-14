@@ -10,6 +10,7 @@ SPDX-License-Identifier: BSD-3-Clause
 |------------------------------- | ---------------------------------------------- |
 | `BedMachineGreenland-v5_lo.nc` | Low-res version of `BedMachineGreenland-v5.nc` |
 | `dem_and_mask.mat`             | MATLAB example grid                            |
+| `greenland_mesh_v0/MESH`       | Elmer/Ice example mesh, Greenland (EPSG:3413)  |
 
 ### How `BedMachineGreenland-v5_lo.nc` was produced
 

@@ -3,8 +3,12 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
+import numpy as np
+
+from ebfm.coupling.couplers import FakeCoupler
 from ebfm.coupling.couplers.helpers import coupling_supported
 from ebfm.coupling.components.base import Component
 from ebfm.coupling.fields import Field, FieldSet, GenericExchangeType, Timestep
@@ -49,6 +53,40 @@ def _bare_yac_coupler(component_names: list[str]) -> tuple["YACCoupler", dict[st
     components = {name: _StubComponent(coupler=coupler, name=name) for name in component_names}
     coupler._coupled_components = dict(components)
     return coupler, components
+
+
+class TestFakeCouplerGridPoints(unittest.TestCase):
+    """
+    FakeCoupler._infer_n_points sizes the fake arrays returned by get(), so it has to report the number of
+    columns EBFM exchanges, not the vertex count of the mesh a grid may have been built from.
+    """
+
+    def _bare_fake_coupler(self) -> FakeCoupler:
+        """
+        Build a FakeCoupler without running its __init__, which needs a CouplingConfig. _infer_n_points reads
+        no state of its own.
+        """
+        return FakeCoupler.__new__(FakeCoupler)
+
+    def test_mesh_does_not_override_the_column_count(self):
+        """
+        A grid built from an Elmer mesh carries that mesh next to its per-column fields. The mesh describes
+        the same geometry by vertex, so its length is not what the coupled fields are sized by.
+        """
+        mesh = SimpleNamespace(vertex_ids=np.arange(11), x_vertices=np.zeros(11), y_vertices=np.zeros(11))
+        grid = {"mask": np.ones(4), "x": np.zeros(4), "mesh": mesh}
+
+        self.assertEqual(self._bare_fake_coupler()._infer_n_points(grid), 4)
+
+    def test_grid_without_per_column_fields_is_rejected(self):
+        mesh = SimpleNamespace(vertex_ids=np.arange(11))
+
+        with self.assertRaises(ValueError) as context:
+            self._bare_fake_coupler()._infer_n_points({"mesh": mesh})
+        self.assertIn("Could not infer number of grid points", str(context.exception))
+
+    def test_no_grid_has_no_points(self):
+        self.assertEqual(self._bare_fake_coupler()._infer_n_points(None), 0)
 
 
 @unittest.skipUnless(coupling_supported, "requires yac (pip install 'ebfm[cpl]')")
