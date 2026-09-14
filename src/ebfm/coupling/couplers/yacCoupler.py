@@ -174,7 +174,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
         return field
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
+    def _put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Put data to another component
 
@@ -202,7 +202,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name} complete.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
+    def _get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Get data from another component
 
