@@ -64,6 +64,12 @@ jobs:
 
     - name: Setup MPI
       uses: mpi4py/setup-mpi@v1
+      with:
+        # Not the default (mpich): the MPICH package on Ubuntu 24.04 is broken
+        # (https://bugs.launchpad.net/ubuntu/+source/mpich/+bug/2072338) and setup-mpi only patches
+        # around it by copying newer libmpich12/libucx0 over the apt install. The tests are
+        # single-rank and implementation-agnostic, so use the one that works out of the box.
+        mpi: openmpi
 
     - name: Install tox
       run: |

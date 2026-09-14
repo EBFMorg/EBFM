@@ -32,6 +32,12 @@ jobs:
       - name: Setup MPI
         if: ${{ matrix.run_mpi }}
         uses: mpi4py/setup-mpi@v1
+        with:
+          # Not the default (mpich): the MPICH package on Ubuntu 24.04 is broken
+          # (https://bugs.launchpad.net/ubuntu/+source/mpich/+bug/2072338), and one symptom is that
+          # several ranks report the same rank number -- which is exactly what the handshake step
+          # below checks.
+          mpi: openmpi
       - name: Create virtual environment and install EBFM
         run: |
           python3 -m venv .venv
