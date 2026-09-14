@@ -2,6 +2,18 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+"""
+The horizontal grid EBFM integrates on.
+
+A column is point data: a location carrying attributes and a vertical profile, with no area and no
+neighbours. Nothing in the time loop integrates over a column's footprint, which is why a grid can be built
+from any set of points, and why the cell centres of an Elmer/Ice mesh can be taken as columns directly.
+
+Horizontal geometry therefore exists only as per-column attributes, listed in PER_COLUMN_FIELDS. The one
+exception is shading, which has to know where a column's neighbours are: it reads `z_2D`, `ind`, `dx`,
+`xind` and `yind`, which only the MATLAB grid type provides.
+"""
+
 from enum import Enum
 from typing import Any
 

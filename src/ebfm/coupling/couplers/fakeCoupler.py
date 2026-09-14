@@ -10,7 +10,7 @@ import numpy as np
 from ebfm.core import logging
 from ebfm.core.config import CouplingConfig
 
-from .base import Coupler, CouplerExitCode, Grid, GridDict
+from .base import Coupler, CouplerExitCode, GridDict
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
 from ebfm.coupling.components import Component, IconAtmo, ElmerIce
 
@@ -129,9 +129,11 @@ class FakeCoupler(Coupler):
         """
         Infer the number of horizontal points represented by ``grid``.
 
-        Supports both:
-        - Elmer mesh-like objects (e.g. ``vertex_ids``, ``lon``, ``lat``)
-        - MATLAB/full EBFM grid dictionaries (e.g. ``x``, ``lon``, ``lat``, ``gpsum``)
+        EBFM exchanges its fields per column, and a column is point data (see the module docstring of
+        core.grid), so a plain point count is all a coupler needs. It comes from the per-column entries of
+        the grid dictionary, which all share the same length (see core.grid.PER_COLUMN_FIELDS). A grid built
+        from an Elmer mesh also carries that mesh in grid["mesh"], but the mesh describes the source geometry
+        by vertex and would give a count no coupled field has.
 
         @param[in] grid GridDict used by Coupler
 
@@ -140,29 +142,17 @@ class FakeCoupler(Coupler):
         if grid is None:
             return 0
 
-        grid_object: Grid = grid.get("mesh")
-        if grid_object:  # grid wraps an Elmer mesh-like object
-            for attr in ("vertex_ids", "lon", "lat", "x_vertices", "y_vertices"):
-                value = getattr(grid, attr, None)
-                if value is not None:
-                    try:
-                        return int(len(value))
-                    except TypeError:
-                        pass
-        else:  # grid["mesh"] not provided or None
-            for key in ("n_points", "x", "lon", "lat", "mask"):
-                value = grid.get(key)
-                if value is not None:
-                    try:
-                        return int(len(value))
-                    except TypeError:
-                        pass
+        for key in ("n_points", "mask", "x", "lon", "lat"):
+            value = grid.get(key)
+            if value is not None:
+                try:
+                    return int(len(value))
+                except TypeError:
+                    pass
 
         raise ValueError(
             "Could not infer number of grid points from the provided grid. "
-            "Please ensure that the grid contains one of the following attributes or keys: "
-            "vertex_ids, lon, lat, x_vertices, y_vertices (for Elmer-like grids) or "
-            "n_points, x, lon, lat, mask (for MATLAB/full EBFM grids)."
+            "Please ensure that the grid contains one of the following keys: n_points, mask, x, lon, lat."
         )
 
     @staticmethod
