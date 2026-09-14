@@ -372,6 +372,30 @@ class TestElmerIceComponent(unittest.TestCase):
             coupler.setup(grid=incompatible_grid, time=self.time_config)
         self.assertIn("Shading", str(context.exception))
 
+    def test_put_and_get_warn_and_skip_for_an_unregistered_field_name(self):
+        """
+        Test that put() and get() report a field name that is not registered for the component, instead of the
+        backend silently discarding it (put) or returning a result indistinguishable from a legitimately
+        uncoupled field (get). "dhdx" is such a name for "elmer_ice": its Field definition is commented out in
+        ElmerIce.get_field_definitions.
+
+        A hard failure would be too strict here, because a field can be legitimately absent -- commenting a
+        Field out to disable it would then crash every put/get for it, and every caller's data_to_exchange
+        would have to be kept in sync to avoid that -- so the operation is skipped with a warning.
+        """
+        coupler, _ = self._create_coupler()
+
+        with self.assertLogs(level="WARNING") as logs:
+            put_result = coupler.put("elmer_ice", "dhdx", np.array([1.0]))
+        self.assertEqual(put_result, CouplerExitCode.UNREGISTERED_FIELD)
+        self.assertTrue(any("dhdx" in message and "elmer_ice" in message for message in logs.output))
+
+        with self.assertLogs(level="WARNING") as logs:
+            data, err = coupler.get("elmer_ice", "dhdx")
+        self.assertIsNone(data)
+        self.assertEqual(err, CouplerExitCode.UNREGISTERED_FIELD)
+        self.assertTrue(any("dhdx" in message and "elmer_ice" in message for message in logs.output))
+
 
 class ElmerIceGridTestCase(unittest.TestCase):
     """
