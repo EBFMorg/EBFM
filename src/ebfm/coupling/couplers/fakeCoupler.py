@@ -12,7 +12,7 @@ from ebfm.core.config import CouplingConfig
 
 from .base import Coupler, CouplerExitCode, GridDict
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
-from ebfm.coupling.components import Component, IconAtmo, ElmerIce
+from ebfm.coupling.components import Component, IconAtmo, IconLand, ElmerIce
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,9 @@ class FakeFieldConfig:
 # put() and therefore need no entry here.
 # ---------------------------------------------------------------------------
 _DEFAULT_FAKE_FIELDS: tuple[FakeFieldConfig, ...] = (
-    # Elmer/Ice → EBFM
+    # Elmer/Ice -> EBFM
     FakeFieldConfig(ElmerIce(coupler=None), "surface_elevation", 1000.0),  # surface elevation        [m]
-    # ICON atmosphere → EBFM
+    # ICON atmosphere -> EBFM
     FakeFieldConfig(IconAtmo(coupler=None), "pr", 0.0),  # precipitation rate        [kg m-2 s-1]
     FakeFieldConfig(IconAtmo(coupler=None), "pr_snow", 0.0),  # snowfall rate             [kg m-2 s-1]
     FakeFieldConfig(IconAtmo(coupler=None), "rsds", 100.0),  # downward SW radiation     [W m-2]
@@ -56,6 +56,10 @@ _DEFAULT_FAKE_FIELDS: tuple[FakeFieldConfig, ...] = (
     FakeFieldConfig(IconAtmo(coupler=None), "tas", 260.0),  # near-surface temperature  [K]
     FakeFieldConfig(IconAtmo(coupler=None), "huss", 1e-3),  # specific humidity         [kg kg-1]
     FakeFieldConfig(IconAtmo(coupler=None), "sfcpres", 101325.0),  # surface pressure          [Pa]
+    # ICON-Land -> EBFM
+    FakeFieldConfig(IconLand(coupler=None), "t_srf", 260.0),  # surface temperature       [K]
+    FakeFieldConfig(IconLand(coupler=None), "melt", 0.0),  # melt                      [kg m-2 s-1]
+    FakeFieldConfig(IconLand(coupler=None), "evapotrans", 0.0),  # evapotranspiration        [kg m-2 s-1]
 )
 
 

@@ -7,3 +7,6 @@ SECONDS_PER_HOUR = 3600  # Seconds per hour
 SECONDS_PER_DAY = 24 * SECONDS_PER_HOUR  # Seconds per day
 
 WATER_DENSITY = 1000.0  # Density of water (kg m-3), used to convert mass fluxes to/from m w.e.
+
+MELTING_POINT = 273.15  # Melting temperature of ice (K)
+LATENT_HEAT_OF_FUSION = 0.33e6  # Latent heat of melting/fusion (J kg-1)
