@@ -71,7 +71,13 @@ def add_coupling_arguments(parser: ArgumentParser) -> None:
     coupling_group.add_argument(
         "--couple-to-icon-atmo",
         action="store_true",
-        help="Enable coupling with ICON via YAC",
+        help="Enable coupling with the ICON atmosphere via YAC",
+    )
+
+    coupling_group.add_argument(
+        "--couple-to-icon-land",
+        action="store_true",
+        help="Enable coupling with ICON-Land (JSBACH) via YAC",
     )
 
     coupling_group.add_argument(
@@ -121,6 +127,9 @@ def extract_active_coupling_features(args: Namespace) -> list[str]:
 
     if args.couple_to_icon_atmo:
         active_coupling_args.append("--couple-to-icon-atmo")
+
+    if args.couple_to_icon_land:
+        active_coupling_args.append("--couple-to-icon-land")
 
     if args.coupler_config:
         active_coupling_args.append("--coupler-config")
