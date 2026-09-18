@@ -12,7 +12,7 @@ from . import (
     LOOP_EBM_LWout,
     LOOP_EBM_SWin,
 )
-from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation, LOOP_EBM_icon_land
+from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation
 
 from ebfm.coupling import Coupler
 
@@ -21,9 +21,66 @@ from ebfm.core import logging
 logger = logging.getLogger(__name__)
 
 
+def surface_energy_balance(C, time2, OUT) -> dict:
+    """
+    Melt and moisture fluxes following from the surface temperature and the heat fluxes main solved for.
+
+    Kept out of main so that the caller decides where the results go: into OUT, or into
+    OUT["ebm_diagnostics"] when another model has solved the surface energy balance for this time
+    step instead (see ebfm.coupling.components.icon_land).
+
+    Parameters:
+        C (dict): Model constants and parameters.
+        time2 (dict): Time-related parameters and variables.
+        OUT (dict): Output variables, incl. the surface temperature and heat fluxes stored by main.
+
+    Returns:
+        dict: Surface temperature, melt energy, melt and the moisture fluxes.
+    """
+    Tsurf = OUT["Tsurf"]
+    LHF = OUT["LHF"]
+
+    ###########################################################
+    # SURFACE MELT
+    ###########################################################
+
+    Emelt = OUT["SWin"] - OUT["SWout"] + OUT["LWin"] - OUT["LWout"] + OUT["SHF"] + LHF + OUT["GHF"]
+    Emelt[Tsurf < C["T0"]] = 0.0
+
+    melt = C["dayseconds"] * time2["dt"] * Emelt / C["Lm"] / 1e3
+
+    ###########################################################
+    # MOISTURE FLUXES
+    ###########################################################
+
+    moist_deposition = C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tsurf < C["T0"]) * (LHF > 0)
+    moist_condensation = C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tsurf >= C["T0"]) * (LHF > 0)
+    moist_sublimation = -C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tsurf < C["T0"]) * (LHF < 0)
+    moist_evaporation = -C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tsurf >= C["T0"]) * (LHF < 0)
+
+    ###########################################################
+    # AVOID EVAPORATION OF ABSENT MELT
+    ###########################################################
+
+    moist_evaporation = np.minimum(moist_evaporation, melt)
+
+    return {
+        "Tsurf": Tsurf,
+        "Emelt": Emelt,
+        "melt": melt,
+        "moist_deposition": moist_deposition,
+        "moist_condensation": moist_condensation,
+        "moist_sublimation": moist_sublimation,
+        "moist_evaporation": moist_evaporation,
+    }
+
+
 def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     """
-    Surface Energy Balance Model: Calculates heat fluxes, surface temperature, melt rates, and moisture fluxes.
+    Surface Energy Balance Model: Solves the surface temperature and calculates the heat fluxes.
+
+    The melt and moisture fluxes that follow from them are not part of this: they are computed by
+    surface_energy_balance, which the caller calls afterwards.
 
     Parameters:
         C (dict): Model constants and parameters.
@@ -34,7 +91,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
         cpl (Coupler): Coupling object for data exchange with external models.
 
     Returns:
-        dict: Updated OUT dictionary containing energy balance results.
+        dict: Updated OUT dictionary containing the surface temperature and the heat fluxes.
     """
     logger.debug("Starting LOOP_EBM...")
     ###########################################################
@@ -104,7 +161,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
             raise ValueError("Energy balance did not converge below limit C.dTacc")
 
     ###########################################################
-    # SURFACE MELT
+    # HEAT FLUXES AT THE SURFACE TEMPERATURE
     ###########################################################
 
     # Ensure surface temperature does not exceed the melting point
@@ -116,33 +173,11 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     SHF = LOOP_EBM_SHF.main(C, Tmid, IN, condition_mask)
     GHF = LOOP_EBM_GHF.main(Tmid, OUT, condition_mask, GHF_k, GHF_C)
 
-    Emelt = SWin - SWout + LWin - LWout + SHF + LHF + GHF
-    Emelt[Tmid < C["T0"]] = 0.0
-
-    OUT["melt"] = C["dayseconds"] * time2["dt"] * Emelt / C["Lm"] / 1e3
-
-    ###########################################################
-    # MOISTURE FLUXES
-    ###########################################################
-
-    OUT["moist_deposition"] = C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tmid < C["T0"]) * (LHF > 0)
-    OUT["moist_condensation"] = C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tmid >= C["T0"]) * (LHF > 0)
-    OUT["moist_sublimation"] = -C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tmid < C["T0"]) * (LHF < 0)
-    OUT["moist_evaporation"] = -C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tmid >= C["T0"]) * (LHF < 0)
-
-    ###########################################################
-    # AVOID EVAPORATION OF ABSENT MELT
-    ###########################################################
-
-    max_evap = OUT["melt"]
-    OUT["moist_evaporation"] = np.minimum(OUT["moist_evaporation"], max_evap)
-
     ###########################################################
     # STORE RELEVANT VARIABLES IN OUT
     ###########################################################
 
     OUT["Tsurf"] = Tmid
-    OUT["Emelt"] = Emelt
     OUT["LHF"] = LHF
     OUT["SWin"] = SWin
     OUT["SWout"] = SWout
@@ -150,11 +185,5 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     OUT["LWout"] = LWout
     OUT["SHF"] = SHF
     OUT["GHF"] = GHF
-
-    # When coupled to ICON-Land, the surface energy balance computed by JSBACH on its glacier
-    # tile drives the firn model; EBFM's own energy balance computed above is kept as a
-    # diagnostic (OUT["ebm_diagnostics"]) for comparison.
-    if LOOP_EBM_icon_land.is_available(IN, cpl):
-        OUT = LOOP_EBM_icon_land.main(C, OUT, IN, time2)
 
     return OUT
