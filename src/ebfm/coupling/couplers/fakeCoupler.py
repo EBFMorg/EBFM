@@ -44,11 +44,9 @@ class FakeFieldConfig:
 # put() and therefore need no entry here.
 # ---------------------------------------------------------------------------
 _DEFAULT_FAKE_FIELDS: tuple[FakeFieldConfig, ...] = (
-    # Elmer/Ice → EBFM
+    # Elmer/Ice -> EBFM
     FakeFieldConfig(ElmerIce(coupler=None), "surface_elevation", 1000.0),  # surface elevation        [m]
-# Elmer/Ice -> EBFM
-FakeFieldConfig(ElmerIce(coupler=None), "surface_elevation", 1000.0),  # surface elevation        [m]
-# ICON atmosphere -> EBFM
+    # ICON atmosphere -> EBFM
     FakeFieldConfig(IconAtmo(coupler=None), "pr", 0.0),  # precipitation rate        [kg m-2 s-1]
     FakeFieldConfig(IconAtmo(coupler=None), "pr_snow", 0.0),  # snowfall rate             [kg m-2 s-1]
     FakeFieldConfig(IconAtmo(coupler=None), "rsds", 100.0),  # downward SW radiation     [W m-2]
