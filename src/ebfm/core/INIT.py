@@ -20,7 +20,7 @@ from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, number_of_columns, validate_grid
 from .restart import validate_all_variables_present, validate_variable_shape
 
-from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY, WATER_DENSITY
+from .constants import DAYS_PER_YEAR, LATENT_HEAT_OF_FUSION, MELTING_POINT, SECONDS_PER_DAY, WATER_DENSITY
 
 import logging
 
@@ -144,7 +144,7 @@ def init_constants():
     C["Cp"] = 1005.7  # Specific heat of dry air (J kg-1 K-1)
     C["Cw"] = 4187.0  # Specific heat of water (J kg-1 K-1)
     C["Ls"] = 2.83e6  # Latent heat of sublimation/riming (J kg-1)
-    C["Lm"] = 0.33e6  # Latent heat of melting/fusion (J kg-1)
+    C["Lm"] = LATENT_HEAT_OF_FUSION  # Latent heat of melting/fusion (J kg-1)
     C["Lv"] = 2.5e6  # Latent heat of evaporation/condensation (J kg-1)
     C["Rv"] = 462.0  # Specific gas constant water vapor (J kg-1 K-1)
     C["Rd"] = 287.0  # Specific gas constant dry air (J kg-1 K-1)
@@ -152,7 +152,7 @@ def init_constants():
     C["dTacc"] = 0.01  # Threshold dT in solving the energy balance equation (K)
     C["Pref"] = 1015e2  # Reference air pressure (Pa)
     C["Pr"] = 5  # Prandtl number in SHF/LHF formulation
-    C["T0"] = 273.15  # Melting temperature of ice (K)
+    C["T0"] = MELTING_POINT  # Melting temperature of ice (K)
     C["g"] = 9.81  # Gravitational acceleration (m s-2)
     C["rd"] = 8.314  # Universal gas constant (J mol-1 K-1)
     C["k_aer"] = 0.974  # Aerosol transmissivity exponent

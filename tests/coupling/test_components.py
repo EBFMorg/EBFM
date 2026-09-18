@@ -9,6 +9,7 @@ import numpy as np
 from ebfm.core.config import TimeConfig, CouplingConfig, FieldValidationLevel
 
 from ebfm.coupling.components import Component, ElmerIce, ExchangeKeySet
+from ebfm.coupling.components.icon_land import partition_evapotrans
 from ebfm.coupling.fields import Field, FieldSet, GenericExchangeType, Timestep
 from ebfm.coupling.couplers import FakeCoupler
 from ebfm.coupling.couplers.base import CouplerExitCode
@@ -899,6 +900,66 @@ class TestIconLandComponent(unittest.TestCase):
         flux = icon_land._map_mass_flux_from_ebfm(mwe)
         np.testing.assert_allclose(flux, [1e-3])
         np.testing.assert_allclose(icon_land._map_mass_flux_to_ebfm(flux), mwe)
+
+    def test_map_energy_balance_to_ebfm(self):
+        """
+        Test that the received surface energy balance becomes EBFM's output variables: the surface
+        temperature is capped at the melting point and the evapotranspiration is partitioned into
+        EBFM's moisture terms.
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+        melt = np.array([0.0, 2e-3, 1e-3])
+        data_from_icon_land = {
+            "t_srf": np.array([260.0, 274.0, 273.15]),  # second value above melting point -> capped
+            "melt": melt,
+            "evapotrans": np.array([-1e-4, -5e-3, 4e-3]),
+        }
+
+        icon_land_data = icon_land.map_energy_balance_to_ebfm(data_from_icon_land)
+
+        np.testing.assert_allclose(icon_land_data["Tsurf"], [260.0, 273.15, 273.15])
+        np.testing.assert_allclose(icon_land_data["melt"], melt)
+        np.testing.assert_allclose(icon_land_data["moist_sublimation"], [1e-4, 0.0, 0.0])
+        np.testing.assert_allclose(icon_land_data["moist_evaporation"], [0.0, 2e-3, 0.0])  # limited by melt
+        np.testing.assert_allclose(icon_land_data["moist_condensation"], [0.0, 0.0, 4e-3])
+        np.testing.assert_allclose(icon_land_data["moist_deposition"], np.zeros(3))
+        # Melt energy of the melt above, spread over the 1 h time step
+        np.testing.assert_allclose(icon_land_data["Emelt"], melt * 1e3 * 0.33e6 / 3600.0)
+
+    def test_map_energy_balance_to_ebfm_without_all_fields(self):
+        """
+        Test that a field which has not been received is fatal: the firn model cannot be run on a
+        partial surface energy balance, and silently falling back to EBFM's own one would change
+        the physics of a coupled run without stopping it.
+        """
+        coupler = self._create_coupler()
+        icon_land = coupler.get_component("icon_land")
+
+        with self.assertRaises(RuntimeError) as context:
+            icon_land.map_energy_balance_to_ebfm({"t_srf": np.zeros(3), "melt": np.zeros(3)})
+        self.assertIn("['evapotrans']", str(context.exception))
+
+
+class TestPartitionEvapotrans(unittest.TestCase):
+    """
+    Test the partitioning of ICON-Land's evapotranspiration into EBFM's moisture terms, which
+    IconLand.map_energy_balance_to_ebfm applies to the received field.
+    """
+
+    def test_partition(self):
+        # frozen surface: loss -> sublimation, gain -> deposition
+        # melting surface: loss -> evaporation (limited by melt), gain -> condensation
+        Tsurf = np.array([250.0, 250.0, 273.15, 273.15, 273.15])
+        evapotrans = np.array([-1e-3, 2e-3, -3e-3, 4e-3, -5e-3])
+        melt = np.array([0.0, 0.0, 1e-2, 0.0, 1e-3])
+
+        moist = partition_evapotrans(evapotrans, Tsurf, melt)
+
+        np.testing.assert_allclose(moist["moist_sublimation"], [1e-3, 0, 0, 0, 0])
+        np.testing.assert_allclose(moist["moist_deposition"], [0, 2e-3, 0, 0, 0])
+        np.testing.assert_allclose(moist["moist_evaporation"], [0, 0, 3e-3, 0, 1e-3])  # last one limited by melt
+        np.testing.assert_allclose(moist["moist_condensation"], [0, 0, 0, 4e-3, 0])
 
 
 if __name__ == "__main__":

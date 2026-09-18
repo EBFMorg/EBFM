@@ -203,8 +203,8 @@ class TestNetCDFOutputSmoke(unittest.TestCase):
 
     def test_ebm_diagnostics_written_when_coupled_to_icon_land(self):
         """
-        When coupled to ICON-Land, OUT["ebm_diagnostics"] (LOOP_EBM_icon_land's
-        diagnostic dict) is unpacked onto the ebm_Tsurf/ebm_melt/ebm_Emelt output
+        When coupled to ICON-Land, OUT["ebm_diagnostics"] (the results of EBFM's own
+        energy balance) is unpacked onto the ebm_Tsurf/ebm_melt/ebm_Emelt output
         variables instead of being read as flat OUT["ebm_<name>"] keys.
         """
         ebm_diagnostics = {
