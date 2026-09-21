@@ -190,20 +190,19 @@ class Component(ABC):
         Convert a mass flux in kg m-2 s-1 (e.g. precipitation, melt, evaporation) to
         m w.e. per EBFM time step.
         """
-        from ebfm.core.constants import SECONDS_PER_DAY, WATER_DENSITY
+        from ebfm.core.constants import WATER_DENSITY
 
         mwe_per_second = mass_flux / WATER_DENSITY
-        mwe_per_day = mwe_per_second * SECONDS_PER_DAY
-        mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
+        mwe_per_timestep = mwe_per_second * self.ebfm_time.time_step_in_seconds()
         return mwe_per_timestep
 
     def _map_mass_flux_from_ebfm(self, mwe_per_timestep: np.ndarray) -> np.ndarray:
         """
         Convert an amount in m w.e. per EBFM time step to a mass flux in kg m-2 s-1.
         """
-        from ebfm.core.constants import SECONDS_PER_DAY, WATER_DENSITY
+        from ebfm.core.constants import WATER_DENSITY
 
-        seconds_per_timestep = SECONDS_PER_DAY * self._coupler.get_time_step_in_days()
+        seconds_per_timestep = self.ebfm_time.time_step_in_seconds()
         return mwe_per_timestep * WATER_DENSITY / seconds_per_timestep
 
     def _all_target_keys(self) -> set[str]:
