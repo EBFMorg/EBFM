@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 from .base import Component, ExchangeKeySet
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
-from ebfm.core.config import ComponentId, TimeConfig
+from ebfm.core.config import ComponentId
 from ebfm.core.constants import DAYS_PER_YEAR
 from ebfm.core.grid import GridDict
 
@@ -39,11 +39,11 @@ class ElmerIce(Component):
     def __init__(self, coupler: "Coupler", name: str = ComponentId.ELMER_ICE.value):
         super().__init__(coupler, name)
 
-    def get_field_definitions(self, time: TimeConfig) -> FieldSet:
+    def get_field_definitions(self) -> FieldSet:
         """
         Get generic field definitions for EBFM coupling to Elmer/Ice.
         """
-        timestep = Timestep(value=time.time_step_iso8601())
+        timestep = Timestep(value=self.ebfm_time.time_step_iso8601())
 
         return FieldSet(
             {
@@ -160,7 +160,7 @@ class ElmerIce(Component):
         # For fields representing rates (e.g. SMB, runoff), we need to convert them from per timestep to per year
         # before sending to Elmer/Ice, which expects annual values.
         def map_per_timestep_to_per_year(x_per_timestep: np.ndarray) -> np.ndarray:
-            x_per_day = x_per_timestep / self._coupler.get_time_step_in_days()
+            x_per_day = x_per_timestep / self.ebfm_time.time_step_in_days()
             x_per_year = x_per_day * DAYS_PER_YEAR
             return x_per_year
 

@@ -84,7 +84,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         logger.debug(f"Active coupled components: {list(self._coupled_components.keys())}")
 
         self._fields: FieldSet = FieldSet()
-        self._time: TimeConfig | None = None  # will be set in setup()
+        self._ebfm_time: TimeConfig | None = None  # will be set in setup()
 
     @staticmethod
     @abstractmethod
@@ -128,13 +128,14 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         @param[in] grid Grid used by EBFM where coupling happens
         @param[in] time TimeConfig with time parameters
         """
-        self._time = time
+        self._ebfm_time = time
 
         field_definitions = FieldSet()
 
         for component in self._coupled_components.values():
+            component.set_ebfm_time(time)
             component.validate_grid(grid)
-            field_definitions |= component.get_field_definitions(self._time)
+            field_definitions |= component.get_field_definitions()
 
         self._setup(grid, field_definitions)
 
@@ -149,17 +150,6 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         @param[in] field_definitions set of field definitions collected from all coupled components
         """
         raise NotImplementedError("_setup method must be implemented in subclasses.")
-
-    def get_time_step_in_days(self) -> float:
-        """
-        Get the current time step size of the model in days.
-
-        @note This method assumes that self._time has been set (i.e. self.setup() has been called).
-
-        @returns time step size in days
-        """
-        assert self._time is not None, "self._time must be set before calling get_time_step."
-        return self._time.time_step_in_days()
 
     def _add_grid(self, grid_name: str, grid: Grid):
         """

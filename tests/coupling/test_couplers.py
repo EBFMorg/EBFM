@@ -23,7 +23,7 @@ class _StubComponent(Component):
     Component that only exists to give Field.coupled_component a name; it never exchanges data.
     """
 
-    def get_field_definitions(self, time):
+    def get_field_definitions(self):
         return FieldSet()
 
     def _exchange(self, data_to_exchange, fallback_values, requested_key_set):
