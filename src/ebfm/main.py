@@ -285,7 +285,7 @@ def _main_impl():
             if COMPUTE_EBM_DIAGNOSTICS:
                 # EBFM's own surface energy balance, evaluated before ICON-Land's results replace
                 # the surface temperature it follows from in OUT
-                ebm_diagnostics = LOOP_EBM.surface_energy_balance(C, time, OUT)
+                ebm_diagnostics = LOOP_EBM.melt_and_moisture_fluxes(C, time, OUT)
                 OUT["ebm_diagnostics"] = ebm_diagnostics
                 logger.debug(
                     "Surface energy balance ICON-Land vs EBFM (mean over the grid): "
@@ -297,7 +297,7 @@ def _main_impl():
             OUT.update(icon_land_data)
         else:
             # EBFM's own surface energy balance drives the firn model and the mass balance
-            OUT.update(LOOP_EBM.surface_energy_balance(C, time, OUT))
+            OUT.update(LOOP_EBM.melt_and_moisture_fluxes(C, time, OUT))
 
         # Run snow & firn model
         OUT = LOOP_SNOW.main(C, OUT, IN, time["dt"], grid, phys, column)

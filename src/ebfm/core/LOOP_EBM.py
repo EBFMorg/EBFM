@@ -21,7 +21,7 @@ from ebfm.core import logging
 logger = logging.getLogger(__name__)
 
 
-def surface_energy_balance(C, time2, OUT) -> dict:
+def melt_and_moisture_fluxes(C, time2, OUT) -> dict:
     """
     Melt and moisture fluxes following from the surface temperature and the heat fluxes main solved for.
 
@@ -80,7 +80,7 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     Surface Energy Balance Model: Solves the surface temperature and calculates the heat fluxes.
 
     The melt and moisture fluxes that follow from them are not part of this: they are computed by
-    surface_energy_balance, which the caller calls afterwards.
+    melt_and_moisture_fluxes, which the caller calls afterwards.
 
     Parameters:
         C (dict): Model constants and parameters.
