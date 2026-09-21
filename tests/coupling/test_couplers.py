@@ -159,8 +159,11 @@ class TestYACCouplerFieldRegistration(unittest.TestCase):
         elmer_ice = ElmerIce(coupler=coupler, name="elmer_ice")
         icon_land = IconLand(coupler=coupler, name="icon_land")
         coupler._coupled_components = {"elmer_ice": elmer_ice, "icon_land": icon_land}
+        # Coupler.setup, which normally hands the time configuration to each component, is bypassed here.
+        elmer_ice.set_ebfm_time(_StubTime())
+        icon_land.set_ebfm_time(_StubTime())
 
-        field_definitions = elmer_ice.get_field_definitions(_StubTime()) | icon_land.get_field_definitions(_StubTime())
+        field_definitions = elmer_ice.get_field_definitions() | icon_land.get_field_definitions()
 
         # Unlike the other tests here, these fields carry metadata, so construct_yac_field also reads
         # component_name/grid_name/name off the created field; a Mock() (rather than object()) answers those.

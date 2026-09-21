@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 from .base import Component, ExchangeKeySet
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
-from ebfm.core.config import ComponentId, TimeConfig
-from ebfm.core.constants import LATENT_HEAT_OF_FUSION, MELTING_POINT, SECONDS_PER_DAY, WATER_DENSITY
+from ebfm.core.config import ComponentId
+from ebfm.core.constants import LATENT_HEAT_OF_FUSION, MELTING_POINT, WATER_DENSITY
 
 
 def partition_evapotrans(evapotrans: np.ndarray, Tsurf: np.ndarray, melt: np.ndarray) -> dict[str, np.ndarray]:
@@ -92,11 +92,11 @@ class IconLand(Component):
     def __init__(self, coupler: "Coupler", name: str = ComponentId.ICON_LAND.value):
         super().__init__(coupler, name)
 
-    def get_field_definitions(self, time: TimeConfig) -> FieldSet:
+    def get_field_definitions(self) -> FieldSet:
         """
         Get generic field definitions for EBFM coupling to IconLand.
         """
-        timestep = Timestep(value=time.time_step_iso8601())
+        timestep = Timestep(value=self.ebfm_time.time_step_iso8601())
 
         return FieldSet(
             {
@@ -263,7 +263,7 @@ class IconLand(Component):
         moist = partition_evapotrans(np.asarray(data_from_icon_land["evapotrans"], dtype=float), Tsurf, melt)
 
         # Energy equivalent of the melt (W m-2), for output only
-        seconds_per_timestep = SECONDS_PER_DAY * self._coupler.get_time_step_in_days()
+        seconds_per_timestep = self.ebfm_time.time_step_in_seconds()
         Emelt = melt * WATER_DENSITY * LATENT_HEAT_OF_FUSION / seconds_per_timestep
 
         return {"Tsurf": Tsurf, "melt": melt, "Emelt": Emelt, **moist}

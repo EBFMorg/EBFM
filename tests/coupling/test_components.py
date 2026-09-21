@@ -743,7 +743,7 @@ class TestIconLandComponent(unittest.TestCase):
         self.assertTrue(coupler.has_field("icon_land", "t_srf", GenericExchangeType.TARGET))
         self.assertTrue(coupler.has_field("icon_land", "melt", GenericExchangeType.TARGET))
 
-        field_names = {field.name for field in icon_land.get_field_definitions(self.time_config)}
+        field_names = {field.name for field in icon_land.get_field_definitions()}
         self.assertEqual(
             field_names,
             {
