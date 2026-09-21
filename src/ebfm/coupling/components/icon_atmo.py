@@ -5,7 +5,6 @@
 from typing import TYPE_CHECKING
 from collections.abc import Mapping
 import numpy as np
-from ebfm.core.constants import SECONDS_PER_DAY
 
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
@@ -13,7 +12,7 @@ if TYPE_CHECKING:
 from .base import Component, ExchangeKeySet
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
-from ebfm.core.config import ComponentId, TimeConfig
+from ebfm.core.config import ComponentId
 
 
 class IconAtmo(Component):
@@ -33,11 +32,11 @@ class IconAtmo(Component):
     def __init__(self, coupler: "Coupler", name: str = ComponentId.ICON_ATMO.value):
         super().__init__(coupler, name)
 
-    def get_field_definitions(self, time: TimeConfig) -> FieldSet:
+    def get_field_definitions(self) -> FieldSet:
         """
         Get generic field definitions for EBFM coupling to IconAtmo.
         """
-        timestep = Timestep(value=time.time_step_iso8601())
+        timestep = Timestep(value=self.ebfm_time.time_step_iso8601())
 
         return FieldSet(
             {
@@ -118,8 +117,7 @@ class IconAtmo(Component):
     # to m w.e. (per EBFM timestep)
     def _map_pr_to_ebfm(self, precipitation: np.ndarray) -> np.ndarray:
         mwe_per_second = precipitation * 1e-3
-        mwe_per_day = mwe_per_second * SECONDS_PER_DAY
-        mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
+        mwe_per_timestep = mwe_per_second * self.ebfm_time.time_step_in_seconds()
         return mwe_per_timestep
 
     def _exchange(

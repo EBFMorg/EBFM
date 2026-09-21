@@ -107,6 +107,23 @@ class TestIconAtmoComponent(unittest.TestCase):
     # All TARGET fields defined by IconAtmo, i.e. everything EBFM receives from the ICON atmosphere.
     all_icon_atmo_fields = ["clt", "huss", "pr", "pr_snow", "rlds", "rsds", "sfcpres", "sfcwind", "tas"]
 
+    def test_ebfm_time_is_forwarded_by_setup(self):
+        """
+        Test that a component reads the EBFM time configuration directly, not through its coupler.
+
+        A component is created in Coupler.__init__, before the time configuration is known, so setup() has to
+        hand it over. Until then the component reports the missing time instead of using a stale or default one.
+        """
+        coupler = FakeCoupler(self.coupling_config, fake_fields={})
+        icon_atmo = coupler.get_component("icon_atmo")
+
+        with self.assertRaises(AssertionError):
+            icon_atmo.ebfm_time
+
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        self.assertIs(icon_atmo.ebfm_time, self.time_config)
+
     def test_exchange(self):
         """
         Test that IconAtmo component can exchange data with a coupler.
@@ -497,8 +514,8 @@ class SurfaceEnergyBalanceComponent(Component):
 
     accepted_exchange_key_sets = (surface_state, energy_balance)
 
-    def get_field_definitions(self, time: TimeConfig) -> FieldSet:
-        timestep = Timestep(value=time.time_step_iso8601())
+    def get_field_definitions(self) -> FieldSet:
+        timestep = Timestep(value=self.ebfm_time.time_step_iso8601())
 
         return FieldSet(
             {
