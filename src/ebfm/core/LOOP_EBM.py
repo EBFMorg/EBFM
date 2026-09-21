@@ -44,15 +44,32 @@ def melt_and_moisture_fluxes(C, time2, OUT) -> dict:
     # SURFACE MELT
     ###########################################################
 
+    # main() solves the energy balance for the surface temperature but caps it at the melting
+    # point T0. Where the cap is active the fluxes evaluated at T0 do not sum to zero: the
+    # residual Emelt (W m-2, positive into the surface) is the energy available for melting.
+    # Below the melting point the balance is closed by the surface temperature and there is
+    # no melt.
     Emelt = OUT["SWin"] - OUT["SWout"] + OUT["LWin"] - OUT["LWout"] + OUT["SHF"] + LHF + OUT["GHF"]
     Emelt[Tsurf < C["T0"]] = 0.0
 
+    # Melt per time step in m w.e.: energy over the time step (s) divided by the latent heat of
+    # fusion (J kg-1) gives kg m-2, dividing by the water density (1e3 kg m-3) gives m w.e.
     melt = C["dayseconds"] * time2["dt"] * Emelt / C["Lm"] / 1e3
 
     ###########################################################
     # MOISTURE FLUXES
     ###########################################################
 
+    # The latent heat flux LHF (W m-2, positive towards the surface) is converted to a mass
+    # exchange per time step in m w.e. (as for melt above) and attributed to one of four
+    # processes by the sign of the flux and the phase of the surface:
+    #   LHF > 0 is a mass gain: deposition on a frozen surface (Tsurf < T0, latent heat of
+    #   sublimation Ls) or condensation on a melting surface (Tsurf at T0, latent heat of
+    #   vaporisation Lv);
+    #   LHF < 0 is a mass loss: sublimation from a frozen surface or evaporation from a melting
+    #   surface.
+    # All four terms are >= 0 (the sign of the losses is flipped); in every column exactly one
+    # of them is non-zero.
     moist_deposition = C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tsurf < C["T0"]) * (LHF > 0)
     moist_condensation = C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tsurf >= C["T0"]) * (LHF > 0)
     moist_sublimation = -C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tsurf < C["T0"]) * (LHF < 0)
@@ -62,6 +79,10 @@ def melt_and_moisture_fluxes(C, time2, OUT) -> dict:
     # AVOID EVAPORATION OF ABSENT MELT
     ###########################################################
 
+    # Evaporation removes liquid water, and the only liquid water at the surface is the melt
+    # produced in this time step (there is no surface water store). Evaporation is therefore
+    # capped at the melt amount; the corresponding part of the latent heat flux is not fed back
+    # into the energy balance.
     moist_evaporation = np.minimum(moist_evaporation, melt)
 
     return {
