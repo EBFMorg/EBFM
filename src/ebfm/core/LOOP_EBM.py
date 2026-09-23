@@ -13,6 +13,7 @@ from . import (
     LOOP_EBM_SWin,
 )
 from ebfm.core import LOOP_EBM_SWout, LOOP_EBM_insolation
+from ebfm.core.constants import WATER_DENSITY
 
 from ebfm.coupling import Coupler
 
@@ -53,8 +54,8 @@ def melt_and_moisture_fluxes(C, time2, OUT) -> dict:
     Emelt[Tsurf < C["T0"]] = 0.0
 
     # Melt per time step in m w.e.: energy over the time step (s) divided by the latent heat of
-    # fusion (J kg-1) gives kg m-2, dividing by the water density (1e3 kg m-3) gives m w.e.
-    melt = C["dayseconds"] * time2["dt"] * Emelt / C["Lm"] / 1e3
+    # fusion (J kg-1) gives kg m-2, dividing by the water density gives m w.e.
+    melt = C["dayseconds"] * time2["dt"] * Emelt / C["Lm"] / WATER_DENSITY
 
     ###########################################################
     # MOISTURE FLUXES
@@ -70,10 +71,10 @@ def melt_and_moisture_fluxes(C, time2, OUT) -> dict:
     #   surface.
     # All four terms are >= 0 (the sign of the losses is flipped); in every column exactly one
     # of them is non-zero.
-    moist_deposition = C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tsurf < C["T0"]) * (LHF > 0)
-    moist_condensation = C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tsurf >= C["T0"]) * (LHF > 0)
-    moist_sublimation = -C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / 1e3 * (Tsurf < C["T0"]) * (LHF < 0)
-    moist_evaporation = -C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / 1e3 * (Tsurf >= C["T0"]) * (LHF < 0)
+    moist_deposition = C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / WATER_DENSITY * (Tsurf < C["T0"]) * (LHF > 0)
+    moist_condensation = C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / WATER_DENSITY * (Tsurf >= C["T0"]) * (LHF > 0)
+    moist_sublimation = -C["dayseconds"] * time2["dt"] * LHF / C["Ls"] / WATER_DENSITY * (Tsurf < C["T0"]) * (LHF < 0)
+    moist_evaporation = -C["dayseconds"] * time2["dt"] * LHF / C["Lv"] / WATER_DENSITY * (Tsurf >= C["T0"]) * (LHF < 0)
 
     ###########################################################
     # AVOID EVAPORATION OF ABSENT MELT

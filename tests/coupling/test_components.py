@@ -7,6 +7,7 @@ from collections.abc import Mapping
 import numpy as np
 
 from ebfm.core.config import TimeConfig, CouplingConfig, FieldValidationLevel
+from ebfm.core.constants import WATER_DENSITY
 
 from ebfm.coupling.components import Component, ElmerIce, ExchangeKeySet
 from ebfm.coupling.components.icon_land import partition_evapotrans
@@ -925,7 +926,7 @@ class TestIconLandComponent(unittest.TestCase):
         np.testing.assert_allclose(icon_land_data["moist_condensation"], [0.0, 0.0, 4e-3])
         np.testing.assert_allclose(icon_land_data["moist_deposition"], np.zeros(3))
         # Melt energy of the melt above, spread over the 1 h time step
-        np.testing.assert_allclose(icon_land_data["Emelt"], melt * 1e3 * 0.33e6 / 3600.0)
+        np.testing.assert_allclose(icon_land_data["Emelt"], melt * WATER_DENSITY * 0.33e6 / 3600.0)
 
     def test_map_energy_balance_to_ebfm_without_all_fields(self):
         """

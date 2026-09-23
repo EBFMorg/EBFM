@@ -76,8 +76,13 @@ def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
         m = (
             35.0 * (IN["Pres"] / C["Pref"]) * (1224.0 * (OUT["TOAflat"] / OUT["I0"]) ** 2 + 1.0) ** -0.5
         )  # SOURCE: Meyers and Dale (1983)
+        # Conversion factor Pa to kPa
+        Pa2kPa = 1e-3
+        # Atwater and Brown Jr (1974) use a 949e-6 mb^-1 coefficient; rescaled to
+        # kPa (1 kPa = 10 mb) since IN["Pres"] * Pa2kPa is in kPa here.
+        RAYLEIGH_GAS_COEFF_PER_KPA = 949e-5
         t_rg = 1.021 - 0.084 * np.sqrt(
-            m * (949.0 * (IN["Pres"] / 1e3) * 1e-5 + 0.051)
+            m * (RAYLEIGH_GAS_COEFF_PER_KPA * (IN["Pres"] * Pa2kPa) + 0.051)
         )  # SOURCE: Atwater and Brown Jr (1974)
 
         # Transmissivity after water vapor absorption
