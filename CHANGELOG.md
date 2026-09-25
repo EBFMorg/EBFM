@@ -4,7 +4,7 @@ SPDX-FileCopyrightText: 2025 EBFM Authors
 SPDX-License-Identifier: CC-BY-4.0
 -->
 
-# develop
+# v0.8.0
 
 * A `put()` or `get()` for a field name that the coupled component never registered now logs a warning listing the registered field names and skips the operation, returning the new exit code `UNREGISTERED_FIELD`. With `--fake-coupling` such a call was previously discarded (`put`) or answered with a no-data result indistinguishable from a field that is simply not coupled (`get`); with YAC it failed with a `KeyError`. Skipping instead of failing keeps a field that is deliberately left undefined harmless, e.g. Elmer/Ice's `dhdx`/`dhdy`. https://github.com/EBFMorg/EBFM/pull/185
 * `--fake-coupling` now works for grids built from an Elmer mesh, instead of failing during coupler setup with "Could not infer number of grid points". The number of points is taken from the per-column fields of the grid, which is what the coupled fields are sized by. https://github.com/EBFMorg/EBFM/pull/184
