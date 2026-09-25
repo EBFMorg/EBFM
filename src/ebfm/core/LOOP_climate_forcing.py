@@ -6,8 +6,6 @@ import numpy as np
 
 from ebfm.core.config import ForcingConfig, ForcingType
 
-from .LOOP_general_functions import is_first_time_step
-
 from ebfm.core import logging
 from ebfm.core.constants import WATER_DENSITY
 
@@ -80,8 +78,6 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
     # Time since last snowfall event
     snowfall_mask = (IN["snow"] / (time["dt"] * C["dayseconds"])) > C["Pthres"]
     OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
-    if is_first_time_step(t):
-        OUT["timelastsnow"][:] = time["TCUR"]
 
     # Potential temperature and lapse rate
     IN["Theta"] = IN["T"] * (C["Pref"] / IN["Pres"]) ** (C["Rd"] / C["Cp"])
