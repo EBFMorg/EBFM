@@ -12,6 +12,7 @@ from ebfm.core import (
     LOOP_general_functions,
     LOOP_climate_forcing,
     LOOP_EBM,
+    LOOP_EBM_GHF,
     LOOP_SNOW,
     LOOP_mass_balance,
 )
@@ -32,6 +33,12 @@ import ebfm.coupling
 logger: Logger
 # dedicated logger for diagnostic output (--print-diagnostics)
 diagnostics_logger = getLogger("ebfm.diagnostics")
+
+
+# Whether EBFM's own surface energy balance is evaluated while ICON-Land provides the one that
+# drives the model, to be compared with it (OUT["ebm_diagnostics"], written to the output as ebm_*).
+# TODO: make this a command line option.
+COMPUTE_EBM_DIAGNOSTICS = True
 
 
 # Arrays saved by --dump-reference
@@ -199,15 +206,37 @@ def _main_impl():
 
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
+        # Cache GHF conductance to make it publicly available
+        OUT["ghf_k"], OUT["ghf_cond"], OUT["hcap_sub"] = LOOP_EBM_GHF.conductance(OUT)
+
+        # Send the surface/firn state of the EBFM grid cells to ICON-Land (JSBACH). Receiving the
+        # resulting surface energy balance is deferred until EBFM has prepared its forcing and run
+        # its own energy balance below, so ICON-Land can compute it meanwhile instead of EBFM
+        # blocking on ICON-Land right here.
+        if coupler.has_coupling_to("icon_land"):
+            icon_land = coupler.get_component("icon_land")
+            logger.info("Sending state to ICON-Land")
+            logger.debug("Started...")
+            data_to_icon_land = {
+                "icefract": grid["mask"].astype(float),
+                "albedo": OUT["albedo"],
+                "t_sub": OUT["subT"][:, 1],
+                "ghf_cond": OUT["ghf_cond"],
+                "hcap_sub": OUT["hcap_sub"],
+                "runoff_to_icon_land": OUT["runoff"],
+                "smb_to_icon_land": OUT["smb"],
+                "snowmass": OUT["snowmass"],
+            }
+            icon_land.exchange(data_to_icon_land, target_keys=set())
+            logger.debug("Done.")
+
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
             # Exchange data with ICON
             icon_atmo = coupler.get_component("icon_atmo")
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
-            data_to_icon = {
-                "albedo": OUT["albedo"],
-            }
+            data_to_icon_atmo = {}
 
             fallback_values = {
                 "rlds": IN["LWin"],
@@ -217,27 +246,58 @@ def _main_impl():
                 "sfcpres": IN["T"] * 0.0 + 101500.0,
             }
 
-            data_from_icon = icon_atmo.exchange(data_to_icon, fallback_values)
+            data_from_icon_atmo = icon_atmo.exchange(data_to_icon_atmo, fallback_values)
 
             logger.debug("Done.")
-            logger.debug(f"Received the following data from ICON: {data_from_icon}")
+            logger.debug(f"Received the following data from ICON: {data_from_icon_atmo}")
 
-            IN["P"] = data_from_icon["pr"]
-            IN["snow"] = data_from_icon["pr_snow"]
-            IN["SWin"] = data_from_icon["rsds"]
-            IN["LWin"] = data_from_icon["rlds"]
-            IN["C"] = data_from_icon["clt"]
-            IN["WS"] = data_from_icon["sfcwind"]
-            IN["T"] = data_from_icon["tas"]
+            IN["P"] = data_from_icon_atmo["pr"]
+            IN["snow"] = data_from_icon_atmo["pr_snow"]
+            IN["SWin"] = data_from_icon_atmo["rsds"]
+            IN["LWin"] = data_from_icon_atmo["rlds"]
+            IN["C"] = data_from_icon_atmo["clt"]
+            IN["WS"] = data_from_icon_atmo["sfcwind"]
+            IN["T"] = data_from_icon_atmo["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"] = data_from_icon["huss"]
-            IN["Pres"] = data_from_icon["sfcpres"]
+            IN["q"] = data_from_icon_atmo["huss"]
+            IN["Pres"] = data_from_icon_atmo["sfcpres"]
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config)
 
         # Run surface energy balance model
         OUT = LOOP_EBM.main(C, OUT, IN, time, grid, coupler)
+
+        # Receive the surface energy balance ICON-Land computed from the state sent above
+        if coupler.has_coupling_to("icon_land"):
+            icon_land = coupler.get_component("icon_land")
+            logger.info("Receiving surface energy balance from ICON-Land")
+            logger.debug("Started...")
+            data_from_icon_land = icon_land.exchange({}, target_keys={"t_srf", "melt", "evapotrans"})
+            logger.debug("Done.")
+            for name, values in data_from_icon_land.items():
+                logger.debug(
+                    f"Received {name} from ICON-Land: min={np.min(values):.4g} mean={np.mean(values):.4g} "
+                    f"max={np.max(values):.4g}"
+                )
+            icon_land_data = icon_land.map_energy_balance_to_ebfm(data_from_icon_land)
+
+            if COMPUTE_EBM_DIAGNOSTICS:
+                # EBFM's own surface energy balance, evaluated before ICON-Land's results replace
+                # the surface temperature it follows from in OUT
+                ebm_diagnostics = LOOP_EBM.melt_and_moisture_fluxes(C, time, OUT)
+                OUT["ebm_diagnostics"] = ebm_diagnostics
+                logger.debug(
+                    "Surface energy balance ICON-Land vs EBFM (mean over the grid): "
+                    f"Tsurf {np.mean(icon_land_data['Tsurf']):.2f} vs {np.mean(ebm_diagnostics['Tsurf']):.2f} K, "
+                    f"melt {np.mean(icon_land_data['melt']):.3e} vs {np.mean(ebm_diagnostics['melt']):.3e} m w.e."
+                )
+
+            # ICON-Land's surface energy balance drives the firn model and the mass balance
+            OUT.update(icon_land_data)
+        else:
+            # EBFM's own surface energy balance drives the firn model and the mass balance
+            OUT.update(LOOP_EBM.melt_and_moisture_fluxes(C, time, OUT))
 
         # Run snow & firn model
         OUT = LOOP_SNOW.main(C, OUT, IN, time["dt"], grid, phys, column)
@@ -255,28 +315,26 @@ def _main_impl():
             logger.debug("Started...")
 
             data_to_elmer = {
-                "smb": OUT["smb"],
+                "smb_to_elmer": OUT["smb"],
                 "T_ice": OUT["T_ice"],
-                "runoff": OUT["runoff"],
+                "runoff_to_elmer": OUT["runoff"],
             }
             data_from_elmer = elmer_ice.exchange(data_to_elmer)
             logger.debug("Done.")
             logger.debug(f"Received the following data from Elmer/Ice: {data_from_elmer}")
 
             IN["surface_elevation"] = data_from_elmer["surface_elevation"]
-            OUT["surface_elevation"] = IN["surface_elevation"]
-            OUT["x"] = grid["x"]
-            OUT["y"] = grid["y"]
-            if coupler.has_coupling_to("icon_atmo"):
-                grid["z"] = IN["surface_elevation"][0].ravel()
+            elmer_ice.update_surface_elevation(grid, IN["surface_elevation"])
+
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
-        else:
-            # Needed by FINAL_create_restart_file.main(OUT, io)
-            OUT["x"] = grid["x"]
-            OUT["y"] = grid["y"]
-            OUT["surface_elevation"] = grid["z"]
+
+        # Needed by FINAL_create_restart_file.main(OUT, io). The grid carries the elevation of the current
+        # time step, whether it was read during initialization or received from Elmer/Ice just above.
+        OUT["x"] = grid["x"]
+        OUT["y"] = grid["y"]
+        OUT["surface_elevation"] = grid["z"]
 
         # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
         # TODO: partitioned output should be supported in a dedicated parallel-safe writer.

@@ -12,6 +12,7 @@ from ebfm.core.config import ForcingConfig, ForcingType
 from .LOOP_general_functions import is_first_time_step
 
 from ebfm.core import logging
+from ebfm.core.constants import WATER_DENSITY
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +57,7 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
     ###########################################################
 
     # Annual snow accumulation
-    OUT["ys"] = (1.0 - (1.0 / (C["yeardays"] / time["dt"]))) * OUT["ys"] + IN["P"] * 1e3
+    OUT["ys"] = (1.0 - (1.0 / (C["yeardays"] / time["dt"]))) * OUT["ys"] + IN["P"] * WATER_DENSITY
     logys = np.log(OUT["ys"])
     nl = OUT["subT"].shape[1]
     IN["yearsnow"] = np.tile(OUT["ys"][:, np.newaxis], (1, nl))

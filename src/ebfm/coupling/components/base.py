@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
     from ebfm.coupling.fields.base import FieldSet
+    from ebfm.core.config import TimeConfig
+    from ebfm.core.grid import GridDict
 
 
 def identity(x: np.ndarray) -> np.ndarray:
@@ -74,7 +76,36 @@ class Component(ABC):
         """
         self._coupler = coupler
         self.name = name
+        self._ebfm_time: TimeConfig | None = None  # will be set in set_ebfm_time()
         pass
+
+    @property
+    def ebfm_time(self) -> "TimeConfig":
+        """
+        Time configuration of the EBFM model run, i.e. the model time step EBFM integrates with.
+
+        Named after EBFM because a coupled setup has several time steps that need not agree: the coupling time
+        step of the coupler, the time step a Field is exchanged at, and this one. They only happen to coincide
+        in the current setup.
+
+        @note Only available after Coupler.setup has been called, which hands the time configuration to every
+              coupled component.
+
+        @returns time configuration of the EBFM model run
+        """
+        assert self._ebfm_time is not None, "self._ebfm_time must be set before accessing ebfm_time."
+        return self._ebfm_time
+
+    def set_ebfm_time(self, time: "TimeConfig"):
+        """
+        Hand the time configuration of the EBFM model run to this component.
+
+        A component is created before the time configuration is known, so the coupler forwards it once, from
+        Coupler.setup, before any field is registered.
+
+        @param[in] time time configuration of the EBFM model run
+        """
+        self._ebfm_time = time
 
     def _uses_coupler(self, coupler_class_type) -> bool:
         """
@@ -153,6 +184,26 @@ class Component(ABC):
         assert data is not None, f"Received data for field '{field_name}' is None. {err}"
         logger.debug(f"Received data for field '{field_name}' from coupler: {data}")
         return transform(data)
+
+    def _map_mass_flux_to_ebfm(self, mass_flux: np.ndarray) -> np.ndarray:
+        """
+        Convert a mass flux in kg m-2 s-1 (e.g. precipitation, melt, evaporation) to
+        m w.e. per EBFM time step.
+        """
+        from ebfm.core.constants import WATER_DENSITY
+
+        mwe_per_second = mass_flux / WATER_DENSITY
+        mwe_per_timestep = mwe_per_second * self.ebfm_time.time_step_in_seconds()
+        return mwe_per_timestep
+
+    def _map_mass_flux_from_ebfm(self, mwe_per_timestep: np.ndarray) -> np.ndarray:
+        """
+        Convert an amount in m w.e. per EBFM time step to a mass flux in kg m-2 s-1.
+        """
+        from ebfm.core.constants import WATER_DENSITY
+
+        seconds_per_timestep = self.ebfm_time.time_step_in_seconds()
+        return mwe_per_timestep * WATER_DENSITY / seconds_per_timestep
 
     def _all_target_keys(self) -> set[str]:
         """
@@ -299,12 +350,26 @@ class Component(ABC):
         pass
 
     @abstractmethod
-    def get_field_definitions(self, time: dict[str, float]) -> "FieldSet":
+    def get_field_definitions(self) -> "FieldSet":
         """
         Get field definitions for this component.
         Subclasses must implement this method.
 
-        @param[in] time dictionary with time parameters
+        @note Requires the time configuration to be set (see set_ebfm_time), since a field definition carries
+              the time step a field is exchanged at.
+
         @returns Set of Field objects for this component
+        """
+        pass
+
+    def validate_grid(self, grid: "GridDict"):
+        """
+        Check that the grid EBFM runs on meets the requirements of this coupling.
+
+        Called once per coupled component from Coupler.setup, before any field is registered, so that an
+        incompatible grid is rejected before the time loop rather than during the first exchange. A component
+        that couples to any grid does not override this.
+
+        @param[in] grid grid EBFM runs on
         """
         pass
