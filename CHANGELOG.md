@@ -7,6 +7,40 @@ SPDX-License-Identifier: CC-BY-4.0
 # develop
 
 * Introduce coarse-resolution (10-km) and fine-resolution (2.5-km) test cases for Greenland forced with meteorological data from CARRA2. https://github.com/EBFMorg/EBFM/pull/128
+    * Add feature to use NetCDF meshes with DEM as input (`--netcdf-mesh`)
+    * Add feature to read forcing files from folder (`--forcing-dir`)
+* The exchange with a coupled component can now be split into multiple phases (e.g. `send -> do computation -> receive`). `Component.exchange` accepts an optional `get_keys` argument listing the fields to be received, next to `data_to_exchange` which defines the fields to be sent. A component may internally enforce additional conditions (i.e., collections of send/receive pairs that must be communicated together) and raise a `ValueError` if requirements are not fulfilled. `icon_atmo` and `elmer_ice` support expect a single exchange where all fields are exchanged in one phase, as before. https://github.com/EBFMorg/EBFM/pull/175
+* NetCDF output writing now supports unstructured Elmer-based grids in addition to MATLAB grids (previously skipped with a warning), including mesh topology when available. Output is now written for any non-partitioned run regardless of grid type or coupling, with a one-time startup warning that non-structured or coupled output is not yet covered by tests. https://github.com/EBFMorg/EBFM/pull/135
+
+# v0.7.0
+
+* Loading a restart file (`--restart-init`) now also rejects a file that is missing a required variable, or that stores a per-layer variable per-column (or vice versa). Both previously loaded without complaint and only surfaced much later, if at all. The number of columns and layers a run uses is now logged during initialization. https://github.com/EBFMorg/EBFM/pull/169
+* Loading a restart file (`--restart-init`) now rejects files whose arrays do not match the configured column discretization, instead of loading them and mixing two different column or layer counts into the model state. https://github.com/EBFMorg/EBFM/pull/167
+* Moved performance and profiling sections out of `README.md` into `docs/Performance.md`, together with the GPU setup and CUDA runtime troubleshooting entry. https://github.com/EBFMorg/EBFM/pull/161
+* Removed the `uniform` percolation scheme (not used in practice, `normal` and `bucket` are typically chosen). `phys["percolation"]` now accepts `bucket`, `normal` and `linear`. Adapted tests. https://github.com/EBFMorg/EBFM/pull/160
+* Fixed `phys["percolation"] = "uniform"` raising `TypeError` on the first timestep in `LOOP_SNOW.py` (only in NumPy path). `test_loop_snow_percolation.py` added. https://github.com/EBFMorg/EBFM/pull/158
+* Introduced `--with-gpu` to offload the kernels compaction, heat conduction, percolation to a GPU via `numba.cuda` (NVIDIA) or `numba.hip` (AMD), with `--gpu-vendor {auto,nvidia,amd}` to select/guard the vendor. Mutually exclusive with `--with-numba`. Install via `pip install ebfm[gpu]`. https://github.com/EBFMorg/EBFM/pull/157
+* Added `tests/core/test_loop_snow_gpu.py`: runs the snow model on the NumPy and GPU backends from an identical state and requires agreement to `atol=1e-12, rtol=1e-9`. Uses numba's CUDA simulator, so it needs no GPU. https://github.com/EBFMorg/EBFM/pull/157
+* Further optimizations in CPU/host-side code in `LOOP_SNOW.py`: fewer full-grid copies, heat conduction precompute moved into Numba kernel. https://github.com/EBFMorg/EBFM/pull/147.
+* The `performance` extra no longer installs `mpi4py`: Numba parallelises with threads inside a single process and does not require MPI. Use `EBFM[performance,mpi]` to combine both. https://github.com/EBFMorg/EBFM/pull/147.
+* Fixed bug where the shading look-up table for MATLAB grids was pre-computed during initialization even when shading is disabled.  https://github.com/EBFMorg/EBFM/pull/155.
+* EBFM now officially support and tests Python 3.14. https://github.com/EBFMorg/EBFM/pull/156
+* Fixed bug where resuming from a restart file (`--restart-init`) could lead to time step sizes equal to zero in `LOOP_SNOW.py`. Loading a restart file now asserts the restart variables to contain no missing values and converts them to plain `ndarray`. https://github.com/EBFMorg/EBFM/pull/154
+* Fixed bug in icon_to_atmo.py to convert pr_snow units to mwe per timestep (rather than using kg m-2 s-1). https://github.com/EBFMorg/EBFM/pull/149
+* Add general interface for definition of fallback values if a coupled component does not provide expected data for individual fields. https://github.com/EBFMorg/EBFM/pull/146.
+    * The following fields expected from the component "icon_atmo" will use fallback value if they are missing: "rlds", "clt", "sfcwind", "huss", and "sfcpres"
+* Shift coupler init to beginning of execution to reduce wait time for other components. https://github.com/EBFMorg/EBFM/pull/151
+
+# v0.6.1
+
+* Catch invalid values returned by YAC's get and forward info to user. https://github.com/EBFMorg/EBFM/pull/145.
+
+# v0.6.0
+
+* Rename "h" received from Elmer to "surface_elevation". https://github.com/EBFMorg/EBFM/pull/124.
+* Assure model time is always in UTC+0, allowing removal of the previously hard-coded (time-zone dependent) parameter dT_UTC. https://github.com/EBFMorg/EBFM/pull/138
+* Rename `--netcdf-mesh` to `--netcdf-dem-mesh` and `--netcdf-mesh-unstructured` to `--netcdf-dem-mesh-unstructured`. https://github.com/EBFMorg/EBFM/pull/142
+* Use ISO8601 datetime as suffix for restart files created with `--restart-dir` option. https://github.com/EBFMorg/EBFM/pull/141
 
 # v0.5.0
 

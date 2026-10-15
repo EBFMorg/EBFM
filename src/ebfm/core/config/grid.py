@@ -30,11 +30,14 @@ class GridConfig:
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
 
+    # UTM zone of grid coordinates, used to derive lat lon fields
+    utmzone: int = 33
+
     # maps GridInputType to corresponding argparse destination
     mesh_arg_dests = {
         GridInputType.ELMER: "elmer_mesh",
         GridInputType.MATLAB: "matlab_mesh",
-        GridInputType.GREENLAND: "greenland_mesh",
+        GridInputType.NETCDF: "netcdf_mesh",
     }
 
     # Shading is only supported for some grid types
@@ -56,7 +59,7 @@ class GridConfig:
         assert len(selected_primary_grids) == 1, "Internal error: expected exactly one primary grid option to be set."
 
         matlab_mesh = getattr(args, self.mesh_arg_dests[GridInputType.MATLAB], None)
-        greenland_mesh = getattr(args, self.mesh_arg_dests[GridInputType.GREENLAND], None)
+        netcdf_mesh = getattr(args, self.mesh_arg_dests[GridInputType.NETCDF], None)
         elmer_mesh = getattr(args, self.mesh_arg_dests[GridInputType.ELMER], None)
 
         self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
@@ -70,7 +73,9 @@ class GridConfig:
         ), "Internal error: partitioned grid configuration requires an Elmer mesh input."
 
         if self.is_partitioned:
-            assert args.netcdf_mesh, "Internal error: partitioned grid configuration requires NetCDF mesh input."
+            assert (
+                args.netcdf_dem_mesh
+            ), "Internal error: partitioned grid configuration requires NetCDF DEM mesh input."
             logger.info("Using partitioned grid...")
             self.partition_id = args.use_part
             logger.info(f"{self.partition_id=}")
@@ -81,24 +86,25 @@ class GridConfig:
             self.grid_type = GridInputType.MATLAB
             self.mesh_file = matlab_mesh
             self.is_unstructured = False
-        elif greenland_mesh:
-            self.grid_type = GridInputType.GREENLAND
-            self.mesh_file = greenland_mesh
+        elif netcdf_mesh:
+            self.grid_type = GridInputType.NETCDF
+            self.mesh_file = netcdf_mesh
+            self.dem_file = netcdf_mesh  # netcdf_mesh includes DEM data
             self.is_unstructured = False
-        elif args.netcdf_mesh and elmer_mesh:
+        elif args.netcdf_dem_mesh and elmer_mesh:
             self.grid_type = GridInputType.CUSTOM
             self.mesh_file = elmer_mesh
-            self.dem_file = args.netcdf_mesh
-            self.is_unstructured = False
-        elif args.netcdf_mesh_unstructured and elmer_mesh:
+            self.dem_file = args.netcdf_dem_mesh
+            self.is_unstructured = True
+        elif args.netcdf_dem_mesh_unstructured and elmer_mesh:
             self.grid_type = GridInputType.ELMERXIOS
             self.mesh_file = elmer_mesh
-            self.dem_file = args.netcdf_mesh_unstructured
+            self.dem_file = args.netcdf_dem_mesh_unstructured
             self.is_unstructured = True
         elif elmer_mesh:
             self.grid_type = GridInputType.ELMER
             self.mesh_file = elmer_mesh
-            self.is_unstructured = False
+            self.is_unstructured = True
         else:
             logger.error(
                 f"Invalid grid configuration. EBFM supports the grid types {[t.name for t in GridInputType]}. "

@@ -73,28 +73,29 @@ If during the installation of EBFM it appears that `yac` is missing, please doub
 ## Running EBFM
 
 ### Test experiments
-After installation, you are able to perform two basic uncoupled simulations, provided you cloned this repository. Every run produces an output file (`/Output/model_output.nc`), which contains daily output and can be viewed with tools like Ncview. The first test runs EBFM for all glaciers in Svalbard for 1-Jan-1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing: 
+
+After installation, you are able to perform two basic uncoupled simulations, provided you cloned this repository. Every run produces an output file (`/Output/model_output.nc`), which contains daily output and can be viewed with tools like Ncview. The first test runs EBFM for all glaciers in Svalbard for 1-Jan-1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing:
 
 ```sh
 ebfm --matlab-mesh examples/dem_and_mask.mat
 ```
 
-Another test applies EBFM to the Greenland Ice Sheet and forces it with Copernicus CARRA2 meteorological data for the month May 1990 on a 10-km resolution grid: 
+Another test applies EBFM to the Greenland Ice Sheet and forces it with Copernicus CARRA2 meteorological data for the month May 1990 on a 10-km resolution grid:
 
 ```sh
-ebfm --greenland-mesh examples/Greenland_grid_one_month.nc --start-time "1-May-1990 00:00" --end-time "1-Jun-1990 00:00"
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-05-01T00:00:00 --end-time 1990-06-01T00:00:00
 ```
 
-Two more tests can be done, simulating the Greenland Ice Sheet for a full year (1990) at spatial resolutions of 2.5 km or 10 km. The faster 10-km resolution test requires this [package](https://drive.google.com/file/d/1bZUKxQ7QgQjwwPA8jTHqlJ-mXhwsU_OP/view?usp=sharing), whereas the computationally more expensive high-resolution 2.5-km resolution test requires this downloadable [package](https://drive.google.com/file/d/1fTFMt0QzGTrQFfzOmBC4xk1OonFsH9ZQ/view?usp=sharing). The zip-files need to be extracted so that the .nc files are in the `/examples/` folder prior to running the model with the following commands:
+Two more tests can be done, simulating the Greenland Ice Sheet for a full year (1990) at spatial resolutions of 2.5 km or 10 km. The faster 10-km resolution test requires this [package](https://drive.google.com/file/d/1bZUKxQ7QgQjwwPA8jTHqlJ-mXhwsU_OP/view?usp=sharing), whereas the computationally more expensive high-resolution 2.5-km resolution test requires this downloadable [package](https://drive.google.com/file/d/1fTFMt0QzGTrQFfzOmBC4xk1OonFsH9ZQ/view?usp=sharing). The zip-files need to be extracted so that the `.nc` files are in the `/examples/` folder prior to running the model with the following commands:
 
 ```sh
-ebfm --greenland-mesh examples/Greenland_grid_coarse.nc --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
 ```
 
 for the 10-km resolution experiment, and as:
 
 ```sh
-ebfm --greenland-mesh examples/Greenland_grid.nc --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --forcing-dir examples/Greenland_CARRA2/forcing_fine --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
 ```
 
 for the 2.5-km resolution experiment.
@@ -102,12 +103,13 @@ for the 2.5-km resolution experiment.
 Please note that runs become significantly faster (~3 times) when running with performance optimization (see also **Performance and Profiling Runs** below), e.g.:
 
 ```sh
-ebfm --greenland-mesh examples/Greenland_grid.nc --with-numba --numba-threads 2 --start-time "01-Jan-1990 00:00" --end-time "1-Jan-1991 00:00"
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --forcing-dir examples/Greenland_CARRA2/forcing_fine --numba-threads 2 --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
 ```
 
 ### Mesh data
 
-The arguments `--matlab-mesh`, `--elmer-mesh`, `--netcdf-mesh`, and `--greenland-mesh` allow to provide different kinds of mesh data.
+The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data.
+The arguments `--netcdf-dem-mesh` and `--netcdf-dem-mesh-unstructured` allow to add a Digital Elevation Model (DEM) for `--elmer-mesh` since it comes without elevation information.
 EBFM supports the following formats:
 
 For Elmer-based inputs, the argument `--elmer-mesh-crs-epsg` is needed to define the coordinate reference system (CRS)
@@ -142,12 +144,12 @@ Important: For some larger files we are using Git LFS. Please make sure to [inst
 * Elmer Mesh with Elevation data from NetCDF: The Elmer mesh file provides x-y
   coordinate. An additioal NetCDF file is given to provide elevation data for
   these x-y coordinates. Please use the arguments `--elmer-mesh /path/to/your/elmer/mesh`
-  and `--netcdf-mesh /path/to/your/elevation.nc`
+  and `--netcdf-dem-mesh /path/to/your/elevation.nc`
 
   Usage example:
 
   ```sh
-  ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-mesh examples/BedMachineGreenland-v5_lo.nc --elmer-mesh-crs-epsg 3413
+  ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --elmer-mesh-crs-epsg 3413
   ```
 
 Note that an Elmer mesh must be provided in a directory following the structure:
@@ -185,7 +187,7 @@ path/to/your/elmer/mesh
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
 Note: The partitioned mesh is not included in this repository.
@@ -231,82 +233,26 @@ The resulting mesh can then be used directly with EBFM similar to the example wi
 ebfm --elmer-mesh examples/greenland_mesh_v0_with_DEM/MESH --elmer-mesh-crs-epsg 3413
 ```
 
+### Working with restart files
+
+You may use restart files with EBFM. To create a restart file at the end of a run, please provide a `--restart-dir`:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart
+```
+
+You can now use the `--restart-init` option to tell EBFM to use the restart file `examples/restart/restart_1979-01-02T00:00:00.nc` that you just created as a starting point:
+
+```sh
+ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart --restart-init --start-time 1979-01-02T00:00:00 --end-time 1979-01-03T00:00:00
+```
+
+Note that it is necessary to provide a `--start-time` consistent with the given restart file.
+
 ### Performance and Profiling Runs
 
-#### Installation for Performance Runs
-
-Install this branch with the performance dependencies:
-
-```sh
-pip install -e .[performance]
-```
-
-This additionally installs `numba` to run with multiple CPU-threads.
-
-#### Running EBFM with performance optimizations
-
-EBFM now includes several performance improvements and supports several options for performance testing and benchmarking:
-
-- Regular (NumPy) path:
-
-  The default run already includes some performance improvements. Run as usual:
-
-  ```sh
-  ebfm --matlab-mesh examples/dem_and_mask.mat
-  ```
-
-- Numba kernels:
-
-  To enable Numba-accelerated kernels, use the `--with-numba` flag. You can control the number of threads with `--numba-threads N` (replace `N` with the desired thread count):
-
-  ```sh
-  ebfm --matlab-mesh examples/dem_and_mask.mat --with-numba --numba-threads 2
-  ```
-
-  Note: If you use more than one thread, you must specify `--numba-threads`. In practice, 2 threads have shown the best performance so far, but optimal settings depend on your hardware and problem size. Feel free to experiment.
-
-
-#### Timing Your Run
-
-To measure the total runtime, simply prepend your command with `time`:
-
-```sh
-time ebfm --matlab-mesh examples/dem_and_mask.mat --with-numba --numba-threads 2
-```
-
-#### Comparing Results
-
-A new script is provided to compare model output snapshots:
-
-- `tools/compare_snapshots.py` can be used to compare two output files (e.g., from different runs or configurations).
-
-To create a reference file for comparison, use the `--dump-reference` option at the end of your run:
-
-```sh
-ebfm --matlab-mesh examples/dem_and_mask.mat --dump-reference reference_run.npz
-```
-
-Then compare with:
-
-```sh
-python tools/compare_snapshots.py reference_run.npz new_run.npz
-```
-
-Note: If you use the random-forcing within EBFM in your testcases, make sure to additionally set the option `--random-seed`, as explained below.
-
-#### Diagnostics and Reproducibility
-
-- The option `--random-seed` was introduced to allow reproducible runs (especially if the random forcing in the example testcase is used). Set a fixed seed to ensure identical results for repeated runs (important for benchmarking and debugging):
-
-  ```sh
-  ebfm --matlab-mesh examples/dem_and_mask.mat --random-seed 42
-  ```
-
-- Use `--diagnostics` to print some diagnostics for a quick overview for every timestep:
-
-  ```sh
-  ebfm --matlab-mesh examples/dem_and_mask.mat --diagnostics
-  ```
+Multi-threaded Numba kernels (`--with-numba`), GPU offloading (`--with-gpu`), timing, output comparison and
+reproducibility options are described in [docs/Performance.md](docs/Performance.md).
 
 ### Coupled simulation
 
@@ -327,7 +273,7 @@ Follow the install instructions from above and run the example command for a cou
 ```sh
 mpirun -np 1 ebfm \
   --elmer-mesh $MESHES/greenland_mesh_v0/MESH/partitioning.128/ \
-  --netcdf-mesh $DATA/BedMachineGreenland-v5.nc \
+  --netcdf-dem-mesh $DATA/BedMachineGreenland-v5.nc \
   --is-partitioned-elmer-mesh --use-part 1 \
   --coupler-config $CPL_CONFIG --couple-to-elmer --couple-to-icon \
   : \
@@ -393,6 +339,8 @@ pytest -v tests/
 
 ## Troubleshooting
 
+Numba and GPU runtime problems are covered in [docs/Performance.md](docs/Performance.md#troubleshooting).
+
 ### `libnetcdf.so` not found at runtime
 
 *Problem:* `./icon_dummy.x: error while loading shared libraries: libnetcdf.so.15: cannot open shared object file: No such file or directory`
@@ -452,7 +400,7 @@ This project uses [REUSE](https://reuse.software/) to track information regardin
 
 You can use pre-commit to automatically check if all files in the repository provide the necessary information:
 
-```
+```sh
 pre-commit run reuse --all-files
 ```
 

@@ -5,7 +5,7 @@
 import numpy as np
 
 from . import Coupler
-from .base import GridDict, CouplingConfig, CouplerErrorCode
+from .base import GridDict, CouplingConfig, CouplerExitCode
 from ebfm.coupling.fields import GenericExchangeType, FieldSet
 
 import logging
@@ -45,7 +45,7 @@ class DummyCoupler(Coupler):
         """
         return exchange_type
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Put data to another component
 
@@ -53,20 +53,20 @@ class DummyCoupler(Coupler):
         @param[in] field_name name of the field to put data to
         @param[in] data data to be sent
 
-        @returns error code, or None if no error occurred.
+        @returns exit code, or None if put successfully completed.
         """
         logger.debug(f"Put field {field_name} to {component_name}...")
         logger.debug("Do nothing for DummyCoupler.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Get data from another component
 
         @param[in] component_name name of the component to get data from
         @param[in] field_name name of the field to get data for
 
-        @returns tuple of (field data, error code). Error code is None if no error occurred.
+        @returns tuple of (field data, exit code). Exit code is None if get successfully received data.
         """
         logger.debug(f"Get field {field_name} from {component_name}...")
         logger.debug("Do nothing for DummyCoupler.")

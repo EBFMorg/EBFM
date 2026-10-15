@@ -7,6 +7,8 @@ import datetime
 
 from .grid import ShadingMethod
 
+from .config import DEFAULT_TZ
+
 
 def main(grid, time2, OUT):
     """
@@ -26,7 +28,7 @@ def main(grid, time2, OUT):
     ###########################################################
 
     # Time as a fraction of a year (in radians)
-    start_of_year = datetime.datetime(time2["TCUR"].year, 1, 1)  # January 1 of TCUR's year
+    start_of_year = datetime.datetime(time2["TCUR"].year, 1, 1, tzinfo=DEFAULT_TZ)  # January 1 of TCUR's year
     day_of_year = (time2["TCUR"] - start_of_year).days + (
         time2["TCUR"] - start_of_year
     ).seconds / 86400  # Fractional days
@@ -74,6 +76,7 @@ def main(grid, time2, OUT):
     )  # SOURCE: Iqbal (1983)
 
     if grid["has_shading"]:
+        gpsum = OUT["subT"].shape[0]
 
         # Azimuth (radians)
         cos_elevation = np.cos(elevationangle)
@@ -131,7 +134,7 @@ def main(grid, time2, OUT):
             # Shading routine
             z_flat = grid["z_2D"].ravel()
             z_current = z_flat[grid["ind"]]
-            shade = np.zeros(grid["gpsum"], dtype=bool)
+            shade = np.zeros(gpsum, dtype=bool)
             max_count = 200
 
             # Precompute grid indices and deltas ahead of time
@@ -173,7 +176,7 @@ def main(grid, time2, OUT):
             az_nearest[az_nearest == 0] = grid["nr_az_steps"]
 
             # Indices into lookup table (0-based for Python)
-            ind_az = az_nearest - 1 + np.arange(grid["gpsum"], dtype=int) * grid["nr_az_steps"]
+            ind_az = az_nearest - 1 + np.arange(gpsum, dtype=int) * grid["nr_az_steps"]
 
             # Shading happens when the solar elevation angle <= maximum grid angle
             temp = grid["maxgridangle"]

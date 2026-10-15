@@ -16,8 +16,9 @@ from datetime import datetime
 from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
-from .config import TimeConfig, GridConfig
-from .grid import GridInputType, GridDict, ShadingMethod
+from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
+from .grid import GridInputType, GridDict, ShadingMethod, number_of_columns, validate_grid
+from .restart import validate_all_variables_present, validate_variable_shape
 
 from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
 
@@ -37,9 +38,7 @@ def create_restart_file_name(time: datetime) -> str:
         str: The generated restart file name.
     """
     restart_file_prefix = "restart_"
-    restart_file_time_format = "%d-%b-%YT%H:%M"
-
-    return restart_file_prefix + time.strftime(restart_file_time_format) + ".nc"
+    return restart_file_prefix + iso8601(time) + ".nc"
 
 
 def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initialize_from_restart_file: bool):
@@ -55,17 +54,14 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
         grid (dict): Grid-related parameters.
         io (dict): Input/output parameters.
         phys (dict): Model physics settings.
+        column_config (ColumnDiscretizationConfig): How each column is divided into layers.
     """
 
     # ---------------------------------------------------------------------
     # Grid parameters
     # ---------------------------------------------------------------------
+    column_config = ColumnDiscretizationConfig()  # validates on construction
     grid: GridDict = {}
-    grid["utmzone"] = 33  # UTM zone
-    grid["max_subZ"] = 0.1  # Maximum first layer thickness (m)
-    grid["nl"] = 50  # Number of vertical layers
-    grid["doubledepth"] = True  # Double vertical layer depth at specified layers (True/False)
-    grid["split"] = np.array([15, 25, 35])  # Vertical layer numbers at which layer depth doubles
 
     # ---------------------------------------------------------------------
     # Model physics
@@ -76,7 +72,6 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     #   - 'bucket': tipping-bucket method (all water added at the surface)
     #   - 'normal': normally distributed deep percolation
     #   - 'linear': linearly distributed deep percolation
-    #   - 'uniform': uniformly distributed deep percolation
 
     phys["snow_compaction"] = "firn+snow"  # Snow and firn compaction scheme
     # Options:
@@ -119,7 +114,7 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     os.makedirs(io["outdir"], exist_ok=True)
 
     # Return the initialized parameters
-    return grid, io, phys
+    return grid, io, phys, column_config
 
 
 def init_constants():
@@ -188,19 +183,6 @@ def init_constants():
     return C
 
 
-def compute_number_of_glacier_cells(grid: GridDict) -> int:
-    """
-    Computes the number of glacier cells in the grid based on the mask.
-
-    Parameters:
-        grid (GridDict): containing grid-related parameters
-
-    Returns:
-        int: Number of glacier cells (gpsum)
-    """
-    return np.sum(grid["mask"] == 1)
-
-
 def init_grid(grid: GridDict, io, config: GridConfig):
     """
     Initializes the GridDict based on the given GridConfig.
@@ -219,11 +201,11 @@ def init_grid(grid: GridDict, io, config: GridConfig):
     grid["has_shading"] = config.use_shading
 
     # Read grid from Elmer, elevations from BedMachine
-    if config.dem_file:
+    if config.dem_file and (config.mesh_file != config.dem_file):
         grid_input_type_supporting_dem = [GridInputType.CUSTOM, GridInputType.ELMERXIOS]
         assert (
             config.grid_type in grid_input_type_supporting_dem
-        ), f"DEM file can only be specified for {grid_input_type_supporting_dem}."
+        ), f"Additional DEM file can only be specified for {grid_input_type_supporting_dem}."
         if config.is_partitioned:
             mesh: Mesh = read_elmer_mesh(
                 mesh_root=config.mesh_file,
@@ -238,7 +220,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             )
 
         grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
-        grid["lat"], grid["lon"] = mesh.lat_cells, mesh.lon_cells
+
         logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
             logger.debug("... for grid type CUSTOM.")
@@ -251,13 +233,10 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
             grid["mask"] = (h_cells > min_thickness_glacier).astype(int)
 
+        grid["lat"], grid["lon"] = np.degrees(mesh.lat_cells), np.degrees(mesh.lon_cells)
+
         if "mask" not in grid:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-
-        if config.grid_type is GridInputType.ELMERXIOS:
-            grid["gpsum"] = grid["z"].shape[0]
-        else:
-            grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
@@ -284,12 +263,11 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # TODO later add slope
         # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-    elif config.grid_type is GridInputType.MATLAB or GridInputType.GREENLAND:  # Read grid and elevations from a file
+    elif config.grid_type in (GridInputType.MATLAB, GridInputType.NETCDF):  # Read grid and elevations from a file
         # ---------------------------------------------------------------------
         # Read and process grid information
         # ---------------------------------------------------------------------
@@ -319,8 +297,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
                 mask_2D = np.fliplr(mask_2D)
 
             # Calculate latitude & longitude fields (from the original UTM coordinates)
-            utmzone = grid["utmzone"]  # Assume this is already part of the grid
-            utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + utmzone}", "EPSG:4326", always_xy=True)
+            utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
             x_coords = grid["x_2D"].ravel()
             y_coords = grid["y_2D"].ravel()
             lon, lat = utm_to_latlon.transform(x_coords, y_coords)
@@ -330,7 +307,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
 
         else:
-            input_data = read_GREENLAND_grid(config.mesh_file)
+            input_data = read_NETCDF_grid(config.mesh_file)
 
             grid["x_2D"] = input_data["x"]
             grid["y_2D"] = input_data["y"]
@@ -347,7 +324,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
 
         # Create 1-D mask
         grid["mask"] = mask_2D[mask_2D == 1]
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
 
         # Store 1-D (vectorized) grid information
         mask_flat = mask_2D.flatten()
@@ -381,6 +357,28 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["lat"] = grid["lat_2D"].flatten()[mask_flat == 1]
         grid["lon"] = grid["lon_2D"].flatten()[mask_flat == 1]
 
+        # four individual asserts to avoid overhead when turning on optimization
+        assert np.isfinite(grid["slope"]).all(), (
+            f"{int((~np.isfinite(grid['slope'])).sum())} of {grid['slope'].size} active grid cells have a "
+            "non-finite `slope`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["slope_x"]).all(), (
+            f"{int((~np.isfinite(grid['slope_x'])).sum())} of {grid['slope_x'].size} active grid cells have a "
+            "non-finite `slope_x`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["slope_y"]).all(), (
+            f"{int((~np.isfinite(grid['slope_y'])).sum())} of {grid['slope_y'].size} active grid cells have a "
+            "non-finite `slope_y`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["aspect"]).all(), (
+            f"{int((~np.isfinite(grid['aspect'])).sum())} of {grid['aspect'].size} active grid cells have a "
+            "non-finite `aspect`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+
         # Calculate slope_beta and slope_gamma (defining the tilt and orientation of a sloping surface)
         grid["slope_beta"] = np.arctan(grid["slope"])
         grid["slope_gamma"] = np.zeros_like(grid["slope"])
@@ -397,58 +395,79 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
         grid["slope_gamma"] = -grid["slope_gamma"]
 
-        if config.grid_type is GridInputType.MATLAB:
-            # -----------------------------------------------------------------------------------------------------
-            # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
-            # NOTE: Only works for grids with E-W and N-S aligned grid cells (e.g. MATLAB grid) and not for
-            # unstructured grids (e.g. Elmer mesh) or grids with rotated grid cells (e.g. Greenland grid).
-            # -----------------------------------------------------------------------------------------------------
-            grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
-            grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
+        # -----------------------------------------------------------------------------------------------------
+        # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
+        # NOTE: Only works for grids with E-W and N-S aligned grid cells (e.g. MATLAB grid) and not for
+        # unstructured grids (e.g. Elmer mesh) or grids with rotated grid cells (e.g. NetCDF Greenland grid).
+        # -----------------------------------------------------------------------------------------------------
+        # Skip the (expensive) look-up table when shading is disabled.
+        if config.grid_type is GridInputType.MATLAB and grid["has_shading"]:
+            _precompute_shading_matlab(grid, mask_2D)
 
-            # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
-            grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
-
-            xl, yl = grid["x_2D"].shape
-
-            # loop over the azimuth angles to determine gridded maximum grid angles per angle
-            grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
-            for n in range(grid["nr_az_steps"]):
-                az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
-
-                # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
-                ddx, ddy = calculate_step_sizes(az)
-
-                # from every grid cell step in the direction of the azimuth until the grid end is reached
-                # and detect maximum grid angle along the path
-                i0, j0 = np.where(mask_2D == 1)
-                max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
-                count = 1
-                active = np.ones(grid["gpsum"], dtype=bool)
-                max_walk_distance = 5e4  # maximum walk distance in meters along the azimuth
-                while active.any() and count * grid["dx"] < max_walk_distance:
-                    j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
-                    i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
-
-                    inbound = (j >= 0) & (j < yl) & (i >= 0) & (i < xl) & active
-                    if not inbound.any():  # stop when all walks have reached the domain edge
-                        break
-
-                    grid_angle = compute_grid_angle(grid, i, j, inbound)  # calculate grid angle from start to target
-
-                    max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle when needed
-
-                    active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
-                    count += 1
-
-                # fill lookup table with maximum grid angles for all cells (dimension 1) and azimuth angle (dimension 2)
-                grid["maxgridangle"][:, n] = max_angle
-
-    # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
+        # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
+    validate_grid(grid)
+
     return grid
+
+
+def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
+    """Pre-compute the shading look-up table of a MATLAB grid.
+
+    For every azimuth angle, walk outwards from each glacier cell until the domain edge is
+    reached and record the largest grid elevation angle seen along the path. The resulting
+    table `grid["maxgridangle"]` of shape (gpsum, nr_az_steps) lets the time loop decide
+    whether a cell is shaded without repeating the walk. This is the expensive part of grid
+    initialization, so it is only called when shading is enabled.
+
+    @param[in,out] grid Grid dictionary, updated with `shading_method`, `nr_az_steps`,
+                        `az_array` and `maxgridangle`.
+    @param[in] mask_2D 2-D glacier mask, 1 for glacier cells.
+    """
+    grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
+    grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
+
+    # azimuth angles in radians from -pi to +pi with nr_az_steps number of steps
+    grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
+
+    xl, yl = grid["x_2D"].shape
+
+    # loop over the azimuth angles to determine gridded maximum grid angles per angle
+    gpsum = number_of_columns(grid)
+    grid["maxgridangle"] = np.zeros((gpsum, grid["nr_az_steps"]), dtype=np.float64)
+    for n in range(grid["nr_az_steps"]):
+        az = np.full(gpsum, grid["az_array"][n], dtype=float)
+
+        # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
+        ddx, ddy = calculate_step_sizes(az)
+
+        # from every grid cell step in the direction of the azimuth until the grid end is reached
+        # and detect maximum grid angle along the path
+        i0, j0 = np.where(mask_2D == 1)
+        max_angle = np.full(gpsum, -np.inf, dtype=np.float64)
+        count = 1
+        active = np.ones(gpsum, dtype=bool)
+        max_walk_distance = 5e4  # maximum walk distance in meters along the azimuth
+        while active.any() and count * grid["dx"] < max_walk_distance:
+            j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
+            i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
+
+            inbound = (j >= 0) & (j < yl) & (i >= 0) & (i < xl) & active
+            if not inbound.any():  # stop when all walks have reached the domain edge
+                break
+
+            grid_angle = compute_grid_angle(grid, i, j, inbound)  # calculate grid angle from start to target
+
+            max_angle[inbound] = np.maximum(max_angle[inbound], grid_angle)  # update max grid angle if needed
+
+            active &= (j >= 0) & (j < yl) & (i >= 0) & (i < xl)  # continue walk until domain edge is reached
+
+            count += 1
+
+        # fill lookup table with maximum grid angles for all cells (dim 1) and azimuth angle (dim 2)
+        grid["maxgridangle"][:, n] = max_angle
 
 
 def compute_grid_angle(grid: GridDict, i, j, inbound) -> float:
@@ -538,12 +557,12 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def read_GREENLAND_grid(gridfile: Path):
+def read_NETCDF_grid(gridfile: Path):
     """
-    Provides Greenland grid information by reading from an updated Greenland_grid.nc file.
+    Read grid information from an NetCDF (.nc) file with DEM.
 
     Parameters:
-        gridfile: Path to Greenland_grid.nc.
+        gridfile: Path to NetCDF file (.nc).
 
     Returns:
         dict: A dictionary named `input_data` containing:
@@ -555,7 +574,7 @@ def read_GREENLAND_grid(gridfile: Path):
             - 'lat': 2D NumPy array of latitude coordinates.
     """
 
-    logger.info("EBFM: Reading Greenland grid data from NetCDF file...")
+    logger.info("EBFM: Reading grid data from NetCDF file...")
     input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
 
     try:
@@ -565,10 +584,10 @@ def read_GREENLAND_grid(gridfile: Path):
             elif "orog" in ncfile.variables:
                 raw_orography = ncfile.variables["orog"][:]
             else:
-                raise KeyError("Neither `orography` nor `orog` found in Greenland grid file.")
+                raise KeyError(f"Neither `orography` nor `orog` found in NetCDF grid file {gridfile}.")
 
             if "mask" not in ncfile.variables:
-                raise KeyError("Missing `mask` in Greenland grid file.")
+                raise KeyError(f"Missing `mask` in in NetCDF grid file {gridfile}.")
 
             raw_mask = ncfile.variables["mask"][:]
             latitude = np.asarray(ncfile.variables["latitude"][:])
@@ -601,7 +620,7 @@ def read_GREENLAND_grid(gridfile: Path):
             longitude = np.mod(longitude, 360.0)
 
             if not np.any(mask > 0.0):
-                raise ValueError("Greenland mask contains no active cells with `mask > 0`.")
+                raise ValueError(f"Mask of {gridfile} contains no active cells with `mask > 0`.")
 
             lonlat_to_utm24n = Transformer.from_crs("EPSG:4326", "EPSG:32624", always_xy=True)
             x, y = lonlat_to_utm24n.transform(longitude, latitude)
@@ -617,34 +636,41 @@ def read_GREENLAND_grid(gridfile: Path):
         logger.info(f"File not found: {gridfile}")
         raise
     except KeyError as e:
-        logger.info(f"Missing field in NetCDF file: {e}")
+        logger.info(f"Missing field in NetCDF file {gridfile}: {e}")
         raise
 
     return input_data
 
 
-def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file: bool):
+def init_initial_conditions(
+    C, grid: GridDict, io, time, column: ColumnDiscretizationConfig, init_with_restart_file: bool
+):
     """
     Sets the model's initial conditions at the start of the simulation.
 
     Parameters:
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
-        grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
+        grid (dict): Dictionary representing the grid.
         io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         time (dict): Dictionary with time-related parameters (e.g. ts).
+        column (ColumnDiscretizationConfig): How each column is divided into layers.
         init_with_restart_file (bool): Flag indicating whether to initialize from a restart file or set manually.
 
     Returns:
         OUT (dict): Dictionary containing model outputs initialized with default or restart file values.
         IN (dict): Dictionary containing model inputs initialized with default values.
         OUTFILE (dict): Placeholder dictionary for output file management.
+
+    Raises:
+        ValueError: if a restart file holds an array that does not match the configured `(gpsum, nl)`.
     """
 
     OUT = {}  # Dictionary to hold model output variables
     IN = {}  # Dictionary to hold model input variables
 
-    gpsum = grid["gpsum"]
-    nl = grid["nl"]
+    gpsum = number_of_columns(grid)
+    nl = column.nl
+    logger.info(f"Column discretization: {gpsum} columns of {nl} layers each.")
 
     ##########################################################
     # Initialize conditions from restart file or set manually
@@ -654,10 +680,29 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
 
         # Open the NetCDF file
         with Dataset(io["bootfilein"], "r") as ncfile:
+            validate_all_variables_present(ncfile.variables, io["bootfilein"])
             # Iterate through all variables in the file
             for var_name in ncfile.variables:
-                # Read the variable data
+                # Read the variable data. netCDF4 returns a numpy.ma.MaskedArray
+                # here whenever the variable defines a fill value, regardless of
+                # whether any missing values are actually present.
                 var_data = ncfile.variables[var_name][:]
+                # Restart files are expected to be fully populated. Mixing masked
+                # arrays into the simulation state is unsafe: numpy's masked-array
+                # ufuncs silently ignore `where=` when combining masks (only the
+                # data respects `where`), so masks can leak into cells they
+                # should not and snowball across timesteps. Verify the assumption
+                # holds, then drop down to a plain ndarray.
+                assert not np.ma.is_masked(var_data), (
+                    f"Restart variable '{var_name}' in {io['bootfilein']} contains missing values, "
+                    "which is not supported."
+                )
+                if isinstance(var_data, np.ma.MaskedArray):
+                    var_data = var_data.data
+
+                # Perform consistency checks
+                validate_variable_shape(var_name, var_data.shape, gpsum, nl, io["bootfilein"])
+
                 # If a variable has no dimensions (scalar), convert it to a Python scalar
                 if var_data.shape == ():  # Scalar variable
                     var_data = var_data.item()
@@ -681,18 +726,18 @@ def init_initial_conditions(C, grid: GridDict, io, time, init_with_restart_file:
         OUT["subD"] = np.full((gpsum, nl), C["Dice"])  # Vertical densities (kg m-3)
         OUT["timelastsnow"] = np.full((gpsum,), time["ts"])  # Timestep of last snowfall (days)
         OUT["ys"] = np.full((gpsum,), 500.0)  # Annual snowfall (mm water equivalent)
-        OUT["subZ"] = np.full((gpsum, nl), grid["max_subZ"])  # Vertical layer depths (m)
+        OUT["subZ"] = np.full((gpsum, nl), column.max_subZ)  # Vertical layer depths (m)
         OUT["alb_snow"] = np.full((gpsum,), C["alb_fresh"])  # Snow albedo
         OUT["snowmass"] = np.zeros((gpsum,))  # Snow mass (m water equivalent)
 
-        if grid.get("doubledepth", False):  # Sets layer thicknesses when 'double depth' is active
+        if column.doubledepth:  # Sets layer thicknesses when 'double depth' is active
             mask_indices = np.where(grid["mask"] == 1)
-            split = grid["split"] - 1
+            split = column.split - 1
             for n, split_start in enumerate(split[:-1]):
-                depth_value = (2.0 ** (n + 1)) * grid["max_subZ"]
+                depth_value = (2.0 ** (n + 1)) * column.max_subZ
                 OUT["subZ"][mask_indices[0], split_start : split[n + 1]] = depth_value
 
-            final_depth_value = (2.0 ** len(split)) * grid["max_subZ"]
+            final_depth_value = (2.0 ** len(split)) * column.max_subZ
             OUT["subZ"][mask_indices[0], split[-1] :] = final_depth_value
 
     ######################################################

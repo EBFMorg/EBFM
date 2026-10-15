@@ -7,13 +7,13 @@ import numpy as np
 
 from ebfm.core import logging
 
-from .base import Coupler, Grid, GridDict, CouplingConfig, CouplerErrorCode
+from .base import Coupler, Grid, GridDict, CouplingConfig, CouplerExitCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
 from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
 from ebfm.coupling.fields import YACField
 
-from ebfm.core.config import Calendar
+from ebfm.core.config import Calendar, iso8601
 
 # from ebfm.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 
@@ -67,7 +67,15 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         # candidate for abstract function in Coupler base class?
         # self.initialize_time_frame(coupling_config.start_time, coupling_config.end_time)
-        self.interface.def_datetime(coupling_config.start_time, coupling_config.end_time)
+
+        # required due to YAC's def_datetime() function requiring ISO 8601 format with 'Z' for UTC timezone
+        # see https://gitlab.dkrz.de/YAC/YAC-dev/-/merge_requests/591
+        self.interface.def_datetime(iso8601(coupling_config.start_time), iso8601(coupling_config.end_time))
+
+        # YAC will presumably support "+00:00" (used natively in datatime) in a future release.
+        # See https://github.com/EBFMorg/EBFM/issues/139
+        # assert tuple(map(int, yac.version().lstrip("v").split("."))) >= (3, 19, 0)
+        # self.interface.def_datetime(coupling_config.start_time, coupling_config.end_time)
 
         if coupling_config.coupler_config:
             self.interface.read_config_yaml(str(coupling_config.coupler_config))
@@ -125,7 +133,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         self.interface.enddef()
 
-        for field in self.fields.all():
+        for field in self._fields.all():
             assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
             logger.debug(f"Performing consistency checks for field '{field.name}'...")
             field.perform_consistency_checks(self.interface, self.component_name, self.field_validation_level)
@@ -152,7 +160,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
 
         component = self._coupled_components[component_name]
 
-        comp_fields = self.fields.filter(lambda f: f.coupled_component == component and f.name == field_name).all()
+        comp_fields = self._fields.filter(lambda f: f.coupled_component == component and f.name == field_name).all()
 
         if len(comp_fields) == 0:
             raise KeyError(f"No field named '{field_name}' found for component '{component_name}'.")
@@ -166,7 +174,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
         return field
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerErrorCode | None:
+    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Put data to another component
 
@@ -174,7 +182,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         @param[in] field_name name of the field to put data to
         @param[in] data data to be sent
 
-        @returns error code, or None if no error occurred.
+        @returns exit code, or None if put successfully completed.
         """
 
         field = self._get_field(component_name, field_name)
@@ -186,7 +194,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
                 f"Field has to be a SOURCE field, but {field.exchange_type=}."
             )
             self._handle_field_validation_error(error_msg)
-            return CouplerErrorCode.WRONG_EXCHANGE_TYPE  # If we didn't raise, skip the put operation
+            return CouplerExitCode.WRONG_EXCHANGE_TYPE  # If we didn't raise, skip the put operation
 
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name}...")
         assert field.field_handle is not None, f"YAC field for '{field.name}' has not been created yet."
@@ -194,17 +202,14 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         logger.debug(f"Sending field {field.name} to {field.coupled_component.name} complete.")
         return None
 
-    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerErrorCode | None]:
+    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Get data from another component
 
         @param[in] component_name name of the component to get data from
         @param[in] field_name name of the field to get data for
 
-        @returns tuple of (field data, error code). Error code is None if no error occurred.
-                 Field data is always the value returned by YAC (e.g. zeros as fallback) even
-                 when an error code is set, so the caller can decide whether to use it or substitute
-                 their own fallback.
+        @returns tuple of (field data, exit code). Exit code is None if get successfully received data.
         """
 
         field = self._get_field(component_name, field_name)
@@ -218,7 +223,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
                 f"Field has to be a TARGET field, but its {field.exchange_type=}."
             )
             self._handle_field_validation_error(error_msg)
-            return None, CouplerErrorCode.WRONG_EXCHANGE_TYPE
+            return None, CouplerExitCode.WRONG_EXCHANGE_TYPE
 
         # Also check the actual YAC role: a field absent from the coupling YAML has role NONE
         # and yac_field.get() would silently return zeros -- signal this via error code so the
@@ -235,15 +240,42 @@ class YACCoupler(Coupler[yac.ExchangeType]):
                 f"is '{role}' (field not present in coupling config)."
             )
             self._handle_field_validation_error(error_msg)
-            error = CouplerErrorCode.WRONG_ROLE
+            error = CouplerExitCode.WRONG_ROLE
 
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name}...")
+        action = field.field_handle.action
+
+        if action is yac.Action.NONE:
+            logger.debug(f"Received YAC action NONE for field {field.name} from {field.coupled_component.name}.")
+            logger.debug(f"Skipping get and updating field {field.name} to next time step.")
+            field.field_handle.update()
+            logger.debug(f"No data for field {field.name} from {field.coupled_component.name} received.")
+            return None, CouplerExitCode.NO_DATA_RECEIVED
+
+        if action is yac.Action.OUT_OF_BOUND:
+            logger.warning(
+                f"Received YAC action OUT_OF_BOUNDS for field {field.name} " "from {field.coupled_component.name}."
+            )
+            logger.warning(f"Skipping get and updating field {field.name} to next time step.")
+            field.field_handle.update()
+            logger.warning("Please review your coupling configuration for errors.")
+            logger.debug(f"No data for field {field.name} from {field.coupled_component.name} received.")
+            return None, CouplerExitCode.NO_DATA_RECEIVED
+
+        expected_actions = {yac.Action.COUPLING, yac.Action.GET_FOR_RESTART}
+
+        assert action in expected_actions, (
+            f"Expected action {expected_actions} for field '{field.name}' from component "
+            f"'{field.coupled_component.name}', but got {action}."
+        )
+
         data, action = field.field_handle.get()
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         assert data.shape[0] == _COLLECTION_SIZE, (
             f"Expected data shape ({_COLLECTION_SIZE}, ...), got {data.shape} for field '{field.name}' "
             f"from component '{field.coupled_component.name}'."
         )
+
         return data[_COLLECTION_SIZE - 1], error
 
     def _handle_field_validation_error(self, error_msg: str):
@@ -320,7 +352,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
         @param[in] field_definitions FieldDefinitions object containing field definitions for EBFM
         """
 
-        assert self.fields.is_empty(), "Coupling fields have already been constructed."
+        assert self._fields.is_empty(), "Coupling fields have already been constructed."
 
         collection_size = 1  # TODO: Dummy value for now; make configurable if needed
 
@@ -333,12 +365,12 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             yac_field = YACField.from_field(field).construct_yac_field(
                 self.interface, self.component, collection_size, self.cell_centers
             )
-            self.fields.add(yac_field)
+            self._fields.add(yac_field)
 
     def _construct_coupling_post_sync(self):
         # after synchronisation or the end of the definition phase YAC can be queried about various information
 
-        for field in self.fields:
+        for field in self._fields:
             yac_field = field.field_handle
             assert yac_field is not None, f"YAC field handle for '{field.name}' has not been created yet."
             is_defined = self.interface.get_field_is_defined(

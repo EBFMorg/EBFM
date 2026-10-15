@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from ebfm.coupling.components.base import Component
 
 from ebfm.core import logging
+from ebfm.core.config import iso8601
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +38,7 @@ class YACTimestep:
         assert isinstance(timestep, Timestep), f"Expected generic Timestep, got {type(timestep)}"
 
         try:
-            normalized_iso = pd.Timedelta(timestep.value).isoformat()
+            normalized_iso = iso8601(pd.Timedelta(timestep.value))
         except Exception as exc:
             raise ValueError(f"Timestep '{timestep.value}' is not compatible with YAC ISO_FORMAT conversion.") from exc
 
@@ -219,6 +220,8 @@ class YACField:
         ), f"Field '{self.name}' has invalid YAC exchange type '{field_role}'. Must be SOURCE."
 
         src_field_timestep = yac_interface.get_field_timestep(src_comp, src_grid, src_field)
+        if not src_field_timestep:  # returns None if not set
+            src_field_timestep = "N/A"
 
         src_field_metadata = yac_interface.get_field_metadata(src_comp, src_grid, src_field)
         if not src_field_metadata:  # metadata is optional, returns None if not set

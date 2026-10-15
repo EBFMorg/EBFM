@@ -18,11 +18,12 @@ from ebfm.core.cli import (
 )
 
 from ebfm.core.comm import mpi_available
-from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig
+from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 
 # Minimal valid args for each primary grid type.
 _MATLAB = ["--matlab-mesh", "mesh.mat"]
 _ELMER = ["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413"]
+_CARRA2 = ["--netcdf-mesh", "mesh.nc"]
 
 
 def _parse(*extra: str, base: list[str] = _MATLAB):
@@ -41,6 +42,10 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
         args = parse_cli_args(_ELMER)
         self.assertEqual(args.elmer_mesh, Path("mesh/"))
 
+    def test_carra2_mesh_accepted(self):
+        args = parse_cli_args(_CARRA2)
+        self.assertEqual(args.netcdf_mesh, Path("mesh.nc"))
+
     def test_no_grid_option_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args([])
@@ -49,6 +54,11 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
     def test_two_grid_options_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(_MATLAB + _ELMER)
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_two_grid_options_rejected_matlab_carra(self):
+        with self.assertRaises(SystemExit) as ctx:
+            parse_cli_args(_MATLAB + _CARRA2)
         self.assertEqual(ctx.exception.code, 2)
 
 
@@ -75,33 +85,33 @@ class TestElmerMeshConstraints(unittest.TestCase):
 
 
 class TestPartitionedMeshConstraints(unittest.TestCase):
-    """--is-partitioned-elmer-mesh requires both --elmer-mesh and --netcdf-mesh."""
+    """--is-partitioned-elmer-mesh requires both --elmer-mesh and --netcdf-dem-mesh."""
 
     def test_partitioned_without_elmer_mesh_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(_MATLAB + ["--is-partitioned-elmer-mesh"])
         self.assertEqual(ctx.exception.code, 2)
 
-    def test_partitioned_without_netcdf_mesh_rejected(self):
+    def test_partitioned_without_netcdf_dem_mesh_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413", "--is-partitioned-elmer-mesh"])
         self.assertEqual(ctx.exception.code, 2)
 
     @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
-    def test_partitioned_with_elmer_and_netcdf_accepted(self):
+    def test_partitioned_with_elmer_and_netcdf_dem_accepted(self):
         args = parse_cli_args(
             [
                 "--elmer-mesh",
                 "mesh/",
                 "--elmer-mesh-crs-epsg",
                 "3413",
-                "--netcdf-mesh",
+                "--netcdf-dem-mesh",
                 "mesh.nc",
                 "--is-partitioned-elmer-mesh",
             ]
         )
         self.assertTrue(args.is_partitioned_elmer_mesh)
-        self.assertEqual(args.netcdf_mesh, Path("mesh.nc"))
+        self.assertEqual(args.netcdf_dem_mesh, Path("mesh.nc"))
 
 
 class TestDefaults(unittest.TestCase):
@@ -111,11 +121,11 @@ class TestDefaults(unittest.TestCase):
         self.args = parse_cli_args(_MATLAB)
 
     def test_start_time_default(self):
-        expected = CliDefaults.START_TIME.value.isoformat()
+        expected = iso8601(CliDefaults.START_TIME.value)
         self.assertEqual(self.args.start_time, expected)
 
     def test_end_time_default(self):
-        expected = CliDefaults.END_TIME.value.isoformat()
+        expected = iso8601(CliDefaults.END_TIME.value)
         self.assertEqual(self.args.end_time, expected)
 
     def test_time_step_default(self):
@@ -139,15 +149,48 @@ class TestDefaults(unittest.TestCase):
     def test_numba_threads_default_none(self):
         self.assertIsNone(self.args.numba_threads)
 
+    def test_with_gpu_default_false(self):
+        self.assertFalse(self.args.with_gpu)
+
+    def test_gpu_vendor_default_auto(self):
+        self.assertEqual(self.args.gpu_vendor, "auto")
+
     def test_no_coupling_by_default(self):
         self.assertFalse(self.args.couple_to_elmer_ice)
         self.assertFalse(self.args.couple_to_icon_atmo)
 
-    def test_netcdf_mesh_default_none(self):
-        self.assertIsNone(self.args.netcdf_mesh)
+    def test_netcdf_dem_mesh_default_none(self):
+        self.assertIsNone(self.args.netcdf_dem_mesh)
 
     def test_random_seed_default_none(self):
         self.assertIsNone(self.args.random_seed)
+
+
+class TestGpuOptions(unittest.TestCase):
+    """--with-gpu / --gpu-vendor parsing and compatibility checks."""
+
+    def test_with_gpu_accepted(self):
+        args = _parse("--with-gpu")
+        self.assertTrue(args.with_gpu)
+
+    def test_gpu_vendor_accepted(self):
+        args = _parse("--with-gpu", "--gpu-vendor", "nvidia")
+        self.assertEqual(args.gpu_vendor, "nvidia")
+
+    def test_gpu_vendor_invalid_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            _parse("--with-gpu", "--gpu-vendor", "intel")
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_with_gpu_and_with_numba_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            _parse("--with-gpu", "--with-numba")
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_gpu_vendor_without_with_gpu_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            _parse("--gpu-vendor", "nvidia")
+        self.assertEqual(ctx.exception.code, 2)
 
 
 class TestLocalGroupLabel(unittest.TestCase):
@@ -293,6 +336,7 @@ class TestCliHelpOutput(unittest.TestCase):
         help_text = buf.getvalue()
         self.assertIn("--matlab-mesh", help_text)
         self.assertIn("--elmer-mesh", help_text)
+        self.assertIn("--netcdf-mesh", help_text)
         self.assertIn("--calendar", help_text)
 
 

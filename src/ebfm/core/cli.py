@@ -22,7 +22,7 @@ import isodate
 import ebfm.core
 from ebfm.core import INIT
 from ebfm.core.comm import mpi_available
-from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig
+from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ, iso8601
 from ebfm.core.grid import GridInputType
 from ebfm.core.logger import log_levels_map
 
@@ -39,8 +39,8 @@ def _cli_error(msg: str) -> None:
 
 
 class CliDefaults(Enum):
-    START_TIME = datetime(1979, 1, 1, 0, 0)
-    END_TIME = datetime(1979, 1, 2, 0, 0)
+    START_TIME = datetime(1979, 1, 1, 0, 0, tzinfo=DEFAULT_TZ)
+    END_TIME = datetime(1979, 1, 2, 0, 0, tzinfo=DEFAULT_TZ)
     CALENDAR = Calendar.PROLEPTIC_GREGORIAN.value
     FIELD_VALIDATION_LEVEL = FieldValidationLevel.FATAL.value
     TIME_STEP_SIZE = "PT3H"  # = 3 hours
@@ -162,7 +162,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         grid_type: f"--{arg_dest.replace('_', '-')}" for grid_type, arg_dest in GridConfig.mesh_arg_dests.items()
     }
     partitioned_elmer_mesh_opt = "--is-partitioned-elmer-mesh"
-    netcdf_mesh_opt = "--netcdf-mesh"
+    netcdf_dem_mesh_opt = "--netcdf-dem-mesh"
 
     parser.add_argument(
         "--version",
@@ -181,7 +181,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     )
 
     primary_grid_group.add_argument(
-        mesh_opts[GridInputType.GREENLAND],
+        mesh_opts[GridInputType.NETCDF],
         type=Path,
         help="Path to the mesh file and climate data for a test on Greenland. ",
     )
@@ -193,18 +193,18 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     )
 
     input_group.add_argument(
-        netcdf_mesh_opt,
+        netcdf_dem_mesh_opt,
         type=Path,
         help="Path to the NetCDF mesh file. Optional if using --elmer-mesh. "
-        "If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+        "If --netcdf-dem-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
     input_group.add_argument(
-        "--netcdf-mesh-unstructured",
+        "--netcdf-dem-mesh-unstructured",
         type=Path,
         help="Path to the unstructured NetCDF mesh file. "
         f"Optional if using {mesh_opts[GridInputType.ELMER]}. "
-        f"If --netcdf-mesh is provided elevations will be read from the given NetCDF mesh file.",
+        f"If --netcdf-dem-mesh is provided elevations will be read from the given NetCDF mesh file.",
     )
 
     grid_types_without_shading = set(GridConfig.mesh_arg_dests.keys()) - GridConfig.grid_types_supporting_shading
@@ -247,20 +247,26 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         " Required when using --elmer-mesh.",
     )
 
+    input_group.add_argument(
+        "--forcing-dir",
+        type=Path,
+        help="Path to the folder containing NetCDF forcing files with meteorological data.",
+    )
+
     time_group = parser.add_argument_group("time configuration")
 
     time_group.add_argument(
         "--start-time",
         type=str,
         help="Start time of the simulation in ISO8601 format",
-        default=CliDefaults.START_TIME.value.isoformat(),
+        default=iso8601(CliDefaults.START_TIME.value),
     )
 
     time_group.add_argument(
         "--end-time",
         type=str,
         help="End time of the simulation in ISO8601 format",
-        default=CliDefaults.END_TIME.value.isoformat(),
+        default=iso8601(CliDefaults.END_TIME.value),
     )
 
     def parse_time_step(value: str) -> float | str:
@@ -382,6 +388,29 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         help=("Enable the parallel Numba kernel. " "Requires numba; install via: pip install 'ebfm[performance]'. "),
     )
 
+    performance_group.add_argument(
+        "--with-gpu",
+        action="store_true",
+        default=False,
+        help=(
+            "Offload kernels (compaction, heat conduction, percolation) to a GPU "
+            "via numba.cuda (NVIDIA) or numba.hip (AMD). Mutually exclusive with --with-numba. "
+            "Requires numba with GPU support. Install via: pip install 'ebfm[gpu]' and load the "
+            "CUDA/ROCm toolkit on the compute node."
+        ),
+    )
+
+    performance_group.add_argument(
+        "--gpu-vendor",
+        type=str,
+        choices=("auto", "nvidia", "amd"),
+        default="auto",
+        help=(
+            "GPU vendor to target when using --with-gpu. 'auto' detects the installed numba GPU "
+            "stack (numba.cuda for NVIDIA, numba.hip for AMD)."
+        ),
+    )
+
     # Add args for features requiring 'import coupling'
     add_coupling_arguments(parser)
 
@@ -391,11 +420,17 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     if args.is_partitioned_elmer_mesh and getattr(args, GridConfig.mesh_arg_dests[GridInputType.ELMER], None) is None:
         parser.error(f"{partitioned_elmer_mesh_opt} requires {mesh_opts[GridInputType.ELMER]}")
 
-    if args.is_partitioned_elmer_mesh and args.netcdf_mesh is None:
-        parser.error(f"{partitioned_elmer_mesh_opt} requires {netcdf_mesh_opt}")
+    if args.is_partitioned_elmer_mesh and args.netcdf_dem_mesh is None:
+        parser.error(f"{partitioned_elmer_mesh_opt} requires {netcdf_dem_mesh_opt}")
 
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
+
+    if args.with_numba and args.with_gpu:
+        parser.error("--with-numba and --with-gpu are mutually exclusive.")
+
+    if args.gpu_vendor != "auto" and not args.with_gpu:
+        parser.error("--gpu-vendor requires --with-gpu.")
 
     if not hasattr(args, "local_group_label"):
         args.local_group_label = args.component_name

@@ -10,7 +10,7 @@ from ebfm.core.constants import SECONDS_PER_DAY
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
 
-from .base import Component
+from .base import Component, ExchangeKeySet
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
 from ebfm.core.config import ComponentId, TimeConfig
@@ -20,6 +20,15 @@ class IconAtmo(Component):
     """
     Component class for ICON atmosphere model coupling.
     """
+
+    accepted_exchange_key_sets = (
+        # All data is exchanged at once, i.e. the caller has to send and receive everything in a single call.
+        ExchangeKeySet(
+            name="exchange",
+            source_keys={"albedo"},
+            target_keys={"pr", "pr_snow", "rsds", "rlds", "sfcwind", "clt", "tas", "huss", "sfcpres"},
+        ),
+    )
 
     def __init__(self, coupler: "Coupler", name: str = ComponentId.ICON_ATMO.value):
         super().__init__(coupler, name)
@@ -105,62 +114,71 @@ class IconAtmo(Component):
             }
         )
 
-    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    # We need to convert precipitation received from ICON from kg / m^2 / s
+    # to m w.e. (per EBFM timestep)
+    def _map_pr_to_ebfm(self, precipitation: np.ndarray) -> np.ndarray:
+        mwe_per_second = precipitation * 1e-3
+        mwe_per_day = mwe_per_second * SECONDS_PER_DAY
+        mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
+        return mwe_per_timestep
+
+    def _exchange(
+        self,
+        data_to_exchange: Mapping[str, np.ndarray],
+        fallback_values: Mapping[str, np.ndarray],
+        requested_key_set: ExchangeKeySet,
+    ) -> dict[str, np.ndarray]:
         """
         Exchange data with IconAtmo.
 
-        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
+        This component accepts a single key set, so everything is sent and received here.
 
-        @returns dictionary of received field data
+        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
+        @param[in] fallback_values Mapping of field names to fallback values to use if get fails
+        @param[in] requested_key_set key set to be communicated, the only one this component accepts
+
+        @returns dictionary of received field data. A requested field is not contained if it is not coupled, or
+                 if no data was received for it and no fallback value was given.
         """
         received_data: dict[str, np.ndarray] = {}
-
-        # We need to convert precipitation received from ICON from kg / m^2 / s
-        # to m w.e. (per EBFM timestep)
-        def map_pr_to_ebfm(precipitation: np.ndarray) -> np.ndarray:
-            mwe_per_second = precipitation * 1e-3
-            mwe_per_day = mwe_per_second * SECONDS_PER_DAY
-            mwe_per_timestep = mwe_per_day * self._coupler.get_time_step_in_days()
-            return mwe_per_timestep
 
         # Put data to IconAtmo
         self._put_if_coupled("albedo", data_to_exchange)
 
         # Get data from IconAtmo
-        pr = self._get_if_coupled("pr", transform=map_pr_to_ebfm)
+        pr = self._get_if_coupled("pr", transform=self._map_pr_to_ebfm, fallback_values=fallback_values)
         if pr is not None:
             received_data["pr"] = pr
 
-        # TODO: check what units are needed for pr_snow in EBFM
-        pr_snow = self._get_if_coupled("pr_snow")
+        pr_snow = self._get_if_coupled("pr_snow", transform=self._map_pr_to_ebfm, fallback_values=fallback_values)
         if pr_snow is not None:
             received_data["pr_snow"] = pr_snow
 
-        rsds = self._get_if_coupled("rsds")
+        rsds = self._get_if_coupled("rsds", fallback_values=fallback_values)
         if rsds is not None:
             received_data["rsds"] = rsds
 
-        rlds = self._get_if_coupled("rlds")
+        rlds = self._get_if_coupled("rlds", fallback_values=fallback_values)
         if rlds is not None:
             received_data["rlds"] = rlds
 
-        sfcwind = self._get_if_coupled("sfcwind")
+        sfcwind = self._get_if_coupled("sfcwind", fallback_values=fallback_values)
         if sfcwind is not None:
             received_data["sfcwind"] = sfcwind
 
-        clt = self._get_if_coupled("clt")
+        clt = self._get_if_coupled("clt", fallback_values=fallback_values)
         if clt is not None:
             received_data["clt"] = clt
 
-        tas = self._get_if_coupled("tas")
+        tas = self._get_if_coupled("tas", fallback_values=fallback_values)
         if tas is not None:
             received_data["tas"] = tas
 
-        huss = self._get_if_coupled("huss")
+        huss = self._get_if_coupled("huss", fallback_values=fallback_values)
         if huss is not None:
             received_data["huss"] = huss
 
-        sfcpres = self._get_if_coupled("sfcpres")
+        sfcpres = self._get_if_coupled("sfcpres", fallback_values=fallback_values)
         if sfcpres is not None:
             received_data["sfcpres"] = sfcpres
 

@@ -9,7 +9,7 @@ import numpy as np
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
 
-from .base import Component
+from .base import Component, ExchangeKeySet
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
 from ebfm.core.config import ComponentId, TimeConfig
@@ -20,6 +20,20 @@ class ElmerIce(Component):
     """
     Component class for Elmer/Ice model coupling.
     """
+
+    accepted_exchange_key_sets = (
+        # All data is exchanged at once, i.e. the caller has to send and receive everything in a single call.
+        ExchangeKeySet(
+            name="exchange",
+            source_keys={"T_ice", "smb", "runoff"},
+            target_keys={
+                "surface_elevation",
+                # Enable together with their field definitions and their gets in _exchange below.
+                # "dhdx",
+                # "dhdy",
+            },
+        ),
+    )
 
     def __init__(self, coupler: "Coupler", name: str = ComponentId.ELMER_ICE.value):
         super().__init__(coupler, name)
@@ -54,10 +68,10 @@ class ElmerIce(Component):
                     exchange_type=ExchangeType.SOURCE,
                 ),
                 Field(
-                    name="h",
+                    name="surface_elevation",
                     coupled_component=self,
                     timestep=timestep,
-                    metadata="Surface height (in m)",
+                    metadata="Surface elevation (in m)",
                     exchange_type=ExchangeType.TARGET,
                 ),
                 # Field(
@@ -77,13 +91,23 @@ class ElmerIce(Component):
             }
         )
 
-    def exchange(self, data_to_exchange: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def _exchange(
+        self,
+        data_to_exchange: Mapping[str, np.ndarray],
+        fallback_values: Mapping[str, np.ndarray],
+        requested_key_set: ExchangeKeySet,
+    ) -> dict[str, np.ndarray]:
         """
         Exchange data with Elmer/Ice.
 
-        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
+        This component accepts a single key set, so everything is sent and received here.
 
-        @returns dictionary of received field data
+        @param[in] data_to_exchange read-only Mapping of field names to data to be sent
+        @param[in] fallback_values Mapping of field names to fallback values to use if get fails
+        @param[in] requested_key_set key set to be communicated, the only one this component accepts
+
+        @returns dictionary of received field data. A requested field is not contained if it is not coupled, or
+                 if no data was received for it and no fallback value was given.
         """
         received_data: dict[str, np.ndarray] = {}
 
@@ -100,15 +124,18 @@ class ElmerIce(Component):
         self._put_if_coupled("runoff", data_to_exchange, transform=map_per_timestep_to_per_year)
 
         # Get data from Elmer/Ice
-        h = self._get_if_coupled("h")
-        if h is not None:
-            received_data["h"] = h
+        surface_elevation = self._get_if_coupled("surface_elevation", fallback_values=fallback_values)
+        if surface_elevation is not None:
+            received_data["surface_elevation"] = surface_elevation
 
-        dhdx = self._get_if_coupled("dhdx")
+        # The gradient fields have no field definition yet, so these two gets do nothing. Enabling their field
+        # definitions also requires uncommenting them in the accepted key set above, because the target keys a
+        # caller requests by default are the coupled fields of this component.
+        dhdx = self._get_if_coupled("dhdx", fallback_values=fallback_values)
         if dhdx is not None:
             received_data["dhdx"] = dhdx
 
-        dhdy = self._get_if_coupled("dhdy")
+        dhdy = self._get_if_coupled("dhdy", fallback_values=fallback_values)
         if dhdy is not None:
             received_data["dhdy"] = dhdy
 

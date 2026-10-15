@@ -99,6 +99,15 @@ def setup_logging(
     stderr_handler.setLevel(logging.ERROR)
     root_logger.addHandler(stderr_handler)
 
+    # numba.cuda / numba-hip log every GPU malloc/free at INFO level via
+    # internal driver loggers, which is noisy. Raise them to WARNING.
+    for noisy_logger in (
+        "numba.cuda.cudadrv.driver",
+        "numba.hip.hipdrv.driver",
+        "numba.hip.hipdrv.devicearray",
+    ):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)
+
     root_logger.debug("Logging setup complete.")
 
 

@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
     - uses: actions/checkout@v6
@@ -48,7 +48,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.13"]  # only run MPI tests for latest Python version
+        # Deliberately kept at 3.13 and not raised to the latest version: MPI tests only run for
+        # a single Python version and 3.13 is the most commonly used one.
+        python-version: ["3.13"]
 
     steps:
     - uses: actions/checkout@v6
@@ -71,13 +73,39 @@ jobs:
     - name: Run unit tests with MPI
       run: tox -e unit-mpi
 
+  gpu-simulator-test:
+    name: GPU backend vs NumPy (CUDA simulator, Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13"]  # kernel logic is Python-version independent, one run is enough
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install tox
+      run: |
+        python -m pip install --upgrade pip
+        pip install tox
+
+    - name: Run the GPU kernels on the CUDA simulator
+      run: tox -e gpu-sim
+
   example-tests:
     name: Example tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
     - uses: actions/checkout@v6
@@ -99,3 +127,8 @@ jobs:
 
     - name: Run example tests with tox
       run: tox -e examples
+
+    # Skip examples-extra because of costly LFS download.
+    # Run in .github/workflows/build-and-test.yaml; stage carra2-example
+    # - name: Run extra example tests with tox
+    #   run: tox -e examples-extra

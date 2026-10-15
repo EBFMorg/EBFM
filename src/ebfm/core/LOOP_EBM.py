@@ -58,7 +58,8 @@ def main(C, OUT, IN, time2, grid, cpl: Coupler) -> dict:
     ) ** 2
 
     # Precompute reusable constant arrays
-    condition_mask = np.ones(grid["gpsum"], dtype=bool)
+    gpsum = OUT["subT"].shape[0]
+    condition_mask = np.ones(gpsum, dtype=bool)
 
     # Set initial temperature range
     Tlow = OUT["Tsurf"] - 40.0

@@ -3,10 +3,19 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .compute_backend import get_backend, ComputeBackend
 from .constants import SECONDS_PER_HOUR
-from .LOOP_SNOW_kernels import _compaction_kernel, _heat_conduction_kernel, _percolation_kernel
+from .LOOP_SNOW_kernels import (
+    _compaction_kernel,
+    _heat_conduction_kernel,
+    _heat_conduction_prep_kernel,
+    _percolation_kernel,
+)
+
+# SnowDeviceState is imported lazily inside the GPU branch. Using NumPy/Numba
+# never pulls in GPU dependencies
 
 # line_profiler support: `profile` is injected as a builtin by kernprof.
 # When running normally, fall back to a no-op so the decorator stays in place.
@@ -19,19 +28,34 @@ from ebfm.core import logging
 
 _SUCCESS = True
 
+# Layer thicknesses (m) below this count as zero, i.e. the layer is melted away.
+# Adapted from initial commit 42c0113
+_MIN_LAYER_THICKNESS = 1e-17
+
 logger = logging.getLogger(__name__)
 
 
-def main(C, OUT, IN, dt, grid, phys):
+def main(C, OUT, IN, dt: float, grid, phys, column):
     """
-    Implementation of the multi-layer snow and firn model
+    Implementation of the multi-layer snow and firn model.
+
+    Each glacier grid point carries one vertical snow/firn "column" of layers. Per-column state (subT, subD, subZ,
+    subW, subS, ...) is stored in OUT as 2D arrays of shape (gpsum, nl): axis 0 indexes the column (grid point), axis 1
+    indexes the layer within that column, from layer 0 (a thin surface ghost layer, not physical) down to the deepest
+    layer. Both dimensions are read off those arrays rather than taken from the grid. Columns are independent and
+    updated in parallel, either vectorized over axis 0 (NumPy path) or via Numba `prange` over columns (Numba path).
+    `dt` is the global time step shared by all columns; some steps (see heat_conduction) locally sub-step individual
+    columns with their own CFL-limited dt_local until every column has caught up to `dt`.
 
     Parameters:
         C (dict): Model constants and parameters.
         OUT (dict): Output variables to store results.
         IN (dict): Input data for the model.
-        dt: Model time-step.
+        dt (float): Global model time-step, shared by all columns.
+        grid (dict): Grid geometry, incl. the glacier mask.
         phys (dict): Model physics settings.
+        column (ColumnDiscretizationConfig): Column discretization, incl. max_subZ (max. top-layer thickness) and
+            doubledepth/split (layer-merging/splitting thresholds, see layer_merging_and_splitting).
 
     Returns:
         dict: Updated OUT dictionary.
@@ -39,14 +63,16 @@ def main(C, OUT, IN, dt, grid, phys):
 
     logger.debug("Starting LOOP_SNOW...")
 
+    # The state arrays define the column geometry; no step below resizes them.
+    gpsum, nl = OUT["subT"].shape
+
+    @profile
     def snowfall_and_deposition():
         """
         Calculate snowfall and deposition and shift vertical grid accordingly
         """
 
-        max_subZ = grid["max_subZ"]
-        gpsum = grid["gpsum"]
-        nl = grid["nl"]
+        max_subZ = column.max_subZ
 
         # Fresh snow density calculations
         if phys["snow_compaction"] == "firn+snow":
@@ -77,61 +103,72 @@ def main(C, OUT, IN, dt, grid, phys):
 
         # Main processing loop: Run until all shifts are handled
         while np.any(shift_tot > 0):
-            shift = np.minimum(shift_tot, max_subZ)
-            shift_tot -= shift
+            # Fresh snow thickness (m) deposited in this pass, at most one full layer
+            shift_amount = np.minimum(shift_tot, max_subZ)
+            shift_tot -= shift_amount
 
-            # Use references instead of unnecessary .copy()
-            subT_old = OUT["subT"].copy()
-            subD_old = OUT["subD"].copy()
-            subW_old = OUT["subW"].copy()
-            subZ_old = OUT["subZ"].copy()
+            # No-shift branch only touches top layer, only column 0 copied (instead of whole grid).
+            subZ_top_old = OUT["subZ"][:, 0].copy()
+            subT_top_old = OUT["subT"][:, 0].copy()
+            subD_top_old = OUT["subD"][:, 0].copy()
 
-            # Precompute conditions for better performance
-            is_noshift = subZ_old[:, 0] + shift <= max_subZ
-            is_shift = ~is_noshift
+            # A "grid shift" moves the layer indices: an overfull top layer becomes
+            # layer 1, deeper layers move down, the overflow starts a new top layer.
+            no_grid_shift: NDArray[np.bool_] = subZ_top_old + shift_amount <= max_subZ
+            needs_grid_shift: NDArray[np.bool_] = ~no_grid_shift
+            # Index into the grid with indices, not with the masks, reason: NumPy
+            # re-scans the full mask on every indexing operation, flatnonzero pays that
+            # scan once and each later access then costs only the affected rows.
+            idx_noshift: NDArray[np.intp] = np.flatnonzero(no_grid_shift)
+            idx_shift: NDArray[np.intp] = np.flatnonzero(needs_grid_shift)
 
             # Handle no-shift updates (vectorized)
-            OUT["subZ"][is_noshift, 0] += shift[is_noshift]
-            OUT["subT"][is_noshift, 0] = (
-                subT_old[is_noshift, 0] * subZ_old[is_noshift, 0] / OUT["subZ"][is_noshift, 0]
-                + OUT["Tsurf"][is_noshift] * shift[is_noshift] / OUT["subZ"][is_noshift, 0]
+            OUT["subZ"][idx_noshift, 0] += shift_amount[idx_noshift]
+            subZ_top_new = OUT["subZ"][idx_noshift, 0]
+            OUT["subT"][idx_noshift, 0] = (
+                subT_top_old[idx_noshift] * subZ_top_old[idx_noshift] / subZ_top_new
+                + OUT["Tsurf"][idx_noshift] * shift_amount[idx_noshift] / subZ_top_new
             )
-            OUT["subD"][is_noshift, 0] = (
-                subD_old[is_noshift, 0] * subZ_old[is_noshift, 0] / OUT["subZ"][is_noshift, 0]
-                + OUT["Dfreshsnow"][is_noshift] * shift[is_noshift] / OUT["subZ"][is_noshift, 0]
+            OUT["subD"][idx_noshift, 0] = (
+                subD_top_old[idx_noshift] * subZ_top_old[idx_noshift] / subZ_top_new
+                + OUT["Dfreshsnow"][idx_noshift] * shift_amount[idx_noshift] / subZ_top_new
             )
 
-            # Handle shifting updates (vectorized)
-            if np.any(is_shift):
-                OUT["subZ"][is_shift, 2 : nl - 1] = subZ_old[is_shift, 1 : nl - 2]
-                OUT["subT"][is_shift, 2 : nl - 1] = subT_old[is_shift, 1 : nl - 2]
-                OUT["subD"][is_shift, 2 : nl - 1] = subD_old[is_shift, 1 : nl - 2]
-                OUT["subW"][is_shift, 2 : nl - 1] = subW_old[is_shift, 1 : nl - 2]
+            # Handle shifting updates (vectorized). Shift branch needs full
+            # rows, so copy only the (usually few) overflowing columns.
+            if idx_shift.size:
+                subZ_old = OUT["subZ"][idx_shift]
+                subT_old = OUT["subT"][idx_shift]
+                subD_old = OUT["subD"][idx_shift]
+                subW_old = OUT["subW"][idx_shift]
 
-                OUT["subZ"][is_shift, 1] = max_subZ
-                OUT["subZ"][is_shift, 0] = (subZ_old[is_shift, 0] + shift[is_shift]) - max_subZ
-                OUT["subT"][is_shift, 1] = (
-                    subT_old[is_shift, 0] * subZ_old[is_shift, 0] / OUT["subZ"][is_shift, 1]
-                    + OUT["Tsurf"][is_shift]
-                    * (OUT["subZ"][is_shift, 1] - subZ_old[is_shift, 0])
-                    / OUT["subZ"][is_shift, 1]
-                )
-                OUT["subT"][is_shift, 0] = OUT["Tsurf"][is_shift]
-                OUT["subD"][is_shift, 1] = (
-                    subD_old[is_shift, 0] * subZ_old[is_shift, 0] / OUT["subZ"][is_shift, 1]
-                    + OUT["Dfreshsnow"][is_shift]
-                    * (OUT["subZ"][is_shift, 1] - subZ_old[is_shift, 0])
-                    / OUT["subZ"][is_shift, 1]
-                )
-                OUT["subD"][is_shift, 0] = OUT["Dfreshsnow"][is_shift]
-                OUT["subW"][is_shift, 1] = subW_old[is_shift, 0]
-                OUT["subW"][is_shift, 0] = 0.0
+                OUT["subZ"][idx_shift, 2 : nl - 1] = subZ_old[:, 1 : nl - 2]
+                OUT["subT"][idx_shift, 2 : nl - 1] = subT_old[:, 1 : nl - 2]
+                OUT["subD"][idx_shift, 2 : nl - 1] = subD_old[:, 1 : nl - 2]
+                OUT["subW"][idx_shift, 2 : nl - 1] = subW_old[:, 1 : nl - 2]
 
-            # Update runoff for shifted layers
-            OUT["runoff_irr_deep"][is_shift] += subW_old[is_shift, nl - 1]
+                OUT["subZ"][idx_shift, 1] = max_subZ
+                OUT["subZ"][idx_shift, 0] = (subZ_old[:, 0] + shift_amount[idx_shift]) - max_subZ
+                subZ_layer1_new = OUT["subZ"][idx_shift, 1]
+                OUT["subT"][idx_shift, 1] = (
+                    subT_old[:, 0] * subZ_old[:, 0] / subZ_layer1_new
+                    + OUT["Tsurf"][idx_shift] * (subZ_layer1_new - subZ_old[:, 0]) / subZ_layer1_new
+                )
+                OUT["subT"][idx_shift, 0] = OUT["Tsurf"][idx_shift]
+                OUT["subD"][idx_shift, 1] = (
+                    subD_old[:, 0] * subZ_old[:, 0] / subZ_layer1_new
+                    + OUT["Dfreshsnow"][idx_shift] * (subZ_layer1_new - subZ_old[:, 0]) / subZ_layer1_new
+                )
+                OUT["subD"][idx_shift, 0] = OUT["Dfreshsnow"][idx_shift]
+                OUT["subW"][idx_shift, 1] = subW_old[:, 0]
+                OUT["subW"][idx_shift, 0] = 0.0
+
+                # Update runoff for shifted layers
+                OUT["runoff_irr_deep"][idx_shift] += subW_old[:, nl - 1]
 
         return _SUCCESS
 
+    @profile
     def melt_sublimation():
         """
         Calculate melt and sublimation and shift vertical grid accordingly
@@ -161,65 +198,71 @@ def main(C, OUT, IN, dt, grid, phys):
 
         # While there are shifts required
         while np.any(shift_tot < 0):
-            shift = np.maximum(shift_tot, -OUT["subZ"][:, 1])
-            shift_tot -= shift
+            # Thickness (m, negative) removed in this pass, at most the top two layers
+            shift_amount = np.maximum(shift_tot, -OUT["subZ"][:, 1])
+            shift_tot -= shift_amount
 
-            OUT["surfH"] += shift
+            OUT["surfH"] += shift_amount
 
-            # Save old values for updates
-            subT_old = OUT["subT"].copy()
-            subD_old = OUT["subD"].copy()
-            subW_old = OUT["subW"].copy()
-            subZ_old = OUT["subZ"].copy()
+            # No-shift branch only touches top layer, only column 0 copied (instead of whole grid).
+            subZ_top_old = OUT["subZ"][:, 0].copy()
+            subT_top_old = OUT["subT"][:, 0].copy()
+            subD_top_old = OUT["subD"][:, 0].copy()
+            subW_top_old = OUT["subW"][:, 0].copy()
 
-            # Find no-shift and shift indices
-            i_noshift = np.where(subZ_old[:, 0] + shift > 1e-17)
-            i_shift = np.where(subZ_old[:, 0] + shift <= 1e-17)
+            # A "grid shift" moves the layer indices: a fully melted top layer is
+            # dropped, layer 1 becomes the new top layer, deeper layers move up.
+            # See snowfall_and_deposition() for explanation of the indexing strategy.
+            no_grid_shift: NDArray[np.bool_] = subZ_top_old + shift_amount > _MIN_LAYER_THICKNESS
+            needs_grid_shift: NDArray[np.bool_] = ~no_grid_shift
+            idx_noshift: NDArray[np.intp] = np.flatnonzero(no_grid_shift)
+            idx_shift: NDArray[np.intp] = np.flatnonzero(needs_grid_shift)
 
             # Handle the no-shift case
-            OUT["subZ"][i_noshift, 0] = subZ_old[i_noshift, 0] + shift[i_noshift]
-            OUT["subT"][i_noshift, 0] = subT_old[i_noshift, 0]
-            OUT["subD"][i_noshift, 0] = subD_old[i_noshift, 0]
-            temp = OUT["subZ"][i_noshift, 0] / subZ_old[i_noshift, 0]
-            OUT["subW"][i_noshift, 0] = subW_old[i_noshift, 0] * temp
+            subZ_top_new = subZ_top_old[idx_noshift] + shift_amount[idx_noshift]
+            OUT["subZ"][idx_noshift, 0] = subZ_top_new
+            OUT["subT"][idx_noshift, 0] = subT_top_old[idx_noshift]
+            OUT["subD"][idx_noshift, 0] = subD_top_old[idx_noshift]
+            # Liquid water scales with the remaining fraction of the top layer
+            OUT["subW"][idx_noshift, 0] = subW_top_old[idx_noshift] * (subZ_top_new / subZ_top_old[idx_noshift])
 
-            # Handle the shift case
-            nl = grid["nl"]
-            OUT["subZ"][i_shift, 1 : nl - 2] = subZ_old[i_shift, 2 : nl - 1]
-            OUT["subT"][i_shift, 1 : nl - 2] = subT_old[i_shift, 2 : nl - 1]
-            OUT["subD"][i_shift, 1 : nl - 2] = subD_old[i_shift, 2 : nl - 1]
-            OUT["subW"][i_shift, 1 : nl - 2] = subW_old[i_shift, 2 : nl - 1]
+            # Handle the shift case: copy only the shift rows.
+            if idx_shift.size:
+                subZ_old = OUT["subZ"][idx_shift]
+                subT_old = OUT["subT"][idx_shift]
+                subD_old = OUT["subD"][idx_shift]
+                subW_old = OUT["subW"][idx_shift]
 
-            OUT["subZ"][i_shift, 0] = subZ_old[i_shift, 0] + subZ_old[i_shift, 1] + shift[i_shift]
-            OUT["subT"][i_shift, 0] = subT_old[i_shift, 1]
-            OUT["subD"][i_shift, 0] = subD_old[i_shift, 1]
-            temp = OUT["subZ"][i_shift, 0] / subZ_old[i_shift, 1]
-            OUT["subW"][i_shift, 0] = subW_old[i_shift, 1] * temp
-            OUT["subT"][i_shift, nl - 1] = subT_old[i_shift, nl - 1]
-            OUT["subW"][i_shift, nl - 1] = 0.0
+                OUT["subZ"][idx_shift, 1 : nl - 2] = subZ_old[:, 2 : nl - 1]
+                OUT["subT"][idx_shift, 1 : nl - 2] = subT_old[:, 2 : nl - 1]
+                OUT["subD"][idx_shift, 1 : nl - 2] = subD_old[:, 2 : nl - 1]
+                OUT["subW"][idx_shift, 1 : nl - 2] = subW_old[:, 2 : nl - 1]
 
-            # Update the deepest layer properties
-            for idx in i_shift:
-                if grid["doubledepth"] == 1:
-                    OUT["subZ"][idx, nl - 1] = 2.0 ** len(grid["split"]) * grid["max_subZ"]
+                subZ_top_new = subZ_old[:, 0] + subZ_old[:, 1] + shift_amount[idx_shift]
+                OUT["subZ"][idx_shift, 0] = subZ_top_new
+                OUT["subT"][idx_shift, 0] = subT_old[:, 1]
+                OUT["subD"][idx_shift, 0] = subD_old[:, 1]
+                # Liquid water scales with the remaining fraction of the former layer 1
+                OUT["subW"][idx_shift, 0] = subW_old[:, 1] * (subZ_top_new / subZ_old[:, 1])
+                OUT["subT"][idx_shift, nl - 1] = subT_old[:, nl - 1]
+                OUT["subW"][idx_shift, nl - 1] = 0.0
+
+                # Update the deepest layer properties (vectorized over shift rows)
+                if column.doubledepth:
+                    OUT["subZ"][idx_shift, nl - 1] = 2.0 ** len(column.split) * column.max_subZ
                 else:
-                    OUT["subZ"][idx, nl - 1] = grid["max_subZ"]
-                OUT["subD"][idx, nl - 1] = subD_old[idx, nl - 1]
+                    OUT["subZ"][idx_shift, nl - 1] = column.max_subZ
+                OUT["subD"][idx_shift, nl - 1] = subD_old[:, nl - 1]
 
         return _SUCCESS
 
     @profile
-    def compaction():
+    def compaction(gpu=None):
         """
         Calculate snow and firn compaction and update density and layer thickness
         """
 
-        gpsum, nl = grid["gpsum"], grid["nl"]
         Dice, Dfirn = C["Dice"], C["Dfirn"]
-
-        subD_old = OUT["subD"].copy()
-        subZ_old = OUT["subZ"].copy()
-        mliqmax = np.zeros((gpsum, nl))
 
         dt_yearfrac = dt / C["yeardays"]
         dt_seconds = dt * C["dayseconds"]
@@ -233,25 +276,40 @@ def main(C, OUT, IN, dt, grid, phys):
             else:
                 OUT[_key].fill(0.0)
 
-        # runoff_irr is written by kernel function
-        # ensure it exists before the Numba kernel reads it
+        # runoff_irr is written by the kernel. Ensure it exists before it reads.
         _gshape = (gpsum,)
         if "runoff_irr" not in OUT or OUT["runoff_irr"].shape != _gshape:
             OUT["runoff_irr"] = np.zeros(_gshape)
 
-        # Numba parallel path:
-        if get_backend() == ComputeBackend.NUMBA:
+        # Numba / GPU kernel path:
+        backend = get_backend()
+        if backend in (ComputeBackend.NUMBA, ComputeBackend.GPU):
             _mode = {"firn_only": 0, "firn+snow": 1}.get(phys["snow_compaction"], -1)
             if _mode < 0:
                 raise ValueError(f"_compaction_kernel: unknown snow_compaction={phys['snow_compaction']!r}")
+            _tau_drift = 48 * 2 * SECONDS_PER_HOUR
+            if gpu is not None:
+                # GPU: kernel launched on the resident device arrays. The
+                # pre-compaction subD/subZ snapshot is taken on-device.
+                gpu.compaction(
+                    OUT["Dens_destr_metam"],
+                    OUT["Dens_overb_pres"],
+                    OUT["Dens_drift"],
+                    dt_yearfrac,
+                    dt_seconds,
+                    dt,
+                    C,
+                    _tau_drift,
+                    _mode,
+                )
+                return _SUCCESS
+
             _compaction_kernel(
                 OUT["subD"],
                 OUT["subZ"],
                 OUT["subT"],
                 OUT["subW"],
                 OUT["subTmean"],
-                subD_old,
-                subZ_old,
                 IN["logyearsnow"],
                 IN["yearsnow"],
                 IN["WS"],
@@ -273,11 +331,13 @@ def main(C, OUT, IN, dt, grid, phys):
                 C["Ec"],
                 C["Eg"],
                 C["dayseconds"],
-                48 * 2 * SECONDS_PER_HOUR,
+                _tau_drift,
                 _mode,
             )
         else:
             # NumPy path
+            subD_old = OUT["subD"].copy()
+            subZ_old = OUT["subZ"].copy()
             # ------ FIRN COMPACTION ------ #
             if phys["snow_compaction"] in ["firn_only", "firn+snow"]:
                 # Pre-compute the logical condition based on the snow compaction type
@@ -389,7 +449,9 @@ def main(C, OUT, IN, dt, grid, phys):
             # Update layer thickness
             OUT["subZ"][cond_layers] = subZ_old[cond_layers] * subD_old[cond_layers] / OUT["subD"][cond_layers]
 
-            # Update irreducible water storage
+            # Update irreducible water storage: `mliqmax` is the maximum liquid water
+            # (kg m-2) a layer holds against gravity; ice layers keep 0.0 and drain fully
+            mliqmax = np.zeros((gpsum, nl))
             exp_factor = 0.0143 * np.exp(3.3 * (Dice - OUT["subD"][cond_layers]) / Dice)
             mliqmax[cond_layers] = (
                 OUT["subD"][cond_layers]
@@ -409,43 +471,48 @@ def main(C, OUT, IN, dt, grid, phys):
         return _SUCCESS
 
     @profile
-    def heat_conduction():
+    def heat_conduction(gpu=None):
         """
         Calculate heat diffusion and update temperatures
         """
-        dz1 = (OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1]) ** 2
-        dz2 = 0.5 * (OUT["subZ"][:, 2:] + OUT["subZ"][:, 1:-1]) ** 2
-        kk = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2  # Effective conductivity
-        c_eff = OUT["subD"] * (152.2 + 7.122 * OUT["subT"])  # Effective heat capacity
-
-        # Stability time step (CFL condition)
-        # Layer 0: surface ghost layer, excluded from CFL condition
-        dt_stab = (
-            0.5
-            * np.min(c_eff[:, 1:], axis=1)
-            * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
-            / np.max(kk[:, 1:], axis=1)
-            / C["dayseconds"]
-        )
-
-        # subZ and c_eff do not change
-        # Precompute kk*subZ products once
-        # kk_sz_top: conductivity-thickness product for the top interface
-        # kk_sz_interior: same for all interior interfaces
-        kk_sz_top = kk[:, 0] * OUT["subZ"][:, 0] + 0.5 * kk[:, 1] * OUT["subZ"][:, 1]
-        kk_sz_interior = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
-
-        # Precompute full temperature-update denominators once
-        # denom_layer1: first active layer (layer 0: surface ghost layer overwritten from Tsurf)
-        denom_layer1 = c_eff[:, 1] * (0.5 * OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1] + 0.25 * OUT["subZ"][:, 2])
-        denom_interior = c_eff[:, 2:-1] * (
-            0.25 * OUT["subZ"][:, 1:-2] + 0.5 * OUT["subZ"][:, 2:-1] + 0.25 * OUT["subZ"][:, 3:]
-        )
-        denom_bottom = c_eff[:, -1] * (0.25 * OUT["subZ"][:, -2] + 0.75 * OUT["subZ"][:, -1])
+        if gpu is not None:
+            # GPU: the prep / solve / boundary-clip kernels run on the resident
+            # device arrays. Host precompute and post-clip below are done
+            # on-device (subK / subCeff are returned in download()).
+            gpu.heat_conduction(dt, C)
+            return _SUCCESS
 
         # ------ Heat Conduction Loop ------
         if get_backend() == ComputeBackend.NUMBA:
-            # Numba parallel path: prange(gpsum), each column solved independently.
+            # Numba parallel path
+            # per-column precompute + CFL solve is done in _heat_conduction_prep_kernel
+            kk = np.empty((gpsum, nl))
+            c_eff = np.empty((gpsum, nl))
+            kk_sz_top = np.empty(gpsum)
+            kk_sz_interior = np.empty((gpsum, nl - 2))
+            dz1 = np.empty(gpsum)
+            dz2 = np.empty((gpsum, nl - 2))
+            denom_layer1 = np.empty(gpsum)
+            denom_interior = np.empty((gpsum, nl - 3))
+            denom_bottom = np.empty(gpsum)
+            dt_stab = np.empty(gpsum)
+            _heat_conduction_prep_kernel(
+                OUT["subD"],
+                OUT["subZ"],
+                OUT["subT"],
+                kk,
+                c_eff,
+                kk_sz_top,
+                kk_sz_interior,
+                dz1,
+                dz2,
+                denom_layer1,
+                denom_interior,
+                denom_bottom,
+                dt_stab,
+                C["dayseconds"],
+            )
+            assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
             _heat_conduction_kernel(
                 OUT["subT"],
                 OUT["Tsurf"],
@@ -463,31 +530,66 @@ def main(C, OUT, IN, dt, grid, phys):
             )
 
         else:
-            # NumPy path: explicit while-loop with vectorized column updates.
-            tt = np.zeros(grid["gpsum"])
-            kdTdz = np.zeros_like(OUT["subT"])
+            # NumPy path: host precompute + explicit while-loop with vectorized column updates. dt is the
+            # global time step; each column uses local time stepping to advance from the current time until the
+            # global dt is reached. The maximum local time step size of each sub-step is determined by the CFL
+            # condition and the remainder until the end of the global time step.
+            dz1 = (OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1]) ** 2
+            dz2 = 0.5 * (OUT["subZ"][:, 2:] + OUT["subZ"][:, 1:-1]) ** 2
+            kk = 0.138 - 1.01e-3 * OUT["subD"] + 3.233e-6 * OUT["subD"] ** 2  # Effective conductivity
+            c_eff = OUT["subD"] * (152.2 + 7.122 * OUT["subT"])  # Effective heat capacity
+
+            # Stability time step (CFL condition)
+            # Layer 0: surface ghost layer, excluded from CFL condition
+            dt_stab: NDArray[np.float64] = (
+                0.5
+                * np.min(c_eff[:, 1:], axis=1)
+                * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
+                / np.max(kk[:, 1:], axis=1)
+                / C["dayseconds"]
+            )
+            assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
+
+            # Precompute kk*subZ products and the temperature-update denominators once
+            # kk_sz_top: conductivity-thickness product for the top interface
+            # kk_sz_interior: same for all interior interfaces
+            kk_sz_top = kk[:, 0] * OUT["subZ"][:, 0] + 0.5 * kk[:, 1] * OUT["subZ"][:, 1]
+            kk_sz_interior = kk[:, 1:-1] * OUT["subZ"][:, 1:-1] + kk[:, 2:] * OUT["subZ"][:, 2:]
+            # denom_layer1: first active layer (layer 0: surface ghost layer overwritten from Tsurf)
+            denom_layer1 = c_eff[:, 1] * (0.5 * OUT["subZ"][:, 0] + 0.5 * OUT["subZ"][:, 1] + 0.25 * OUT["subZ"][:, 2])
+            denom_interior = c_eff[:, 2:-1] * (
+                0.25 * OUT["subZ"][:, 1:-2] + 0.5 * OUT["subZ"][:, 2:-1] + 0.25 * OUT["subZ"][:, 3:]
+            )
+            denom_bottom = c_eff[:, -1] * (0.25 * OUT["subZ"][:, -2] + 0.75 * OUT["subZ"][:, -1])
+
+            # Time elapsed for each column
+            t_elapsed: NDArray[np.float64] = np.zeros(gpsum)
+            # Vertical heat fluxes between layers
+            kdTdz: NDArray[np.float64] = np.zeros_like(OUT["subT"])
             # Ping-pong buffers:
             # Pre-allocate two arrays once and swap references each iteration
             T_old = OUT["subT"].copy()
             T_new = np.empty_like(OUT["subT"])
 
-            while np.any(tt < dt):
+            # Local time-stepping loop: advances each column by its own dt_local until all columns reach the end of the
+            # global time step
+            while np.any(t_elapsed < dt):
                 # Copy T_old to T_new so inactive rows carry forward correctly across swaps
                 np.copyto(T_new, T_old)
-                dt_temp = np.minimum(dt_stab, dt - tt)
-                tt += dt_temp
 
-                # Integer indices of still-active grid points; early exit when all are done
-                # Replaces cond_dt mask
-                idx = np.flatnonzero(dt_temp > 0)
-                if idx.size == 0:
-                    break
+                dt_remainder = dt - t_elapsed  # determine remainder until end of global time step
+                # use minimum of 1) maximum allowed dt due to stability and 2) remainder until end of global time step
+                dt_local = np.minimum(dt_stab, dt_remainder)
+
+                # Integer indices of still-active columns
+                idx = np.flatnonzero(dt_local > 0)
+                assert idx.size > 0, "no cells left where local time stepping has to be performed. Unexpected!"
                 # Calculate vertical heat fluxes
                 kdTdz[idx, 1] = kk_sz_top[idx] * (T_old[idx, 1] - OUT["Tsurf"][idx]) / dz1[idx]
                 kdTdz[idx, 2:] = kk_sz_interior[idx] * (T_old[idx, 2:] - T_old[idx, 1:-1]) / dz2[idx]
 
                 # Update layer-wise temperatures
-                C_day_dt = C["dayseconds"] * dt_temp[idx]
+                C_day_dt = C["dayseconds"] * dt_local[idx]
 
                 T_new[idx, 1] = T_old[idx, 1] + C_day_dt * (kdTdz[idx, 2] - kdTdz[idx, 1]) / denom_layer1[idx]
 
@@ -503,6 +605,11 @@ def main(C, OUT, IN, dt, grid, phys):
 
                 # Swap buffer roles
                 T_old, T_new = T_new, T_old
+
+                # increase t_elapsed by local time step size
+                t_elapsed += dt_local
+
+            assert np.allclose(t_elapsed, dt), "some cells did not reach end of global time step!"
 
         OUT["subT"][:, 0] = (
             OUT["Tsurf"]
@@ -522,22 +629,26 @@ def main(C, OUT, IN, dt, grid, phys):
         return _SUCCESS
 
     @profile
-    def percolation_refreezing_and_storage():
+    def percolation_refreezing_and_storage(gpu=None):
         #########################################################
         # Percolation, refreezing and irreducible water storage
         #########################################################
-        subW_old = OUT["subW"].copy()  # Store the old water content
-        gpsum, nl = OUT["subT"].shape
-
-        if get_backend() == ComputeBackend.NUMBA:
-            # Numba parallel path:
-            _p_mode = {"bucket": 0, "normal": 1, "linear": 2, "uniform": 3}.get(phys["percolation"], -1)
+        backend = get_backend()
+        if backend in (ComputeBackend.NUMBA, ComputeBackend.GPU):
+            # Numba / GPU kernel path:
+            _p_mode = {"bucket": 0, "normal": 1, "linear": 2}.get(phys["percolation"], -1)
             if _p_mode < 0:
                 raise ValueError(f"_percolation_kernel: unknown percolation={phys['percolation']!r}")
             _avail_W = np.maximum(
                 OUT["melt"] * 1e3 + IN["rain"] * 1e3 + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * 1e3,
                 0.0,
             )
+            if gpu is not None:
+                # GPU: kernel launched on the resident device arrays. The
+                # post-heat subW snapshot is taken on-device.
+                gpu.percolation(_avail_W, C, _p_mode, dt)
+                return _SUCCESS
+
             # Ensure persistent arrays are allocated
             _rp_shape = OUT["subZ"].shape
             if "_perc_RP" not in OUT or OUT["_perc_RP"].shape != _rp_shape:
@@ -558,7 +669,6 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subW"],
                 OUT["subS"],
                 OUT["subZ"],
-                subW_old,
                 _avail_W,
                 OUT["_perc_RP"],
                 _runoff_surface,
@@ -588,6 +698,7 @@ def main(C, OUT, IN, dt, grid, phys):
             OUT["cpi"] = 152.2 + 7.122 * OUT["subT"]
         else:
             # NumPy path
+            subW_old = OUT["subW"].copy()  # Store the old water content
             # ------ Water Input ------
             avail_W = (
                 OUT["melt"] * 1e3  # Meltwater
@@ -634,9 +745,6 @@ def main(C, OUT, IN, dt, grid, phys):
             elif phys["percolation"] == "linear":
                 carrot = 2 * (z0 - zz) / z0**2
                 carrot = np.maximum(carrot, 0)
-            elif phys["percolation"] == "uniform":
-                ind = np.argmin(np.abs(zz - z0), axis=1)
-                carrot[np.arange(carrot.shape[0]), : ind + 1] = 1 / z0
             else:
                 raise ValueError("`phys['percolation']` is not set correctly!")
 
@@ -653,7 +761,7 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["_perc_RP"].fill(0.0)
             RP = OUT["_perc_RP"]
 
-            avail_W_loc = np.zeros(grid["gpsum"])  # Available water per layer
+            avail_W_loc = np.zeros(gpsum)  # Available water per layer
 
             for n in range(nl):
                 # Compute available water per layer
@@ -768,100 +876,80 @@ def main(C, OUT, IN, dt, grid, phys):
 
         return _SUCCESS
 
+    @profile
     def layer_merging_and_splitting():
         """
         Layer merging and splitting
         """
-        if not grid["doubledepth"]:
+        if not column.doubledepth:
             return _SUCCESS
 
         # Precompute constants / reuse lookups
-        max_subZ = grid["max_subZ"]
+        max_subZ = column.max_subZ
         mask1 = grid["mask"] == 1
-        nsplit = len(grid["split"])
+        nsplit = len(column.split)
         top_thickness = (2.0**nsplit) * max_subZ
 
-        # Reuse persistent buffers instead of allocating new .copy() arrays
-        shp = OUT["subZ"].shape
-        if "_lm_old_subZ" not in OUT or OUT["_lm_old_subZ"].shape != shp:
-            OUT["_lm_old_subZ"] = np.empty_like(OUT["subZ"])
-            OUT["_lm_old_subD"] = np.empty_like(OUT["subD"])
-            OUT["_lm_old_subW"] = np.empty_like(OUT["subW"])
-            OUT["_lm_old_subT"] = np.empty_like(OUT["subT"])
-            OUT["_lm_old_subS"] = np.empty_like(OUT["subS"])
-
         for n in range(nsplit):  # Iterate through split points
-            split = grid["split"][n]
+            split = column.split[n]
             threshold = (2.0**n) * max_subZ
 
             # Merge Layers (Accumulation Case)
             idx_merge = np.flatnonzero((OUT["subZ"][:, split] <= threshold) & mask1)
-
-            np.copyto(OUT["_lm_old_subZ"], OUT["subZ"])
-            np.copyto(OUT["_lm_old_subD"], OUT["subD"])
-            np.copyto(OUT["_lm_old_subW"], OUT["subW"])
-            np.copyto(OUT["_lm_old_subT"], OUT["subT"])
-            np.copyto(OUT["_lm_old_subS"], OUT["subS"])
-
-            subZ_old = OUT["_lm_old_subZ"]
-            subD_old = OUT["_lm_old_subD"]
-            subW_old = OUT["_lm_old_subW"]
-            subT_old = OUT["_lm_old_subT"]
-            subS_old = OUT["_lm_old_subS"]
-
             if idx_merge.size:
+                # Snapshot only affected rows. Advanced indexing returns fresh
+                # copy (holds pre-merge values). OUT written in place, without
+                # necessity to copy whole (gpsum, nl) grid.
+                subZ_old = OUT["subZ"][idx_merge]
+                subD_old = OUT["subD"][idx_merge]
+                subW_old = OUT["subW"][idx_merge]
+                subT_old = OUT["subT"][idx_merge]
+                subS_old = OUT["subS"][idx_merge]
+
                 # Update merged layers
-                OUT["subZ"][idx_merge, split - 1] = subZ_old[idx_merge, split - 1] + subZ_old[idx_merge, split]
-                OUT["subW"][idx_merge, split - 1] = subW_old[idx_merge, split - 1] + subW_old[idx_merge, split]
-                OUT["subS"][idx_merge, split - 1] = subS_old[idx_merge, split - 1] + subS_old[idx_merge, split]
+                OUT["subZ"][idx_merge, split - 1] = subZ_old[:, split - 1] + subZ_old[:, split]
+                OUT["subW"][idx_merge, split - 1] = subW_old[:, split - 1] + subW_old[:, split]
+                OUT["subS"][idx_merge, split - 1] = subS_old[:, split - 1] + subS_old[:, split]
 
                 # Compute denominator once and reuse
-                den = subZ_old[idx_merge, split - 1] + subZ_old[idx_merge, split]
+                den = subZ_old[:, split - 1] + subZ_old[:, split]
                 OUT["subD"][idx_merge, split - 1] = (
-                    subZ_old[idx_merge, split - 1] * subD_old[idx_merge, split - 1]
-                    + subZ_old[idx_merge, split] * subD_old[idx_merge, split]
+                    subZ_old[:, split - 1] * subD_old[:, split - 1] + subZ_old[:, split] * subD_old[:, split]
                 ) / den
                 OUT["subT"][idx_merge, split - 1] = (
-                    subZ_old[idx_merge, split - 1] * subT_old[idx_merge, split - 1]
-                    + subZ_old[idx_merge, split] * subT_old[idx_merge, split]
+                    subZ_old[:, split - 1] * subT_old[:, split - 1] + subZ_old[:, split] * subT_old[:, split]
                 ) / den
 
                 # Shift properties up for merged layers
-                OUT["subZ"][idx_merge, split:-1] = subZ_old[idx_merge, split + 1 :]
-                OUT["subW"][idx_merge, split:-1] = subW_old[idx_merge, split + 1 :]
-                OUT["subS"][idx_merge, split:-1] = subS_old[idx_merge, split + 1 :]
-                OUT["subD"][idx_merge, split:-1] = subD_old[idx_merge, split + 1 :]
-                OUT["subT"][idx_merge, split:-1] = subT_old[idx_merge, split + 1 :]
+                OUT["subZ"][idx_merge, split:-1] = subZ_old[:, split + 1 :]
+                OUT["subW"][idx_merge, split:-1] = subW_old[:, split + 1 :]
+                OUT["subS"][idx_merge, split:-1] = subS_old[:, split + 1 :]
+                OUT["subD"][idx_merge, split:-1] = subD_old[:, split + 1 :]
+                OUT["subT"][idx_merge, split:-1] = subT_old[:, split + 1 :]
 
                 # Adjust the newly added layer at the base
                 OUT["subZ"][idx_merge, -1] = top_thickness
-                OUT["subT"][idx_merge, -1] = subT_old[idx_merge, -1]
-                OUT["subD"][idx_merge, -1] = subD_old[idx_merge, -1]
+                OUT["subT"][idx_merge, -1] = subT_old[:, -1]
+                OUT["subD"][idx_merge, -1] = subD_old[:, -1]
                 OUT["subW"][idx_merge, -1] = 0.0
                 OUT["subS"][idx_merge, -1] = 0.0
 
-            # Split Layers (Ablation Case)
+            # Split Layers (Ablation Case). idx_split reflects the post-merge state.
             idx_split = np.flatnonzero((OUT["subZ"][:, split - 2] > threshold) & mask1)
-
-            np.copyto(OUT["_lm_old_subZ"], OUT["subZ"])
-            np.copyto(OUT["_lm_old_subD"], OUT["subD"])
-            np.copyto(OUT["_lm_old_subW"], OUT["subW"])
-            np.copyto(OUT["_lm_old_subT"], OUT["subT"])
-            np.copyto(OUT["_lm_old_subS"], OUT["subS"])
-
-            subZ_old = OUT["_lm_old_subZ"]
-            subD_old = OUT["_lm_old_subD"]
-            subW_old = OUT["_lm_old_subW"]
-            subT_old = OUT["_lm_old_subT"]
-            subS_old = OUT["_lm_old_subS"]
-
             if idx_split.size:
+                # Snapshot only the affected rows (post-merge values).
+                subZ_old = OUT["subZ"][idx_split]
+                subD_old = OUT["subD"][idx_split]
+                subW_old = OUT["subW"][idx_split]
+                subT_old = OUT["subT"][idx_split]
+                subS_old = OUT["subS"][idx_split]
+
                 # Update split layers
                 OUT["subZ"][idx_split, split - 2] *= 0.5
                 OUT["subW"][idx_split, split - 2] *= 0.5
                 OUT["subS"][idx_split, split - 2] *= 0.5
-                OUT["subT"][idx_split, split - 2] = subT_old[idx_split, split - 2]
-                OUT["subD"][idx_split, split - 2] = subD_old[idx_split, split - 2]
+                OUT["subT"][idx_split, split - 2] = subT_old[:, split - 2]
+                OUT["subD"][idx_split, split - 2] = subD_old[:, split - 2]
 
                 OUT["subZ"][idx_split, split - 1] = OUT["subZ"][idx_split, split - 2]
                 OUT["subW"][idx_split, split - 1] = OUT["subW"][idx_split, split - 2]
@@ -870,18 +958,19 @@ def main(C, OUT, IN, dt, grid, phys):
                 OUT["subD"][idx_split, split - 1] = OUT["subD"][idx_split, split - 2]
 
                 # Shift properties down for split layers
-                OUT["subZ"][idx_split, split:] = subZ_old[idx_split, split - 1 : -1]
-                OUT["subW"][idx_split, split:] = subW_old[idx_split, split - 1 : -1]
-                OUT["subS"][idx_split, split:] = subS_old[idx_split, split - 1 : -1]
-                OUT["subT"][idx_split, split:] = subT_old[idx_split, split - 1 : -1]
-                OUT["subD"][idx_split, split:] = subD_old[idx_split, split - 1 : -1]
+                OUT["subZ"][idx_split, split:] = subZ_old[:, split - 1 : -1]
+                OUT["subW"][idx_split, split:] = subW_old[:, split - 1 : -1]
+                OUT["subS"][idx_split, split:] = subS_old[:, split - 1 : -1]
+                OUT["subT"][idx_split, split:] = subT_old[:, split - 1 : -1]
+                OUT["subD"][idx_split, split:] = subD_old[:, split - 1 : -1]
 
                 # Update runoff contributions
-                OUT["runoff_irr_deep"][idx_split] += subW_old[idx_split, -1]
-                OUT["runoff_slush"][idx_split] += subS_old[idx_split, -1]
+                OUT["runoff_irr_deep"][idx_split] += subW_old[:, -1]
+                OUT["runoff_slush"][idx_split] += subS_old[:, -1]
 
         return _SUCCESS
 
+    @profile
     def runoff():
         ###########################################
         # RUNOFF
@@ -913,9 +1002,36 @@ def main(C, OUT, IN, dt, grid, phys):
 
     snowfall_and_deposition()
     melt_sublimation()
-    compaction()
-    heat_conduction()
-    percolation_refreezing_and_storage()
+    if get_backend() == ComputeBackend.GPU:
+        # Resident-state core: subT/subD/subZ/subW/subS stay on the device
+        # across compaction -> heat conduction -> percolation. The subsurface
+        # state is uploaded once here and downloaded once after percolation,
+        # instead of round-tripping in each sub-step.
+        # Imported here so only GPU runs pull in numba.cuda.
+        from .LOOP_SNOW_gpu_kernels import SnowDeviceState
+
+        gpu_state = SnowDeviceState(
+            OUT["subT"],
+            OUT["subD"],
+            OUT["subZ"],
+            OUT["subW"],
+            OUT["subS"],
+            OUT["subTmean"],
+            OUT["surfH"],
+            IN["logyearsnow"],
+            IN["yearsnow"],
+            IN["WS"],
+            OUT["Tsurf"],
+            OUT["sumWinit"],
+        )
+        compaction(gpu_state)
+        heat_conduction(gpu_state)
+        percolation_refreezing_and_storage(gpu_state)
+        gpu_state.download(OUT)
+    else:
+        compaction()
+        heat_conduction()
+        percolation_refreezing_and_storage()
     layer_merging_and_splitting()
     runoff()
     OUT["T_ice"] = OUT["subT"][:, -1]
