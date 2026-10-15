@@ -10,9 +10,9 @@ import numpy as np
 from ebfm.core import logging
 from ebfm.core.config import CouplingConfig
 
-from .base import Coupler, CouplerExitCode, Grid, GridDict
+from .base import Coupler, CouplerExitCode, GridDict
 from ebfm.coupling.fields import FieldSet, GenericExchangeType
-from ebfm.coupling.components import Component, IconAtmo, ElmerIce
+from ebfm.coupling.components import Component, IconAtmo, IconLand, ElmerIce
 
 logger = logging.getLogger(__name__)
 
@@ -44,18 +44,35 @@ class FakeFieldConfig:
 # put() and therefore need no entry here.
 # ---------------------------------------------------------------------------
 _DEFAULT_FAKE_FIELDS: tuple[FakeFieldConfig, ...] = (
-    # Elmer/Ice → EBFM
-    FakeFieldConfig(ElmerIce(coupler=None), "surface_elevation", 1000.0),  # surface elevation        [m]
-    # ICON atmosphere → EBFM
-    FakeFieldConfig(IconAtmo(coupler=None), "pr", 0.0),  # precipitation rate        [kg m-2 s-1]
-    FakeFieldConfig(IconAtmo(coupler=None), "pr_snow", 0.0),  # snowfall rate             [kg m-2 s-1]
-    FakeFieldConfig(IconAtmo(coupler=None), "rsds", 100.0),  # downward SW radiation     [W m-2]
-    FakeFieldConfig(IconAtmo(coupler=None), "rlds", 300.0),  # downward LW radiation     [W m-2]
-    FakeFieldConfig(IconAtmo(coupler=None), "sfcwind", 5.0),  # surface wind speed        [m s-1]
-    FakeFieldConfig(IconAtmo(coupler=None), "clt", 0.5),  # cloud cover               [fraction]
-    FakeFieldConfig(IconAtmo(coupler=None), "tas", 260.0),  # near-surface temperature  [K]
-    FakeFieldConfig(IconAtmo(coupler=None), "huss", 1e-3),  # specific humidity         [kg kg-1]
-    FakeFieldConfig(IconAtmo(coupler=None), "sfcpres", 101325.0),  # surface pressure          [Pa]
+    # Elmer/Ice -> EBFM
+    # surface elevation [m]
+    FakeFieldConfig(ElmerIce(coupler=None), "surface_elevation", 1000.0),
+    # ICON atmosphere -> EBFM
+    # precipitation rate [kg m-2 s-1]
+    FakeFieldConfig(IconAtmo(coupler=None), "pr", 0.0),
+    # snowfall rate [kg m-2 s-1]
+    FakeFieldConfig(IconAtmo(coupler=None), "pr_snow", 0.0),
+    # downward SW radiation [W m-2]
+    FakeFieldConfig(IconAtmo(coupler=None), "rsds", 100.0),
+    # downward LW radiation [W m-2]
+    FakeFieldConfig(IconAtmo(coupler=None), "rlds", 300.0),
+    # surface wind speed [m s-1]
+    FakeFieldConfig(IconAtmo(coupler=None), "sfcwind", 5.0),
+    # cloud cover [fraction]
+    FakeFieldConfig(IconAtmo(coupler=None), "clt", 0.5),
+    # near-surface temperature [K]
+    FakeFieldConfig(IconAtmo(coupler=None), "tas", 260.0),
+    # specific humidity [kg kg-1]
+    FakeFieldConfig(IconAtmo(coupler=None), "huss", 1e-3),
+    # surface pressure [Pa]
+    FakeFieldConfig(IconAtmo(coupler=None), "sfcpres", 101325.0),
+    # ICON-Land -> EBFM
+    # surface temperature [K]
+    FakeFieldConfig(IconLand(coupler=None), "t_srf", 260.0),
+    # melt [kg m-2 s-1]
+    FakeFieldConfig(IconLand(coupler=None), "melt", 0.0),
+    # evapotranspiration [kg m-2 s-1]
+    FakeFieldConfig(IconLand(coupler=None), "evapotrans", 0.0),
 )
 
 
@@ -86,7 +103,7 @@ class FakeCoupler(Coupler):
 
         coupler.setup(grid, time)
         data, err = coupler.get("elmer_ice", "surface_elevation")   # returns np.full(n_points, 500.0)
-        coupler.put("elmer_ice", "smb", smb_data)   # silently discarded
+        coupler.put("elmer_ice", "smb_to_elmer", smb_data)   # silently discarded
     """
 
     def __init__(self, coupling_config: CouplingConfig, fake_fields: Iterable[FakeFieldConfig] = _DEFAULT_FAKE_FIELDS):
@@ -129,9 +146,11 @@ class FakeCoupler(Coupler):
         """
         Infer the number of horizontal points represented by ``grid``.
 
-        Supports both:
-        - Elmer mesh-like objects (e.g. ``vertex_ids``, ``lon``, ``lat``)
-        - MATLAB/full EBFM grid dictionaries (e.g. ``x``, ``lon``, ``lat``, ``gpsum``)
+        EBFM exchanges its fields per column, and a column is point data (see the module docstring of
+        core.grid), so a plain point count is all a coupler needs. It comes from the per-column entries of
+        the grid dictionary, which all share the same length (see core.grid.PER_COLUMN_FIELDS). A grid built
+        from an Elmer mesh also carries that mesh in grid["mesh"], but the mesh describes the source geometry
+        by vertex and would give a count no coupled field has.
 
         @param[in] grid GridDict used by Coupler
 
@@ -140,29 +159,17 @@ class FakeCoupler(Coupler):
         if grid is None:
             return 0
 
-        grid_object: Grid = grid.get("mesh")
-        if grid_object:  # grid wraps an Elmer mesh-like object
-            for attr in ("vertex_ids", "lon", "lat", "x_vertices", "y_vertices"):
-                value = getattr(grid, attr, None)
-                if value is not None:
-                    try:
-                        return int(len(value))
-                    except TypeError:
-                        pass
-        else:  # grid["mesh"] not provided or None
-            for key in ("n_points", "x", "lon", "lat", "mask"):
-                value = grid.get(key)
-                if value is not None:
-                    try:
-                        return int(len(value))
-                    except TypeError:
-                        pass
+        for key in ("n_points", "mask", "x", "lon", "lat"):
+            value = grid.get(key)
+            if value is not None:
+                try:
+                    return int(len(value))
+                except TypeError:
+                    pass
 
         raise ValueError(
             "Could not infer number of grid points from the provided grid. "
-            "Please ensure that the grid contains one of the following attributes or keys: "
-            "vertex_ids, lon, lat, x_vertices, y_vertices (for Elmer-like grids) or "
-            "n_points, x, lon, lat, mask (for MATLAB/full EBFM grids)."
+            "Please ensure that the grid contains one of the following keys: n_points, mask, x, lon, lat."
         )
 
     @staticmethod
@@ -202,7 +209,7 @@ class FakeCoupler(Coupler):
         for field in field_definitions:
             self._fields.add(field)
 
-    def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
+    def _put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Log and discard outgoing data – no actual transfer is performed.
 
@@ -215,7 +222,7 @@ class FakeCoupler(Coupler):
         logger.debug(f"FakeCoupler put: field '{field_name}' -> '{component_name}' (discarded).")
         return None
 
-    def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
+    def _get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Return a fake array for the requested field.
 

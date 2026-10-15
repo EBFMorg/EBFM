@@ -29,29 +29,58 @@ def _make_column():
     return ColumnDiscretizationConfig(nl=NL, split=(2,))
 
 
-class _AutoOut(dict):
-    """
-    An OUT dict that fabricates plausible data for whatever the writer asks for.
+# Mirrors the varname column of LOOP_write_to_file.main()'s varsout list, with
+# "shade" replaced by "is_shaded": the writer reads shade's data from that key
+# (see the source_key remap in main()), not from "shade" itself.
+# Update this alongside varsout when a variable is added, renamed or removed -
+# a stale entry here surfaces as a KeyError naming the missing key.
+_OUTPUT_VARIABLES = (
+    "smb",
+    "Tsurf",
+    "climT",
+    "climP",
+    "climC",
+    "climRH",
+    "climWS",
+    "climPres",
+    "climrain",
+    "climsnow",
+    "snowmass",
+    "smb_cumulative",
+    "melt",
+    "refr",
+    "runoff",
+    "runoff_surf",
+    "runoff_slush",
+    "SWin",
+    "SWout",
+    "LWin",
+    "LWout",
+    "SHF",
+    "LHF",
+    "GHF",
+    "surfH",
+    "albedo",
+    "is_shaded",
+    "subD",
+    "subT",
+    "subS",
+    "subW",
+    "subZ",
+)
 
-    The writer declares its own variable list, so deriving the data from the
-    requested key keeps these tests exercising every output variable, including
-    ones added later.
-    """
 
-    def __init__(self, gpsum, nl):
-        super().__init__()
-        self._gpsum = gpsum
-        self._nl = nl
-
-    def __missing__(self, key):
+def _fake_out(gpsum, nl):
+    """Build an OUT dict with plausible data for every variable the writer declares."""
+    out = {}
+    for key in _OUTPUT_VARIABLES:
         if key.startswith("sub"):
-            value = np.arange(self._gpsum * self._nl, dtype=np.float64).reshape(self._gpsum, self._nl)
+            out[key] = np.arange(gpsum * nl, dtype=np.float64).reshape(gpsum, nl)
         elif key == "is_shaded":
-            value = np.zeros(self._gpsum, dtype=bool)
+            out[key] = np.zeros(gpsum, dtype=bool)
         else:
-            value = np.arange(self._gpsum, dtype=np.float64)
-        self[key] = value
-        return value
+            out[key] = np.arange(gpsum, dtype=np.float64)
+    return out
 
 
 def _structured_grid():
@@ -80,15 +109,25 @@ def _unstructured_grid():
     }
 
 
-def _write_single_step(outdir, grid):
+def _write_single_step(outdir, grid, extra_out=None):
     """
     Run the writer for a one-step simulation and return the closed output file.
 
     With freqout=1 and tn=1 the single call at t=0 creates the file, defines the
     variables, writes time index 0 and closes the file again.
+
+    @param[in] outdir directory to write the NetCDF file into
+    @param[in] grid structured or unstructured grid dict (_structured_grid()/_unstructured_grid())
+    @param[in] extra_out optional dict merged into the fabricated OUT before writing, for keys
+                         _fake_out() doesn't declare (e.g. the conditional "ebm_diagnostics")
+
+    @returns (path to the written NetCDF file, the writer's outfile dict, the OUT dict
+             actually written)
     """
     column = _make_column()
-    out = _AutoOut(GPSUM, NL)
+    out = _fake_out(GPSUM, NL)
+    if extra_out:
+        out.update(extra_out)
     io = {"outdir": str(outdir), "freqout": 1, "output_type": _NETCDF_OUTPUT}
     time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
 
@@ -161,6 +200,31 @@ class TestNetCDFOutputSmoke(unittest.TestCase):
                 flat = sub_t.reshape(NY * NX, NL)
                 np.testing.assert_allclose(flat[list(GLACIER_INDICES), :], out["subT"])
                 self.assertEqual(sub_t.count(), GPSUM * NL)
+
+    def test_ebm_diagnostics_written_when_coupled_to_icon_land(self):
+        """
+        When coupled to ICON-Land, OUT["ebm_diagnostics"] (the results of EBFM's own
+        energy balance) is unpacked onto the ebm_Tsurf/ebm_melt/ebm_Emelt output
+        variables instead of being read as flat OUT["ebm_<name>"] keys.
+        """
+        ebm_diagnostics = {
+            "Tsurf": np.arange(GPSUM, dtype=np.float64) + 250.0,
+            "melt": np.arange(GPSUM, dtype=np.float64) * 1e-3,
+            "Emelt": np.arange(GPSUM, dtype=np.float64) * 10.0,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path, outfile, _ = _write_single_step(
+                tmp, _structured_grid(), extra_out={"ebm_diagnostics": ebm_diagnostics}
+            )
+
+            varnames = [entry[0] for entry in outfile["varsout"]]
+            self.assertIn("ebm_Tsurf", varnames)
+            self.assertIn("ebm_melt", varnames)
+            self.assertIn("ebm_Emelt", varnames)
+
+            with Dataset(path) as nc:
+                for varname, key in (("ebm_Tsurf", "Tsurf"), ("ebm_melt", "melt"), ("ebm_Emelt", "Emelt")):
+                    np.testing.assert_allclose(nc[varname][0].compressed(), ebm_diagnostics[key])
 
     def test_layer_count_comes_from_the_column_not_the_grid(self):
         """

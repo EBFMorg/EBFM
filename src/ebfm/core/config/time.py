@@ -183,12 +183,19 @@ class TimeConfig:
         assert total_seconds % step_seconds == 0, "Time interval must be divisible by time step."
         return int(round(total_seconds / step_seconds))
 
+    def time_step_in_seconds(self) -> float:
+        """Get the time step size in seconds.
+
+        @returns Time step size in seconds
+        """
+        return self.time_step.total_seconds()
+
     def time_step_in_days(self) -> float:
         """Get the time step size in days.
 
         @returns Time step size in days
         """
-        return self.time_step.total_seconds() / SECONDS_PER_DAY
+        return self.time_step_in_seconds() / SECONDS_PER_DAY
 
     def time_step_iso8601(self) -> str:
         """Get the time step size in ISO 8601 duration format (e.g., "P0DT3H0M0S" for a 3-hour time step).

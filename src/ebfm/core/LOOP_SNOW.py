@@ -25,6 +25,7 @@ except NameError:
     profile = lambda f: f  # noqa: E731
 
 from ebfm.core import logging
+from ebfm.core.constants import WATER_DENSITY
 
 _SUCCESS = True
 
@@ -176,7 +177,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
 
         # Initialize variables
         OUT["sumWinit"] = np.sum(OUT["subW"], axis=1)
-        mass_removed = (OUT["melt"] + OUT["moist_sublimation"]) * 1e3
+        mass_removed = (OUT["melt"] + OUT["moist_sublimation"]) * WATER_DENSITY
         mass_layer = OUT["subD"] * OUT["subZ"]
 
         shift_tot = np.zeros_like(mass_removed)
@@ -640,7 +641,9 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             if _p_mode < 0:
                 raise ValueError(f"_percolation_kernel: unknown percolation={phys['percolation']!r}")
             _avail_W = np.maximum(
-                OUT["melt"] * 1e3 + IN["rain"] * 1e3 + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * 1e3,
+                OUT["melt"] * WATER_DENSITY
+                + IN["rain"] * WATER_DENSITY
+                + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * WATER_DENSITY,
                 0.0,
             )
             if gpu is not None:
@@ -701,9 +704,9 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             subW_old = OUT["subW"].copy()  # Store the old water content
             # ------ Water Input ------
             avail_W = (
-                OUT["melt"] * 1e3  # Meltwater
-                + IN["rain"] * 1e3  # Rainfall
-                + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * 1e3  # Condensation or evaporation
+                OUT["melt"] * WATER_DENSITY  # Meltwater
+                + IN["rain"] * WATER_DENSITY  # Rainfall
+                + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * WATER_DENSITY  # Condensation or evaporation
             )
             avail_W = np.maximum(avail_W, 0)  # Ensure no negative water availability
 
