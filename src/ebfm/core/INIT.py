@@ -617,6 +617,7 @@ def read_NETCDF_grid(gridfile: Path):
                 )
 
             mask = np.where(valid_orography & (mask > 0.0), 1.0, 0.0).astype(np.float32)
+            orography = np.where(mask > 0.0, orography, 0.0)
             longitude = np.mod(longitude, 360.0)
 
             if not np.any(mask > 0.0):
