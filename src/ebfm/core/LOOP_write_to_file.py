@@ -7,6 +7,19 @@ import numpy as np
 from netCDF4 import Dataset, date2num
 
 from .LOOP_general_functions import is_first_time_step, is_final_time_step
+from ebfm.core.grid import GridInputType
+
+
+def is_supported_grid_type(grid_type: GridInputType):
+    """
+    Check if provided grid input type supports writing to file
+
+    @param[in] grid_type GridInputType of used grid
+
+    @return True if provided grid_type supports writing to file; False if not
+    """
+    return grid_type in (GridInputType.MATLAB, GridInputType.NETCDF)
+
 
 _FILL_VALUE = -9999.0
 
@@ -171,11 +184,11 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
             ["surfH", "m", "sample", "Surface height"],
             ["albedo", "fraction", "mean", "Albedo"],
             ["shade", "fraction", "mean", "Shading (0=not shaded, 1=shaded)"],
-            ["subD", "kg m^-3", "sample", "Density"],
-            ["subT", "K", "sample", "Temperature"],
-            ["subS", "mm w.e.", "sample", "Slush water content"],
-            ["subW", "mm w.e.", "sample", "Irreducible water"],
-            ["subZ", "m", "sample", "Layer thickness"],
+            # ["subD", "kg m^-3", "sample", "Density"],
+            # ["subT", "K", "sample", "Temperature"],
+            # ["subS", "mm w.e.", "sample", "Slush water content"],
+            # ["subW", "mm w.e.", "sample", "Irreducible water"],
+            # ["subZ", "m", "sample", "Layer thickness"],
         ]
         if "ebm_diagnostics" in OUT:
             # Coupled to ICON-Land: Tsurf/melt are taken from ICON-Land, EBFM's own energy
