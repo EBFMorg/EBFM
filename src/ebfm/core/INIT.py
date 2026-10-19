@@ -181,7 +181,7 @@ def init_constants():
     return C
 
 
-def init_grid(grid: GridDict, io, config: GridConfig, comm):
+def init_grid(grid: GridDict, config: GridConfig, comm):
     """
     Initializes the GridDict based on the given GridConfig.
 
@@ -192,7 +192,6 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
 
     Parameters:
         grid (GridDict): Dictionary to store grid-related parameters.
-        io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         config (GridConfig): Grid configuration object containing settings for grid initialization.
         comm: EBFM's MPI communicator, whose ranks hold the columns of the domain.
     """
