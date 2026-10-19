@@ -7,6 +7,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # develop
 
 * Remove support for Python 3.10. https://github.com/EBFMorg/EBFM/pull/143
+* `--numba-threads` larger than the number of CPUs the process may run on (e.g. restricted by Slurm's `--cpus-per-task`, or by `NUMBA_NUM_THREADS`) is now rejected with an error message that explains the limit, instead of failing with numba's `ValueError: The number of threads must be between 1 and N`. The log line reporting the thread count now also shows this limit. https://github.com/EBFMorg/EBFM/pull/190
 
 # v0.8.0
 
