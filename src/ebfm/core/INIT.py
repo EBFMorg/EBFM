@@ -625,7 +625,9 @@ def read_NETCDF_grid(gridfile: Path, fill_missing_elevation: bool = False):
 
             mask = np.where(valid_orography & (mask > 0.0), 1.0, 0.0).astype(np.float32)
             if fill_missing_elevation:
-                logger.warning(f"Setting {int((~valid_orography).sum())} missing elevations in {gridfile} to 0 m.")
+                n_missing = int((~valid_orography).sum())
+                if n_missing > 0:
+                    logger.warning(f"Setting {n_missing} missing elevations in {gridfile} to 0 m.")
                 orography = np.where(valid_orography, orography, 0.0)
             else:
                 orography = np.where(valid_orography, orography, np.nan)
