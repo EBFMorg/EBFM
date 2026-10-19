@@ -372,10 +372,11 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
 
 
 class TestReadNetcdfGrid(unittest.TestCase):
-    """Only cells without orography data are filled with zero elevation.
+    """Missing orography is NaN unless the user opts in to filling it with zero elevation.
 
-    Inactive cells with valid orography (e.g. ice-free land next to the ice margin) must keep their elevation,
-    otherwise `np.gradient` sees an artificial cliff and over-estimates the slope of the adjacent active cells.
+    Filling must only touch cells without orography data. Inactive cells with valid orography (e.g. ice-free land
+    next to the ice margin) must keep their elevation, otherwise `np.gradient` sees an artificial cliff and
+    over-estimates the slope of the adjacent active cells.
     """
 
     _FILL = -9999.0
@@ -402,21 +403,27 @@ class TestReadNetcdfGrid(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def test_missing_orography_is_inactive(self):
-        data = INIT.read_NETCDF_grid(self.gridfile)
-        np.testing.assert_array_equal(data["mask"], [[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
+        for fill in (False, True):
+            with self.subTest(fill_missing_elevation=fill):
+                data = INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=fill)
+                np.testing.assert_array_equal(data["mask"], [[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
 
-    def test_missing_orography_is_filled_with_zero(self):
+    def test_missing_orography_is_nan_by_default(self):
         data = INIT.read_NETCDF_grid(self.gridfile)
+        self.assertTrue(np.isnan(data["z"][0, 2]))
+        self.assertTrue(np.isnan(data["z"][1, 2]))
+
+    def test_missing_orography_is_filled_with_zero_on_request(self):
+        data = INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=True)
         self.assertEqual(data["z"][0, 2], 0.0)
         self.assertEqual(data["z"][1, 2], 0.0)
+        self.assertTrue(np.isfinite(data["z"]).all())
 
     def test_valid_orography_of_inactive_cell_is_kept(self):
-        data = INIT.read_NETCDF_grid(self.gridfile)
-        self.assertEqual(data["z"][1, 1], 500.0)
-
-    def test_orography_has_no_non_finite_values(self):
-        data = INIT.read_NETCDF_grid(self.gridfile)
-        self.assertTrue(np.isfinite(data["z"]).all())
+        for fill in (False, True):
+            with self.subTest(fill_missing_elevation=fill):
+                data = INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=fill)
+                self.assertEqual(data["z"][1, 1], 500.0)
 
 
 if __name__ == "__main__":

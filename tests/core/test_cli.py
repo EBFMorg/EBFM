@@ -62,6 +62,25 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
 
 
+class TestFillMissingElevation(unittest.TestCase):
+    """--fill-missing-elevation is opt-in and only valid with --netcdf-mesh."""
+
+    def test_off_by_default(self):
+        args = parse_cli_args(_CARRA2)
+        self.assertFalse(args.fill_missing_elevation)
+
+    def test_accepted_with_netcdf_mesh(self):
+        args = parse_cli_args(_CARRA2 + ["--fill-missing-elevation"])
+        self.assertTrue(args.fill_missing_elevation)
+
+    def test_rejected_without_netcdf_mesh(self):
+        for base in (_MATLAB, _ELMER):
+            with self.subTest(base=base[0]):
+                with self.assertRaises(SystemExit) as ctx:
+                    parse_cli_args(base + ["--fill-missing-elevation"])
+                self.assertEqual(ctx.exception.code, 2)
+
+
 class TestElmerMeshConstraints(unittest.TestCase):
     """Constraints specific to --elmer-mesh."""
 

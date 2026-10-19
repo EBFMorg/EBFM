@@ -307,7 +307,7 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
 
         else:
-            input_data = read_NETCDF_grid(config.mesh_file)
+            input_data = read_NETCDF_grid(config.mesh_file, config.fill_missing_elevation)
 
             grid["x_2D"] = input_data["x"]
             grid["y_2D"] = input_data["y"]
@@ -364,7 +364,8 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         assert np.isfinite(grid["slope"]).all(), (
             f"{int((~np.isfinite(grid['slope'])).sum())} of {grid['slope'].size} active grid cells have a "
             "non-finite `slope`. Most likely the DEM has missing elevations adjacent to active cells, "
-            "which `np.gradient` spreads one cell into the mask."
+            "which `np.gradient` spreads one cell into the mask. For --netcdf-mesh, --fill-missing-elevation sets "
+            "missing elevations to 0 m."
         )
         assert np.isfinite(grid["slope_x"]).all(), (
             f"{int((~np.isfinite(grid['slope_x'])).sum())} of {grid['slope_x'].size} active grid cells have a "
@@ -560,12 +561,15 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
-def read_NETCDF_grid(gridfile: Path):
+def read_NETCDF_grid(gridfile: Path, fill_missing_elevation: bool = False):
     """
     Read grid information from an NetCDF (.nc) file with DEM.
 
+    Cells with missing orography are always inactive. Their elevation is NaN, or 0 m if `fill_missing_elevation`.
+
     Parameters:
         gridfile: Path to NetCDF file (.nc).
+        fill_missing_elevation: Set missing elevations to 0 m instead of NaN.
 
     Returns:
         dict: A dictionary named `input_data` containing:
@@ -620,7 +624,11 @@ def read_NETCDF_grid(gridfile: Path):
                 )
 
             mask = np.where(valid_orography & (mask > 0.0), 1.0, 0.0).astype(np.float32)
-            orography = np.where(valid_orography, orography, 0.0)
+            if fill_missing_elevation:
+                logger.warning(f"Setting {int((~valid_orography).sum())} missing elevations in {gridfile} to 0 m.")
+                orography = np.where(valid_orography, orography, 0.0)
+            else:
+                orography = np.where(valid_orography, orography, np.nan)
             longitude = np.mod(longitude, 360.0)
 
             if not np.any(mask > 0.0):

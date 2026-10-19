@@ -172,6 +172,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     }
     partitioned_elmer_mesh_opt = "--is-partitioned-elmer-mesh"
     netcdf_dem_mesh_opt = "--netcdf-dem-mesh"
+    fill_missing_elevation_opt = "--fill-missing-elevation"
 
     parser.add_argument(
         "--version",
@@ -199,6 +200,14 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         mesh_opts[GridInputType.ELMER],
         type=Path,
         help="Path to the Elmer mesh file.",
+    )
+
+    input_group.add_argument(
+        fill_missing_elevation_opt,
+        action="store_true",
+        help=f"Set missing elevations in the {mesh_opts[GridInputType.NETCDF]} file to 0 m. Cells with missing "
+        "elevation are never active, but their elevation enters the slope of neighbouring active cells. "
+        f"Requires {mesh_opts[GridInputType.NETCDF]}.",
     )
 
     input_group.add_argument(
@@ -431,6 +440,9 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
 
     if args.is_partitioned_elmer_mesh and args.netcdf_dem_mesh is None:
         parser.error(f"{partitioned_elmer_mesh_opt} requires {netcdf_dem_mesh_opt}")
+
+    if args.fill_missing_elevation and getattr(args, GridConfig.mesh_arg_dests[GridInputType.NETCDF], None) is None:
+        parser.error(f"{fill_missing_elevation_opt} requires {mesh_opts[GridInputType.NETCDF]}")
 
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")

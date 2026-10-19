@@ -83,19 +83,19 @@ ebfm --matlab-mesh examples/dem_and_mask.mat
 Another test applies EBFM to the Greenland Ice Sheet and forces it with Copernicus CARRA2 meteorological data for the month May 1990 on a 10-km resolution grid:
 
 ```sh
-ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-05-01T00:00:00 --end-time 1990-06-01T00:00:00
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-05-01T00:00:00 --end-time 1990-06-01T00:00:00
 ```
 
 Two more tests can be done, simulating the Greenland Ice Sheet for a full year (1990) at spatial resolutions of 2.5 km or 10 km. The faster 10-km resolution test requires this [package](https://drive.google.com/file/d/1bZUKxQ7QgQjwwPA8jTHqlJ-mXhwsU_OP/view?usp=sharing), whereas the computationally more expensive high-resolution 2.5-km resolution test requires this downloadable [package](https://drive.google.com/file/d/1fTFMt0QzGTrQFfzOmBC4xk1OonFsH9ZQ/view?usp=sharing). The zip-files need to be extracted so that the `.nc` files are in the `/examples/` folder prior to running the model with the following commands:
 
 ```sh
-ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
 ```
 
 for the 10-km resolution experiment, and as:
 
 ```sh
-ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --forcing-dir examples/Greenland_CARRA2/forcing_fine --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing_fine --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
 ```
 
 for the 2.5-km resolution experiment.
@@ -103,7 +103,7 @@ for the 2.5-km resolution experiment.
 Please note that runs become significantly faster (~3 times) when running with performance optimization (see also **Performance and Profiling Runs** below), e.g.:
 
 ```sh
-ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --forcing-dir examples/Greenland_CARRA2/forcing_fine --numba-threads 2 --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing_fine --numba-threads 2 --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
 ```
 
 ### Mesh data
@@ -125,6 +125,21 @@ Important: For some larger files we are using Git LFS. Please make sure to [inst
 
   ```sh
   ebfm --matlab-mesh examples/dem_and_mask.mat
+  ```
+
+* NetCDF Mesh: A NetCDF file with `latitude`, `longitude`, elevation (`orog` or
+  `orography`) and `mask` on a 2D grid. Please use the argument
+  `--netcdf-mesh /path/to/your/mesh.nc`.
+
+  Cells with missing elevation are never active. They still enter the slope of
+  neighbouring active cells, so EBFM stops if an active cell borders a missing
+  elevation. The option `--fill-missing-elevation` sets missing elevations to 0 m
+  instead.
+
+  Usage example:
+
+  ```sh
+  ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation
   ```
 
 * Elmer Mesh: An Elmer mesh file with x-y coordinates of mesh points and
