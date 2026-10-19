@@ -7,6 +7,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # develop
 
 * Remove support for Python 3.10. https://github.com/EBFMorg/EBFM/pull/143
+* A fatal error now ends EBFM with exit status 1 whenever mpi4py is installed, both standalone and under `mpirun`. EBFM previously aborted MPI with error code 0, so the run, and `mpirun` with it, reported success after logging "Fatal Error in EBFM". The same applies to an MPI handshake version mismatch. A fatal error before the MPI communicator splitting no longer leaves the other components of an MPMD run waiting forever. https://github.com/EBFMorg/EBFM/pull/191
 
 # v0.8.0
 

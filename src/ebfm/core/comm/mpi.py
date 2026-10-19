@@ -21,11 +21,16 @@ def _is_initialized() -> bool:
     return MPI.Is_initialized()
 
 
-def abort():
+def abort(errorcode: int = 1):
+    """
+    Abort all processes of EBFM's global MPI communicator, or of MPI.COMM_WORLD before it is set.
+
+    @param[in] errorcode exit status returned to the invoking environment, e.g. by mpirun.
+    """
     if _is_initialized():
-        logger.info(f"Calling Abort on MPI comm {_global_comm}.")
-        _global_comm.Abort()
-        logger.info("Aborting successful.")
+        comm = _global_comm if _global_comm is not None else MPI.COMM_WORLD
+        logger.info(f"Calling Abort on MPI comm {comm} with error code {errorcode}.")
+        comm.Abort(errorcode)
 
 
 _global_comm: MPI.Comm | None = None

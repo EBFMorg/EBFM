@@ -33,7 +33,7 @@ def mpi_handshake(groupnames: list[str], comm: MPI.Comm = MPI.COMM_WORLD) -> dic
             f"other component uses version {version}.",
             file=sys.stderr,
         )
-        comm.Abort()
+        comm.Abort(1)
     while True:
         broadcaster = np.array(comm.size, dtype=np.int32)
         if len(groupnames) > 0:
