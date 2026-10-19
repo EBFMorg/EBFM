@@ -6,14 +6,16 @@ SPDX-License-Identifier: BSD-3-Clause
 
 # Example Files
 
-| File                           | Description                                    |
-|------------------------------- | ---------------------------------------------- |
-| `BedMachineGreenland-v5_lo.nc` | Low-res version of `BedMachineGreenland-v5.nc` |
-| `dem_and_mask.mat`             | MATLAB example grid                            |
-| `greenland_mesh_v0/MESH`       | Elmer/Ice example mesh, Greenland (EPSG:3413)  |
-| `Greenland_CARRA2`             | Folder with grid and forcing data              |
+| File                           | Description                                          |
+|------------------------------- | ---------------------------------------------------- |
+| `BedMachineGreenland-v5_lo.nc` | Low-res version of `BedMachineGreenland-v5.nc`       |
+| `dem_and_mask.mat`             | MATLAB example grid                                  |
+| `greenland_mesh_v0/MESH`       | Elmer/Ice example mesh, Greenland (EPSG:3413)        |
+| `Greenland_CARRA2`             | 10-km Greenland grid and CARRA2 forcing for May 1990 |
 
-### How `BedMachineGreenland-v5_lo.nc` was produced
+See `Greenland_CARRA2/README.md` for how the files in `Greenland_CARRA2` were produced.
+
+## How `BedMachineGreenland-v5_lo.nc` was produced
 
 `BedMachineGreenland-v5_lo.nc` is a low-resolution subset of the
 [`BedMachineGreenland-v5.nc`](https://nsidc.org/data/idbmg4/versions/5) dataset (Morlighem, 2022) provided as an
@@ -33,15 +35,3 @@ python3 tools/nc_reduce_size.py \
 ```
 
 See `tools/README.md` for full documentation of `nc_reduce_size.py`.
-
-### How grid and forcing files in `Greenland_CARRA2` were produced
-
-Files in `Greenland_CARRA2` are organized in a specific way. Please refer to `Greenland_CARRA2/README.md` for details.
-
-#### Grid files `grid.nc`
-
-TODO
-
-#### Forcing files
-
-TODO

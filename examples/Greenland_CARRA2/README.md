@@ -10,8 +10,18 @@ This folder contains
 
 * `grid.nc`: a grid file of Greenland
 * `forcing`: a folder with forcing files.
-* `forcing/1990-05-01/P1M.nc`: a the forcing file covering the time period of one month (ISO8601 `P1M`) starting from `1990-05-01`.
+* `forcing/1990-05-01/P1M.nc`: the forcing file covering one month (ISO8601 `P1M`) starting from `1990-05-01`.
 
-Additional folders or forcing files that follow the ISO8601 standard may be used to provide additional forcing files for alternative starting dates and/or resolutions.
+The path of a forcing file follows the ISO8601 notation for a time interval with start date and duration, for example `1990-05-01/P1M`.
+EBFM reads one file per month from `<forcing-dir>/<YYYY-MM-01>/P1M.nc`, so further months can be added as additional folders.
+Each forcing file must provide its data on the active cells of the grid it is used with; a grid with a different resolution therefore needs its own forcing folder.
 
-Note: ISO8601 defines a time interval with given startdate and duration as, for example `1990-05-01/P1M`.
+## How the files were produced
+
+### Grid file `grid.nc`
+
+TODO
+
+### Forcing files
+
+TODO
