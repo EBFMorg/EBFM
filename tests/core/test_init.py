@@ -371,5 +371,53 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
         precompute.assert_called_once()
 
 
+class TestReadNetcdfGrid(unittest.TestCase):
+    """Only cells without orography data are filled with zero elevation.
+
+    Inactive cells with valid orography (e.g. ice-free land next to the ice margin) must keep their elevation,
+    otherwise `np.gradient` sees an artificial cliff and over-estimates the slope of the adjacent active cells.
+    """
+
+    _FILL = -9999.0
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.gridfile = Path(self.tmpdir.name) / "grid.nc"
+
+        # Row 0: active, active, missing orography (but mask > 0)
+        # Row 1: active, inactive with valid orography, missing orography (mask == 0)
+        orog = np.array([[1000.0, 1100.0, self._FILL], [900.0, 500.0, self._FILL]])
+        mask = np.array([[1.0, 1.0, 1.0], [1.0, 0.0, 0.0]])
+        lon, lat = np.meshgrid([-45.0, -44.9, -44.8], [72.0, 72.1])
+
+        with Dataset(self.gridfile, "w") as nc:
+            nc.createDimension("y", 2)
+            nc.createDimension("x", 3)
+            nc.createVariable("orog", "f8", ("y", "x"), fill_value=self._FILL)[:] = orog
+            nc.createVariable("mask", "f8", ("y", "x"))[:] = mask
+            nc.createVariable("latitude", "f8", ("y", "x"))[:] = lat
+            nc.createVariable("longitude", "f8", ("y", "x"))[:] = lon
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_missing_orography_is_inactive(self):
+        data = INIT.read_NETCDF_grid(self.gridfile)
+        np.testing.assert_array_equal(data["mask"], [[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
+
+    def test_missing_orography_is_filled_with_zero(self):
+        data = INIT.read_NETCDF_grid(self.gridfile)
+        self.assertEqual(data["z"][0, 2], 0.0)
+        self.assertEqual(data["z"][1, 2], 0.0)
+
+    def test_valid_orography_of_inactive_cell_is_kept(self):
+        data = INIT.read_NETCDF_grid(self.gridfile)
+        self.assertEqual(data["z"][1, 1], 500.0)
+
+    def test_orography_has_no_non_finite_values(self):
+        data = INIT.read_NETCDF_grid(self.gridfile)
+        self.assertTrue(np.isfinite(data["z"]).all())
+
+
 if __name__ == "__main__":
     unittest.main()
