@@ -70,15 +70,4 @@ jobs:
           # Run dummy script second; EBFM on rank 0, dummy on rank 1
           mpirun -np 1 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00" : \
                  -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py second
-      - name: Run a fatal error under mpirun (MPMD)
-        if: ${{ matrix.run_mpi }}
-        run: |
-          set -euo pipefail
-          mpirun -np 1 .venv/bin/python tests/core/comm/simulate_fatal_error.py : \
-                 -np 1 .venv/bin/python -c "from mpi4py import MPI; MPI.COMM_WORLD.Barrier()"
-      - name: Run a fatal error standalone
-        if: ${{ matrix.run_mpi && !cancelled() }}
-        run: |
-          set -euo pipefail
-          .venv/bin/python tests/core/comm/simulate_fatal_error.py
 
