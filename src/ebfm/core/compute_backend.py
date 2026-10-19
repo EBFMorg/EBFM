@@ -25,6 +25,7 @@ Usage in LOOP_SNOW.py (dispatch):
         ...
 """
 
+import os
 from enum import Enum
 
 
@@ -139,6 +140,123 @@ def is_gpu_available() -> bool:
 def get_gpu_vendor() -> str | None:
     """Return the detected GPU vendor ("nvidia", "amd") or None if unavailable."""
     return _GPU_VENDOR
+
+
+def _affinity_cpus() -> set[int] | None:
+    """Return the CPUs this process may run on, or None where the OS does not expose CPU affinity."""
+    if hasattr(os, "sched_getaffinity"):
+        return os.sched_getaffinity(0)
+    return None
+
+
+def _usable_cpu_count() -> int:
+    """Return the number of CPUs this process may run on.
+
+    Respects CPU affinity (MPI process binding, Slurm allocation, cgroups) where the OS exposes it.
+    """
+    affinity = _affinity_cpus()
+    if affinity is not None:
+        return len(affinity)
+    process_cpu_count = getattr(os, "process_cpu_count", None)  # Python >= 3.13
+    if process_cpu_count is not None:
+        return process_cpu_count() or 1
+    return os.cpu_count() or 1
+
+
+def _node_local_affinities(comm) -> list[set[int] | None]:
+    """Gather the CPU affinity of every rank of comm that runs on the same node as this rank.
+
+    Collective over comm.
+    """
+    if comm.size == 1:
+        return [_affinity_cpus()]
+
+    from mpi4py import MPI
+
+    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    try:
+        return node_comm.allgather(_affinity_cpus())
+    finally:
+        node_comm.Free()
+
+
+def _suggested_max_threads(usable_cpus: int, node_affinities: list[set[int] | None]) -> int:
+    """Suggest a thread count per rank that does not oversubscribe the CPUs of this node.
+
+    Ranks bound to disjoint CPU sets (e.g. by mpirun or srun) each get their own CPUs. Ranks that
+    share CPUs split them evenly.
+    """
+    n_local_ranks = len(node_affinities)
+    if any(affinity is None for affinity in node_affinities):
+        shared_cpus = usable_cpus
+    else:
+        shared_cpus = len(set().union(*node_affinities))
+    return max(1, min(usable_cpus, shared_cpus // n_local_ranks))
+
+
+def resolve_numba_threads(requested: int | None, comm, logger) -> int:
+    """Check a requested Numba thread count against the CPUs of this rank and return the count to use.
+
+    Must be called on every rank of comm, and only if numba is available. Warns if the thread count
+    oversubscribes the CPUs of this node, and logs the resolved setting.
+
+    @param[in] requested thread count per rank, or None for the default of 1
+    @param[in] comm      MPI communicator (used to find the ranks sharing this node)
+    @param[in] logger    logger for informational messages
+    @returns number of Numba threads to initialise
+    @throws ValueError if the thread count is < 1 or exceeds the number of threads Numba accepts
+    """
+    import numba
+
+    numba_limit = numba.config.NUMBA_NUM_THREADS
+    usable_cpus = _usable_cpu_count()
+    # Collective: must run on all ranks before any rank can raise.
+    node_affinities = _node_local_affinities(comm)
+    suggested_max_threads = _suggested_max_threads(usable_cpus, node_affinities)
+    cpu_info = (
+        f"Numba limit {numba_limit}; usable CPUs {usable_cpus}; "
+        f"ranks on this node {len(node_affinities)}; suggested max {suggested_max_threads}"
+    )
+
+    if requested is None:
+        n_threads = 1
+        logger.info(
+            f"[NUMBA] --with-numba enabled. Using default threads per rank: {n_threads}. "
+            f"To increase, pass --numba-threads N ({cpu_info})."
+        )
+        return n_threads
+
+    n_threads = requested
+    if n_threads < 1:
+        raise ValueError("--numba-threads must be >= 1")
+
+    if n_threads > numba_limit:
+        env_limit = os.environ.get("NUMBA_NUM_THREADS")
+        if env_limit is not None:
+            raise ValueError(
+                f"--numba-threads={n_threads} exceeds Numba's thread limit of {numba_limit}, which is set by "
+                f"the environment variable NUMBA_NUM_THREADS={env_limit}. Raise NUMBA_NUM_THREADS or lower "
+                f"--numba-threads."
+            )
+        else:
+            raise ValueError(
+                f"--numba-threads={n_threads} exceeds Numba's thread limit of {numba_limit}: this process may "
+                f"only run on {usable_cpus} CPUs. The CPUs are restricted by the MPI process binding or the Slurm "
+                f"allocation; OpenMPI binds each rank to a single core by default when starting <= 2 processes. "
+                f"Lower --numba-threads, or give each rank more CPUs, e.g. with 'mpirun --bind-to none' or "
+                f"'mpirun --map-by slot:PE={n_threads}' in an allocation with enough CPUs per task, or with "
+                f"Slurm's --cpus-per-task when launching with srun (see 'Troubleshooting' in docs/Performance.md)."
+            )
+
+    if n_threads > suggested_max_threads:
+        logger.warning(
+            f"[NUMBA] --numba-threads={n_threads} exceeds the suggested max {suggested_max_threads} and may "
+            f"oversubscribe the CPUs of this node ({cpu_info})."
+        )
+
+    logger.info(f"[NUMBA] --with-numba enabled. Threads per rank: {n_threads} ({cpu_info}).")
+
+    return n_threads
 
 
 def init_numba(n_threads: int = 1):
