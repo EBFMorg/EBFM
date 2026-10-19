@@ -7,7 +7,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # develop
 
 * Remove support for Python 3.10. https://github.com/EBFMorg/EBFM/pull/143
-* `--numba-threads` larger than the number of CPUs the process may run on (e.g. restricted by Slurm's `--cpus-per-task`, or by `NUMBA_NUM_THREADS`) is now rejected with an error message that explains the limit, instead of failing with numba's `ValueError: The number of threads must be between 1 and N`. The log line reporting the thread count now also shows this limit. https://github.com/EBFMorg/EBFM/pull/190
+* `--numba-threads` is now checked against the number of threads Numba accepts, i.e. the CPUs the rank may run on (CPU affinity from MPI binding or the Slurm allocation, e.g. `--cpus-per-task`) or the `NUMBA_NUM_THREADS` environment variable. Exceeding it stops EBFM with an error explaining the cause, instead of a Numba `ValueError` traceback. Exceeding the suggested thread count for the ranks sharing a node is now only a warning; the suggestion no longer divides the CPUs of the whole node by the number of EBFM ranks. https://github.com/EBFMorg/EBFM/pull/190
 
 # v0.8.0
 

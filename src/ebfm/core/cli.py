@@ -426,6 +426,12 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     if args.with_numba and args.with_gpu:
         parser.error("--with-numba and --with-gpu are mutually exclusive.")
 
+    if args.with_numba:
+        from ebfm.core.compute_backend import is_numba_available
+
+        if not is_numba_available():
+            parser.error("--with-numba: numba is not installed. Run: pip install 'ebfm[performance]'")
+
     if args.gpu_vendor != "auto" and not args.with_gpu:
         parser.error("--gpu-vendor requires --with-gpu.")
 
@@ -445,60 +451,22 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
 
 
 def resolve_numba_threads(args: Namespace, comm, logger) -> int:
-    """Validate numba availability and thread configuration, then return the thread count to use.
+    """Return the Numba thread count to use, see compute_backend.resolve_numba_threads().
 
-    Must be called only when args.with_numba is True. Emits parser.error() for user-input problems
-    (missing package, out-of-range thread count) and logs the resolved setting.
+    Must be called only when args.with_numba is True, on every rank of comm. Emits parser.error() if
+    the thread count is outside the range Numba accepts.
 
     @param[in] args   parsed CLI arguments
-    @param[in] comm   MPI communicator (used to determine suggested thread limit)
+    @param[in] comm   MPI communicator (used to find the ranks sharing this node)
     @param[in] logger logger for informational messages
     @returns number of Numba threads to initialise
     """
-    import multiprocessing as _mp
-    from ebfm.core.compute_backend import is_numba_available
+    from ebfm.core import compute_backend
 
-    if not is_numba_available():
-        _cli_error("--with-numba: numba is not installed. Run: pip install 'ebfm[performance]'")
-
-    import numba
-
-    cpu_count = _mp.cpu_count()
-    numba_max_threads = numba.config.NUMBA_NUM_THREADS
-    mpi_size = comm.size
-    suggested_max_threads = max(1, min(numba_max_threads, cpu_count // mpi_size))
-
-    n_threads = args.numba_threads if args.numba_threads is not None else 1
-
-    if args.numba_threads is None:
-        logger.info(
-            f"[NUMBA] --with-numba enabled. Using default threads per rank: {n_threads}. "
-            f"To increase, pass --numba-threads N (suggested max: {suggested_max_threads}; "
-            f"cpu_count={cpu_count}, numba limit={numba_max_threads}, MPI world size={mpi_size})."
-        )
-    else:
-        if n_threads < 1:
-            _cli_error("--numba-threads must be >= 1")
-        if n_threads > numba_max_threads:
-            _cli_error(
-                f"[NUMBA] --numba-threads={n_threads} exceeds numba's thread limit of {numba_max_threads}: "
-                f"the number of CPUs this process may run on, or NUMBA_NUM_THREADS if set "
-                f"(cpu_count={cpu_count} counts the whole node). Lower --numba-threads, or make more CPUs "
-                f"available, e.g. with Slurm's --cpus-per-task."
-            )
-        if n_threads > suggested_max_threads:
-            _cli_error(
-                f"[NUMBA] --numba-threads={n_threads} exceeds suggested max {suggested_max_threads} "
-                f"(cpu_count={cpu_count}, numba limit={numba_max_threads}, MPI world size={mpi_size}). "
-                f"--numba-threads must be between 1 and {suggested_max_threads} on this system. "
-            )
-        logger.info(
-            f"[NUMBA] --with-numba enabled. Threads per rank: {n_threads} "
-            f"(suggested max {suggested_max_threads}; cpu_count={cpu_count}, numba limit={numba_max_threads}, "
-            f"MPI world size={mpi_size})."
-        )
-
-    return n_threads
+    try:
+        return compute_backend.resolve_numba_threads(args.numba_threads, comm, logger)
+    except ValueError as e:
+        _cli_error(str(e))
 
 
 def validate_shading_coupling_compat(grid_config, coupling_config) -> None:
