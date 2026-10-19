@@ -354,8 +354,8 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
     def _init_grid(self, shading_flag):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), shading_flag])
         grid_config = GridConfig(args)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config, defaultComm)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        return init_grid(grid, grid_config, defaultComm)
 
     def test_shading_disabled_skips_the_lookup_table(self):
         grid = self._init_grid("--no-shading")
@@ -392,8 +392,8 @@ class TestMatlabGridSplit(unittest.TestCase):
     def _init_grid(self, num_ranks, rank):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--no-shading"])
         grid_config = GridConfig(args, num_ranks, rank)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config, defaultComm)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        return init_grid(grid, grid_config, defaultComm)
 
     def test_blocks_of_all_ranks_make_up_the_serial_grid(self):
         serial = self._init_grid(num_ranks=1, rank=0)
@@ -449,9 +449,9 @@ class TestElmerGridCoordinates(unittest.TestCase):
             ["--elmer-mesh", self.tmpdir.name, "--elmer-mesh-crs-epsg", str(self._CRS_EPSG), *extra_args]
         )
         grid_config = GridConfig(args)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
         with mock.patch.object(INIT, "read_elmer_mesh", return_value=self.mesh):
-            return init_grid(grid, io, grid_config, defaultComm)
+            return init_grid(grid, grid_config, defaultComm)
 
     def test_lat_lon_are_the_cell_centers_of_the_mesh(self):
         grid = self._init_grid()

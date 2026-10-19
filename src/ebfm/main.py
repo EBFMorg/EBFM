@@ -231,7 +231,7 @@ def _main_impl():
     set_random_seed(logger, args.random_seed, ebfm_comm)
 
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, io, grid_config, ebfm_comm)
+    grid = INIT.init_grid(grid, grid_config, ebfm_comm)
 
     # Rank 0 collects the columns of all ranks, e.g. to write them to the output file or for --dump-reference
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
