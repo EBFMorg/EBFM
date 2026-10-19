@@ -352,8 +352,8 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
     def _init_grid(self, shading_flag):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), shading_flag])
         grid_config = GridConfig(args)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config, defaultComm)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        return init_grid(grid, grid_config, defaultComm)
 
     def test_shading_disabled_skips_the_lookup_table(self):
         grid = self._init_grid("--no-shading")
@@ -390,8 +390,8 @@ class TestMatlabGridSplit(unittest.TestCase):
     def _init_grid(self, num_ranks, rank):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--no-shading"])
         grid_config = GridConfig(args, num_ranks, rank)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config, defaultComm)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        return init_grid(grid, grid_config, defaultComm)
 
     def test_blocks_of_all_ranks_make_up_the_serial_grid(self):
         serial = self._init_grid(num_ranks=1, rank=0)
