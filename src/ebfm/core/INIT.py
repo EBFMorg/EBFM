@@ -337,6 +337,9 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         # Grid slope and aspect
         # ---------------------------------------------------------------------
         # Calculate slope and aspect
+        # NOTE: Assumes x varies only along columns and y only along rows (true for the MATLAB grid). NetCDF grids
+        # are reprojected to UTM zone 24N (see read_NETCDF_grid) and are not aligned with x and y, so slope, aspect
+        # and grid["dx"] are only approximate for them.
         gradN, gradE = np.gradient(grid["z_2D"], grid["y_2D"][:, 0], grid["x_2D"][0, :])
         slope_rad = np.arctan(np.sqrt(gradN**2 + gradE**2))
         slope_deg = np.degrees(slope_rad)
