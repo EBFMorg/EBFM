@@ -183,7 +183,7 @@ def _main_impl():
         logger.info(f"NumPy random seed fixed to {args.random_seed} for reproducibility.")
 
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, io, grid_config)
+    grid = INIT.init_grid(grid, grid_config)
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 

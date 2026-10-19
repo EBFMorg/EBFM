@@ -183,7 +183,7 @@ def init_constants():
     return C
 
 
-def init_grid(grid: GridDict, io, config: GridConfig):
+def init_grid(grid: GridDict, config: GridConfig):
     """
     Initializes the GridDict based on the given GridConfig.
 
@@ -193,7 +193,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
 
     Parameters:
         grid (GridDict): Dictionary to store grid-related parameters.
-        io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         config (GridConfig): Grid configuration object containing settings for grid initialization.
     """
     grid["is_partitioned"] = config.is_partitioned
