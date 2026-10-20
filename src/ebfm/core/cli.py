@@ -537,6 +537,21 @@ def validate_shading_parallel_compat(grid_config, comm) -> None:
         )
 
 
+def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
+    """Check that no forcing files are read in a run on several MPI ranks.
+
+    Must be called on every rank of comm.
+
+    @param[in] args parsed CLI arguments
+    @param[in] comm EBFM's MPI communicator
+    """
+    if args.forcing_dir is not None and comm.size > 1:
+        _cli_error(
+            f"Forcing files (--forcing-dir) are not supported for runs on several MPI ranks ({comm.size} ranks). "
+            "Please run on a single rank."
+        )
+
+
 def validate_partition_count(args: Namespace, grid_config, comm, logger) -> None:
     """Check that a partitioned Elmer mesh has exactly one partition per MPI rank.
 

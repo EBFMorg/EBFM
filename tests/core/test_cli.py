@@ -14,6 +14,7 @@ from ebfm.core.cli import (
     CliDefaults,
     extract_active_coupling_features,
     parse_cli_args,
+    validate_forcing_parallel_compat,
     validate_partition_count,
     validate_shading_coupling_compat,
     validate_shading_parallel_compat,
@@ -381,6 +382,29 @@ class TestValidateShadingParallelCompat(unittest.TestCase):
     def test_shading_on_several_ranks_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             self._validate(use_shading=True, comm_size=4)
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class TestValidateForcingParallelCompat(unittest.TestCase):
+    """validate_forcing_parallel_compat raises a CLI error when forcing files are read in a run on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, forcing_dir, comm_size: int):
+        args = _parse(*(["--forcing-dir", forcing_dir] if forcing_dir else []))
+        validate_forcing_parallel_compat(args, MagicMock(size=comm_size))
+
+    def test_forcing_on_single_rank_ok(self):
+        self._validate(forcing_dir="forcing/", comm_size=1)  # must not raise
+
+    def test_no_forcing_on_several_ranks_ok(self):
+        self._validate(forcing_dir=None, comm_size=4)  # must not raise
+
+    def test_forcing_on_several_ranks_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(forcing_dir="forcing/", comm_size=4)
         self.assertEqual(ctx.exception.code, 2)
 
 

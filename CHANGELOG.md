@@ -19,6 +19,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * A non-partitioned Elmer mesh (`--elmer-mesh .../MESH`) is now split over the MPI ranks of a parallel run, e.g. `mpirun -np 4 ebfm --elmer-mesh ...`: each rank computes a contiguous block of the cells, the first block on rank 0. The output file equals that of a run on a single rank. The lapse rate of potential temperature is still fitted over all columns, which synchronizes all ranks every time step; EBFM warns about this in parallel runs. No restart file is written in parallel runs. https://github.com/EBFMorg/EBFM/pull/XXX
 * In a parallel run without `--random-seed`, rank 0 now draws the random seed and shares it with all ranks, so the random forcing is the same over the whole domain. Each rank previously drew its own wind speed. https://github.com/EBFMorg/EBFM/pull/XXX
 * A run on a partitioned Elmer mesh (`--is-partitioned-elmer-mesh`) whose number of MPI ranks differs from the number of partitions now stops with an error. Each rank computes one partition, so such a run previously skipped partitions without notice. `--allow-partition-mismatch` allows it, with a warning, e.g. to compute a single partition with `--use-part`. https://github.com/EBFMorg/EBFM/pull/XXX
+* A run on several MPI ranks with forcing files (`--forcing-dir`) now stops with an error: a forcing file holds the columns of the whole grid, and each rank reads it as such. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 
