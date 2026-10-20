@@ -29,6 +29,7 @@ class GridConfig:
     partition_id: int | None  # Partition ID (only relevant if is_partitioned is True)
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
+    fill_missing_elevation: bool  # Whether to set missing elevations to 0 m (only relevant for NETCDF grid type)
 
     # UTM zone of grid coordinates, used to derive lat lon fields
     utmzone: int = 33
@@ -37,6 +38,7 @@ class GridConfig:
     mesh_arg_dests = {
         GridInputType.ELMER: "elmer_mesh",
         GridInputType.MATLAB: "matlab_mesh",
+        GridInputType.NETCDF: "netcdf_mesh",
     }
 
     # Shading is only supported for some grid types
@@ -58,6 +60,7 @@ class GridConfig:
         assert len(selected_primary_grids) == 1, "Internal error: expected exactly one primary grid option to be set."
 
         matlab_mesh = getattr(args, self.mesh_arg_dests[GridInputType.MATLAB], None)
+        netcdf_mesh = getattr(args, self.mesh_arg_dests[GridInputType.NETCDF], None)
         elmer_mesh = getattr(args, self.mesh_arg_dests[GridInputType.ELMER], None)
 
         self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
@@ -84,6 +87,11 @@ class GridConfig:
             self.grid_type = GridInputType.MATLAB
             self.mesh_file = matlab_mesh
             self.is_unstructured = False
+        elif netcdf_mesh:
+            self.grid_type = GridInputType.NETCDF
+            self.mesh_file = netcdf_mesh
+            self.dem_file = netcdf_mesh  # netcdf_mesh includes DEM data
+            self.is_unstructured = False
         elif args.netcdf_dem_mesh and elmer_mesh:
             self.grid_type = GridInputType.CUSTOM
             self.mesh_file = elmer_mesh
@@ -106,6 +114,7 @@ class GridConfig:
             raise Exception("Invalid grid configuration.")
 
         self.use_shading = self._check_shading(args)
+        self.fill_missing_elevation = args.fill_missing_elevation
 
     def _check_shading(self, args: Namespace) -> bool:
         """Configure shading based on the user input, grid type, and partitioning."""
