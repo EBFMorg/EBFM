@@ -415,12 +415,12 @@ class TestValidateShadingParallelCompat(unittest.TestCase):
 
 
 class TestValidateGridParallelCompat(unittest.TestCase):
-    """validate_grid_parallel_compat rejects a NetCDF grid and a non-partitioned ELMERXIOS grid on several ranks."""
+    """validate_grid_parallel_compat rejects a non-partitioned ELMERXIOS grid on several ranks."""
 
     # name: (grid_type, is_partitioned, grid option named by the error on several ranks, or None if accepted)
     _CASES = {
         "--matlab-mesh": (GridInputType.MATLAB, False, None),
-        "--netcdf-mesh": (GridInputType.NETCDF, False, "--netcdf-mesh"),
+        "--netcdf-mesh": (GridInputType.NETCDF, False, None),
         "--elmer-mesh": (GridInputType.ELMER, False, None),
         "--elmer-mesh --netcdf-dem-mesh": (GridInputType.CUSTOM, False, None),
         "--elmer-mesh --netcdf-dem-mesh-unstructured": (
