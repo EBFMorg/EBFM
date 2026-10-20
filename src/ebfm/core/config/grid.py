@@ -27,8 +27,8 @@ class GridConfig:
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool  # Whether the grid is unstructured
     partition_id: int | None  # Partition ID (only relevant if is_partitioned is True or num_partitions > 1)
-    # Number of blocks EBFM splits the columns of a MATLAB grid or a non-partitioned Elmer mesh into, one per MPI rank;
-    # 1 for a grid that is not split
+    # Number of partitions of the grid, one per MPI rank: of the mesh files if is_partitioned is True, else the
+    # number of blocks EBFM splits a MATLAB grid or a non-partitioned Elmer mesh into. 1 for a grid that is not split.
     num_partitions: int
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
@@ -85,6 +85,7 @@ class GridConfig:
             ), "Internal error: partitioned grid configuration requires NetCDF DEM mesh input."
             logger.info("Using partitioned grid...")
             self.partition_id = args.use_part
+            self.num_partitions = len(list(Path(elmer_mesh).glob("part.*.header")))
             logger.info(f"{self.partition_id=}")
         else:
             logger.info("Using non-partitioned grid...")
