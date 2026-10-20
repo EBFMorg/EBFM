@@ -349,6 +349,14 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "If not provided, the MPI rank + 1 will be used as partition ID. Only allowed in runs on a single MPI rank.",
     )
 
+    parallel_group.add_argument(
+        "--check-grid-distribution",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Check before the time loop that every column is held by exactly one MPI rank. The check "
+        "communicates the ids of all columns; skip it once a setup is known to distribute its grid correctly.",
+    )
+
     logger_group = parser.add_argument_group("logging configuration")
 
     logger_group.add_argument(

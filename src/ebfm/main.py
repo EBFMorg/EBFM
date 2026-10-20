@@ -18,6 +18,7 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.comm.gather import ColumnGather
+from ebfm.core.grid import validate_grid_distribution
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
@@ -157,6 +158,8 @@ def _main_impl():
     else:
         ebfm_comm = ebfm.core.comm.defaultComm
 
+    is_parallel_run = ebfm_comm.size > 1
+
     coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
     coupler = coupler_cls(coupling_config=coupling_config)
 
@@ -232,6 +235,10 @@ def _main_impl():
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, grid_config, ebfm_comm)
+
+    # Each rank must compute its own columns, otherwise the ranks would repeat each other's work
+    if args.check_grid_distribution and is_parallel_run:
+        validate_grid_distribution(grid, ebfm_comm)
 
     # Rank 0 collects the columns of all ranks, e.g. to write them to the output file or for --dump-reference
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
