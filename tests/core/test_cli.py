@@ -414,15 +414,19 @@ class TestValidateShadingParallelCompat(unittest.TestCase):
 
 
 class TestValidateGridParallelCompat(unittest.TestCase):
-    """validate_grid_parallel_compat rejects every grid but MATLAB and a partitioned Elmer mesh on several ranks."""
+    """validate_grid_parallel_compat rejects a NetCDF grid and a non-partitioned ELMERXIOS grid on several ranks."""
 
     # name: (grid_type, is_partitioned, grid option named by the error on several ranks, or None if accepted)
     _CASES = {
         "--matlab-mesh": (GridInputType.MATLAB, False, None),
         "--netcdf-mesh": (GridInputType.NETCDF, False, "--netcdf-mesh"),
-        "--elmer-mesh": (GridInputType.ELMER, False, "--elmer-mesh"),
-        "--elmer-mesh --netcdf-dem-mesh": (GridInputType.CUSTOM, False, "--elmer-mesh"),
-        "--elmer-mesh --netcdf-dem-mesh-unstructured": (GridInputType.ELMERXIOS, False, "--elmer-mesh"),
+        "--elmer-mesh": (GridInputType.ELMER, False, None),
+        "--elmer-mesh --netcdf-dem-mesh": (GridInputType.CUSTOM, False, None),
+        "--elmer-mesh --netcdf-dem-mesh-unstructured": (
+            GridInputType.ELMERXIOS,
+            False,
+            "--netcdf-dem-mesh-unstructured",
+        ),
         "--elmer-mesh --netcdf-dem-mesh --is-partitioned-elmer-mesh": (GridInputType.CUSTOM, True, None),
     }
 
@@ -451,7 +455,6 @@ class TestValidateGridParallelCompat(unittest.TestCase):
                     self.assertEqual(ctx.exception.code, 2)
                     error = stderr.getvalue().splitlines()[-1]
                     self.assertIn(f"error: {rejected_grid} ", error)
-                    self.assertIn("Only --matlab-mesh and a partitioned Elmer mesh", error)
 
 
 @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
