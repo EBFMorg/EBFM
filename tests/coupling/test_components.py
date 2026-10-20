@@ -308,7 +308,7 @@ class TestElmerIceComponent(unittest.TestCase):
         time_config=time_config,
     )
 
-    # Just fake values to get coupler._n_points set, but complete enough for ElmerIce.validate_grid, which
+    # Just fake values to get coupler._n_points set, but complete enough for ElmerIce.prepare_grid, which
     # coupler.setup runs on it.
     grid_dict = {
         "x": np.array([0]),
@@ -427,7 +427,7 @@ class ElmerIceGridTestCase(unittest.TestCase):
     GPSUM = 3
 
     def setUp(self):
-        # validate_grid and update_surface_elevation do not communicate, so they need no coupler.
+        # prepare_grid and update_surface_elevation do not communicate, so they need no coupler.
         self.elmer_ice = ElmerIce(coupler=None)
 
         self.grid = {
@@ -438,41 +438,48 @@ class ElmerIceGridTestCase(unittest.TestCase):
             self.grid[slope_field] = np.zeros(self.GPSUM)
 
 
-class TestElmerIceGridValidation(ElmerIceGridTestCase):
+class TestElmerIceGridPreparation(ElmerIceGridTestCase):
     """
-    ElmerIce.validate_grid rejects the grids whose quantities derived from the initial elevation would go
-    stale once update_surface_elevation lets the elevation change.
+    ElmerIce.prepare_grid rejects or flattens the grids whose quantities derived from the initial elevation
+    would go stale once update_surface_elevation lets the elevation change.
     """
 
     def test_compatible_grid_is_accepted(self):
-        self.elmer_ice.validate_grid(self.grid)
+        self.elmer_ice.prepare_grid(self.grid)
 
     def test_shading_is_rejected(self):
         self.grid["has_shading"] = True
 
         with self.assertRaises(AssertionError) as context:
-            self.elmer_ice.validate_grid(self.grid)
+            self.elmer_ice.prepare_grid(self.grid)
         self.assertIn("Shading", str(context.exception))
 
-    def test_non_zero_slope_is_rejected(self):
+    def test_non_zero_slope_is_flattened(self):
         """
-        Test that real slopes are rejected. Zero slopes are why updating the elevation alone is admissible;
-        real ones would keep describing the initial geometry, since Elmer/Ice does not send dhdx/dhdy.
+        Test that real slopes are reset to zero with a warning. Zero slopes are why updating the elevation
+        alone is admissible; real ones would keep describing the initial geometry, since Elmer/Ice does not
+        send dhdx/dhdy.
         """
         for slope_field in ("slope_x", "slope_y", "slope_beta", "slope_gamma"):
             with self.subTest(slope_field=slope_field):
                 self.setUp()
                 self.grid[slope_field] = np.full(self.GPSUM, 0.01)
 
-                with self.assertRaises(AssertionError) as context:
-                    self.elmer_ice.validate_grid(self.grid)
-                self.assertIn(slope_field, str(context.exception))
+                with self.assertLogs(level="WARNING") as logs:
+                    self.elmer_ice.prepare_grid(self.grid)
+                self.assertIn("flat", "\n".join(logs.output))
+                for field in ("slope_x", "slope_y", "slope_beta", "slope_gamma"):
+                    np.testing.assert_array_equal(self.grid[field], np.zeros(self.GPSUM))
+
+    def test_zero_slope_is_kept_without_warning(self):
+        with self.assertNoLogs(level="WARNING"):
+            self.elmer_ice.prepare_grid(self.grid)
 
     def test_two_dimensional_elevation_is_rejected(self):
         self.grid["z_2D"] = np.zeros((2, 2))
 
         with self.assertRaises(AssertionError) as context:
-            self.elmer_ice.validate_grid(self.grid)
+            self.elmer_ice.prepare_grid(self.grid)
         self.assertIn("2-D elevation", str(context.exception))
 
 

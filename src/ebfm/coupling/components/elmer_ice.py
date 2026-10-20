@@ -15,6 +15,9 @@ from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
 from ebfm.core.config import ComponentId
 from ebfm.core.constants import DAYS_PER_YEAR
 from ebfm.core.grid import GridDict
+from ebfm.core import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ElmerIce(Component):
@@ -92,38 +95,42 @@ class ElmerIce(Component):
             }
         )
 
-    def validate_grid(self, grid: GridDict):
+    def prepare_grid(self, grid: GridDict):
         """
-        Check that the grid tolerates a surface elevation that changes over time.
+        Make the grid tolerate a surface elevation that changes over time.
 
         update_surface_elevation lets grid["z"] follow the ice surface, while everything INIT derives from the
-        elevation keeps describing the geometry read during initialization. These are the conditions under
-        which that difference does not matter. One case stays unguarded: grid["mesh"] keeps its initial vertex
-        and cell elevations, which the mesh topology in the output file is written from.
+        elevation keeps describing the geometry read during initialization. Shading and a 2-D elevation field
+        are rejected; slopes are reset to flat columns. One case stays unguarded: grid["mesh"] keeps its
+        initial vertex and cell elevations, which the mesh topology in the output file is written from.
 
-        @param[in] grid grid EBFM runs on
+        @param[in,out] grid grid EBFM runs on; its slopes are set to zero
 
-        @raises AssertionError if a quantity derived from the initial elevation is in use and would go stale
+        @raises AssertionError if shading or a 2-D elevation field is in use
         """
         # Both shading methods rest on horizon angles that INIT computes once from the initial elevation.
         assert not grid["has_shading"], "Shading does not support a surface elevation that changes over time."
 
-        # The gradient fields are not exchanged yet (see _exchange), so the slopes cannot follow the surface.
-        # Zero slopes carry no geometry, which is why an elevation update is admissible at all.
-        for slope_field in ("slope_x", "slope_y", "slope_beta", "slope_gamma"):
-            assert np.all(
-                grid[slope_field] == 0.0
-            ), f"Grid field '{slope_field}' is non-zero, but slopes are not updated from '{self.name}'."
-
         # A MATLAB grid holds the elevation a second time, on the 2-D grid that structured output is written from.
         assert "z_2D" not in grid, f"A 2-D elevation field is not updated from '{self.name}'."
+
+        # The gradient fields are not exchanged yet (see _exchange), so the slopes cannot follow the surface.
+        # Flat columns carry no geometry, which is why an elevation update is admissible at all.
+        slope_fields = ("slope_x", "slope_y", "slope_beta", "slope_gamma")
+        if any(np.any(grid[slope_field] != 0.0) for slope_field in slope_fields):
+            logger.warning(
+                f"Treating all columns as flat: the grid slopes are not updated from '{self.name}', so they "
+                "would keep describing the initial surface elevation."
+            )
+            for slope_field in slope_fields:
+                grid[slope_field] = np.zeros_like(grid[slope_field])
 
     def update_surface_elevation(self, grid: GridDict, surface_elevation: np.ndarray):
         """
         Let the EBFM grid follow the ice surface that Elmer/Ice reports back.
 
         Only the elevation itself follows. The conditions under which that is admissible are checked once
-        during setup, see validate_grid.
+        during setup, see prepare_grid.
 
         @param[in,out] grid grid whose elevation is updated in place
         @param[in] surface_elevation elevation received from Elmer/Ice, one value per column
