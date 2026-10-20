@@ -123,9 +123,6 @@ def test_partitioned_run_equals_serial_run(tmp_path):
     serial = _run(tmp_path, mesh_dir, 1)
     partitioned = _run(tmp_path, mesh_dir, N_PARTITIONS, "--is-partitioned-elmer-mesh")
 
-    # Set by the restart writer, which partitioned runs skip
-    del serial["timelastsnow_netCDF"]
-
     assert sorted(partitioned) == sorted(serial)
     for key in serial:
         np.testing.assert_array_equal(partitioned[key], serial[key], err_msg=key)
