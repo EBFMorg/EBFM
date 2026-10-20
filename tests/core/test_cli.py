@@ -248,6 +248,14 @@ class TestMpiLauncherWithoutMpi4py(unittest.TestCase):
         self._parse({"OMPI_COMM_WORLD_SIZE": "4"}, mpi_available=True)  # must not raise
 
 
+class TestCheckGridDistribution(unittest.TestCase):
+    def test_enabled_by_default(self):
+        self.assertTrue(_parse().check_grid_distribution)
+
+    def test_disabled_when_negated(self):
+        self.assertFalse(_parse("--no-check-grid-distribution").check_grid_distribution)
+
+
 class TestLocalGroupLabel(unittest.TestCase):
     """--local-group-label overrides the default derived from --component-name."""
 
