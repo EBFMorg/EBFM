@@ -316,12 +316,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             grid["lon_2D"] = input_data["lon"]
             grid["lat_2D"] = input_data["lat"]
 
-        # Determine domain extent
-        grid["Lx"], grid["Ly"] = grid["x_2D"].shape
-
-        # Calculate grid spacing
-        grid["dx"] = grid["x_2D"][0][1] - grid["x_2D"][0][0]
-
         # Create 1-D mask
         grid["mask"] = mask_2D[mask_2D == 1]
 
@@ -331,15 +325,14 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["y"] = grid["y_2D"].flatten()[mask_flat == 1]
         grid["z"] = grid["z_2D"].flatten()[mask_flat == 1]
         grid["ind"] = np.where(mask_flat == 1)
-        grid["xind"], grid["yind"] = np.where(mask_2D == 1)
 
         # ---------------------------------------------------------------------
         # Grid slope and aspect
         # ---------------------------------------------------------------------
         # Calculate slope and aspect
         # NOTE: Assumes x varies only along columns and y only along rows (true for the MATLAB grid). NetCDF grids
-        # are reprojected to UTM zone 24N (see read_NETCDF_grid) and are not aligned with x and y, so slope, aspect
-        # and grid["dx"] are only approximate for them.
+        # are reprojected to UTM zone 24N (see read_NETCDF_grid) and are not aligned with x and y, so slope and
+        # aspect are only approximate for them.
         gradN, gradE = np.gradient(grid["z_2D"], grid["y_2D"][:, 0], grid["x_2D"][0, :])
         slope_rad = np.arctan(np.sqrt(gradN**2 + gradE**2))
         slope_deg = np.degrees(slope_rad)
@@ -430,6 +423,8 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
                         `az_array` and `maxgridangle`.
     @param[in] mask_2D 2-D glacier mask, 1 for glacier cells.
     """
+    logger.warning("Using EBFM's internal shading method. Should only be used on regular grids!")
+
     grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
     grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
 
@@ -437,6 +432,7 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
     grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
 
     xl, yl = grid["x_2D"].shape
+    dx = grid["x_2D"][0][1] - grid["x_2D"][0][0]  # grid spacing
 
     # loop over the azimuth angles to determine gridded maximum grid angles per angle
     gpsum = number_of_columns(grid)
@@ -454,7 +450,7 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
         count = 1
         active = np.ones(gpsum, dtype=bool)
         max_walk_distance = 5e4  # maximum walk distance in meters along the azimuth
-        while active.any() and count * grid["dx"] < max_walk_distance:
+        while active.any() and count * dx < max_walk_distance:
             j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
             i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
 
