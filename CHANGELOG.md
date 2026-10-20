@@ -30,6 +30,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * A usage error, e.g. a rejected command line option, now ends the whole MPI job with its exit status when `MPI.COMM_WORLD` has more than one process. EBFM previously exited on its own, and the other processes, e.g. a coupled model in an MPMD run, waited for it forever. A run on a single process still exits without `MPI_ABORT`. https://github.com/EBFMorg/EBFM/pull/206
 * In a run on several MPI ranks, EBFM now checks before the time loop that every column is held by exactly one rank. The check communicates the ids of all columns; `--no-check-grid-distribution` skips it. https://github.com/EBFMorg/EBFM/pull/XXX
 * Partitioned Elmer meshes (`--is-partitioned-elmer-mesh`) now write model output (`Output/model_output.nc`); it was skipped before. On several MPI ranks, rank 0 gathers the cells of all ranks and writes a single file, with the cells ordered by Elmer element id and the vertices that partitions share written once. https://github.com/EBFMorg/EBFM/pull/XXX
+* A non-partitioned Elmer mesh (`--elmer-mesh` without `--is-partitioned-elmer-mesh`, also with `--netcdf-dem-mesh`) can now run on several MPI ranks, e.g. `mpirun -np 4 ebfm --elmer-mesh ...`: each rank computes a contiguous block of the cells, the first block on rank 0. The output file equals that of a run on a single rank. Fitting the lapse rate of potential temperature over all columns synchronizes all ranks every time step; EBFM warns about this. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 

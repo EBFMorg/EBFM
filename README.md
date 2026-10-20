@@ -227,7 +227,7 @@ mpirun -n 4 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ 
 
 Rank 0 writes the output of all ranks to a single file, with the cells ordered by their Elmer element id.
 
-Besides a partitioned mesh, only a MATLAB grid runs on several MPI ranks (see [Running on several MPI ranks](#running-on-several-mpi-ranks)).
+Besides a partitioned mesh, a MATLAB grid and a non-partitioned Elmer mesh run on several MPI ranks (see [Running on several MPI ranks](#running-on-several-mpi-ranks)).
 
 Note: The partitioned mesh is not included in this repository.
 
@@ -290,7 +290,7 @@ Note that it is necessary to provide a `--start-time` consistent with the given 
 
 ### Running on several MPI ranks
 
-EBFM splits a MATLAB grid over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
+EBFM splits a MATLAB grid or a non-partitioned Elmer mesh over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
 
 ```sh
 mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
@@ -300,8 +300,8 @@ mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
 * Rank 0 writes the output file and `--dump-reference` for all ranks. They are
   identical to those of a run on a single rank.
 * Not supported on several ranks, and rejected with an error: shading,
-  `--forcing-dir`, `--restart-dir`/`--restart-init`, and grids other than a
-  MATLAB grid or a partitioned Elmer mesh.
+  `--forcing-dir`, `--restart-dir`/`--restart-init`, `--netcdf-mesh`, and
+  `--netcdf-dem-mesh-unstructured` on a non-partitioned Elmer mesh.
 
 ### Performance and Profiling Runs
 
