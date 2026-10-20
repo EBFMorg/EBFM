@@ -30,6 +30,7 @@ from ebfm.core.cli import (
     validate_use_part_parallel_compat,
     validate_forcing_parallel_compat,
     validate_restart_parallel_compat,
+    validate_partition_count,
     validate_shading_parallel_compat,
     validate_output_frequency_time_step_compat,
 )
@@ -247,6 +248,9 @@ def _main_impl():
 
     # Ensure every output record covers a whole number of time steps.
     validate_output_frequency_time_step_compat(args, time_config)
+
+    # Each rank computes exactly one partition of a partitioned mesh
+    validate_partition_count(args, grid_config, ebfm_comm, logger)
 
     logger.debug("Successfully completed consistency checks.")
 
