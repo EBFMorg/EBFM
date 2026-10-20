@@ -39,7 +39,7 @@ def setup_logging(
     """
     Setup logging for EBFM with MPI support.
 
-    @param stdout_log_level: Log level for stdout
+    @param stdout_log_level: Log level for stdout of rank 0. Other ranks of a parallel run log warnings and errors only.
     @param stdout_individual_log_levels: Dictionary mapping MPI ranks to their desired log levels for console output.
     @param comm: MPI communicator to use for determining rank and size. If None, comm defaults to MPI.COMM_WORLD
                  when MPI support is available, or a serial (rank 0, size 1) stub otherwise.
@@ -84,6 +84,8 @@ def setup_logging(
 
     if comm.rank in stdout_individual_log_levels.keys():  # check for custom log level for this rank
         use_level = stdout_individual_log_levels[comm.rank]
+    elif comm.rank != 0:  # other ranks would repeat most messages of rank 0
+        use_level = max(stdout_log_level, logging.WARNING)
     else:  # use general log level if no individual log level is defined for this rank
         use_level = stdout_log_level
 

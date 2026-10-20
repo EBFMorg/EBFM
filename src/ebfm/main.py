@@ -18,7 +18,7 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.comm.gather import ColumnGather
-from ebfm.core.grid import domain_mean, number_of_columns, validate_grid_distribution
+from ebfm.core.grid import domain_mean, validate_grid_distribution
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
@@ -93,13 +93,19 @@ def dump_reference(logger, OUT, filepath: str, gather: ColumnGather):
     logger.info(f"[DUMP] Reference snapshot saved to '{filepath}' (keys: {list(data.keys())})")
 
 
-def print_diagnostics(grid, OUT, t):
-    """Log key diagnostic values each timestep for performance and correctness analysis."""
+def print_diagnostics(grid, OUT, t, gather: ColumnGather):
+    """
+    Log key diagnostic values each timestep for performance and correctness analysis.
 
-    gpsum = number_of_columns(grid)
+    Collective over gather.comm: the root rank gathers the columns of all ranks and logs the values of the whole grid.
+    """
+    smb = gather.gather(OUT["smb"]) if "smb" in OUT else None
+    smb_cum = gather.gather(OUT["smb_cumulative"]) if "smb_cumulative" in OUT else None
+    if not gather.is_root:
+        return
+
+    gpsum = len(gather.column_ids)
     has_shading = grid.get("has_shading", False)
-    smb = OUT.get("smb")
-    smb_cum = OUT.get("smb_cumulative")
 
     diagnostics_logger.info(f"[t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
     if smb is not None:
@@ -358,7 +364,7 @@ def _main_impl():
         OUT = LOOP_mass_balance.main(OUT, IN, C)
 
         if args.print_diagnostics:
-            print_diagnostics(grid, OUT, t)
+            print_diagnostics(grid, OUT, t, column_gather)
 
         if coupler.has_coupling_to("elmer_ice"):
             elmer_ice = coupler.get_component("elmer_ice")

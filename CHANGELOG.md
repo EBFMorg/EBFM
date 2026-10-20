@@ -26,6 +26,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * `--dump-reference` now works on several MPI ranks: like the output file, rank 0 gathers the columns of all ranks and writes a single file, with the columns in the order of a serial run. Every rank previously wrote its own columns to the same file. https://github.com/EBFMorg/EBFM/pull/XXX
 * A run on several MPI ranks with an unstructured NetCDF DEM (`--netcdf-dem-mesh-unstructured`) now stops with an error explaining that this is not supported yet, instead of failing with an `AssertionError` while reading the DEM. https://github.com/EBFMorg/EBFM/pull/XXX
 * Restart files (`--restart-dir`, `--restart-init`) with a partitioned Elmer mesh now stop the run with an error, also on a single rank. Such a run previously skipped writing the restart file with a warning at its end. https://github.com/EBFMorg/EBFM/pull/XXX
+* In a run on several MPI ranks, only rank 0 logs to the console at `--log-level-console`; the other ranks only log warnings and errors there, instead of repeating every message. Log files (`--log-file`, one per rank) are unchanged. The current model time is logged instead of printed, and `--print-diagnostics` reports the column count and `smb` statistics of the whole domain instead of each rank's own. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 

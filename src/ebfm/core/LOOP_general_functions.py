@@ -3,6 +3,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def is_first_time_step(t: int) -> bool:
@@ -48,7 +51,7 @@ def is_final_time_step(t: int, time: dict) -> bool:
 
 def print_time(t: int, ts: datetime, dt: float) -> datetime:
     """
-    Sets time parameters and prints the current model time to the screen.
+    Sets time parameters and logs the current model time.
 
     Parameters:
         t (int): Current time step.
@@ -64,8 +67,8 @@ def print_time(t: int, ts: datetime, dt: float) -> datetime:
     # Extract year, month, day, and hour from the current time
     tempdate = t_cur.timetuple()
 
-    # Print the current time parameters
-    print(
+    # Log the current time parameters
+    logger.info(
         f"Year: {tempdate.tm_year:4d}   "
         f"Month: {tempdate.tm_mon:2d}   "
         f"Day: {tempdate.tm_mday:2d}   "
