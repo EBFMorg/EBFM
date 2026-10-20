@@ -120,7 +120,7 @@ class ElmerIce(Component):
         if any(np.any(grid[slope_field] != 0.0) for slope_field in slope_fields):
             logger.warning(
                 f"Treating all columns as flat: the grid slopes are not updated from '{self.name}', so they "
-                "would keep describing the initial surface elevation."
+                "would keep describing the initial surface elevation. See https://github.com/EBFMorg/EBFM/issues/195"
             )
             for slope_field in slope_fields:
                 grid[slope_field] = np.zeros_like(grid[slope_field])
