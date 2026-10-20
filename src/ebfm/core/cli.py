@@ -549,7 +549,7 @@ def validate_elmerxios_parallel_compat(grid_config, comm) -> None:
     if grid_config.grid_type is GridInputType.ELMERXIOS and comm.size > 1:
         _cli_error(
             f"--netcdf-dem-mesh-unstructured is not supported for runs on several MPI ranks ({comm.size} ranks). "
-            "Please run on a single rank. See https://github.com/EBFMorg/EBFM/issues/XXX"
+            "Please run on a single rank. See https://github.com/EBFMorg/EBFM/issues/196"
         )
 
 
