@@ -28,7 +28,7 @@ class GridConfig:
     is_unstructured: bool  # Whether the grid is unstructured
     partition_id: int | None  # Partition ID (only relevant if is_partitioned is True)
     # Number of partitions of the grid, one per MPI rank: of the mesh files if is_partitioned is True, else the
-    # number of parts EBFM splits a non-partitioned Elmer mesh into. 1 for a grid that is not split.
+    # number of parts EBFM splits the grid into. 1 for a grid that is not split.
     num_partitions: int
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
@@ -54,7 +54,7 @@ class GridConfig:
         Initialize grid configuration from command line arguments.
 
         @param[in] args command line arguments
-        @param[in] num_ranks number of MPI ranks, over which a non-partitioned Elmer mesh is split
+        @param[in] num_ranks number of MPI ranks, over which a non-partitioned grid is split
         """
         selected_primary_grids = [
             grid_type
@@ -86,7 +86,7 @@ class GridConfig:
             self.partition_id = args.use_part
             self.num_partitions = len(list(Path(elmer_mesh).glob("part.*.header")))
             logger.info(f"{self.partition_id=}")
-        elif num_ranks > 1 and elmer_mesh is not None:
+        elif num_ranks > 1:
             logger.info("Using global grid for parallel EBFM run...")
             self.partition_id = args.use_part
             self.num_partitions = num_ranks

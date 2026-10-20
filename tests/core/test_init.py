@@ -375,6 +375,38 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
             INIT._precompute_shading_matlab({"is_parallel_run": True}, mask_2D=None)
 
 
+class TestMatlabGridSplit(unittest.TestCase):
+    """Split over several MPI ranks, a MATLAB grid gives each rank a contiguous block of the serial columns."""
+
+    N_RANKS = 3
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _init_grid(self, num_ranks, partition_id):
+        args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--no-shading"])
+        args.use_part = partition_id
+        grid_config = GridConfig(args, num_ranks)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        return init_grid(grid, grid_config, is_parallel_run=num_ranks > 1)
+
+    def test_blocks_of_all_ranks_make_up_the_serial_grid(self):
+        serial = self._init_grid(num_ranks=1, partition_id=1)
+        blocks = [self._init_grid(self.N_RANKS, partition_id) for partition_id in range(1, self.N_RANKS + 1)]
+
+        self.assertEqual(
+            [len(block["mask"]) for block in blocks],
+            [len(b) for b in np.array_split(serial["mask"], self.N_RANKS)],
+        )
+        for key in ("column_id", "x", "y", "z", "lat", "lon", "slope_beta", "slope_gamma"):
+            with self.subTest(key=key):
+                np.testing.assert_array_equal(np.concatenate([block[key] for block in blocks]), serial[key])
+        np.testing.assert_array_equal(np.concatenate([block["ind"][0] for block in blocks]), serial["ind"][0])
+
+
 class TestReadNetcdfGrid(unittest.TestCase):
     """Missing orography is NaN unless the user opts in to filling it with zero elevation.
 
