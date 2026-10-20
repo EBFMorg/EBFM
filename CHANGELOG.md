@@ -38,6 +38,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * A non-partitioned Elmer mesh (`--elmer-mesh` without `--is-partitioned-elmer-mesh`, also with `--netcdf-dem-mesh`) can now run on several MPI ranks, e.g. `mpirun -np 4 ebfm --elmer-mesh ...`: each rank computes a contiguous block of the cells, the first block on rank 0. The output file equals that of a run on a single rank. Fitting the lapse rate of potential temperature over all columns synchronizes all ranks every time step; EBFM warns about this. https://github.com/EBFMorg/EBFM/pull/XXX
 * At `--log-level-console DEBUG`, Numba no longer floods the console and log files (`--log-file`) with its internal debug output, about 76,000 lines whenever Numba compiles the kernels, i.e. after a fresh install, a Numba upgrade or a change to a kernel. Numba messages below WARNING are now dropped. https://github.com/EBFMorg/EBFM/pull/215
 * A run on a partitioned Elmer mesh (`--is-partitioned-elmer-mesh`) whose number of MPI ranks differs from the number of partitions now stops with an error. Each rank computes one partition, so such a run previously skipped partitions without notice. `--allow-partition-mismatch` allows it, with a warning, e.g. to compute a single partition with `--use-part`. https://github.com/EBFMorg/EBFM/pull/XXX
+* A NetCDF grid (`--netcdf-mesh`) can now run on several MPI ranks like a MATLAB grid: each rank computes a contiguous block of the columns, and rank 0 writes the output file, which is identical to that of a run on a single rank. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 

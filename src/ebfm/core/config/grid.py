@@ -28,7 +28,7 @@ class GridConfig:
     is_unstructured: bool  # Whether the grid is unstructured
     partition_id: int | None  # Partition ID (only relevant if is_partitioned is True or num_partitions > 1)
     # Number of partitions of the grid, one per MPI rank: of the mesh files if is_partitioned is True, else the
-    # number of blocks EBFM splits a MATLAB grid or a non-partitioned Elmer mesh into. 1 for a grid that is not split.
+    # number of blocks EBFM splits a non-partitioned grid into. 1 for a grid that is not split.
     num_partitions: int
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
@@ -54,7 +54,7 @@ class GridConfig:
         Initialize grid configuration from command line arguments.
 
         @param[in] args command line arguments
-        @param[in] num_ranks number of MPI ranks, over which a MATLAB grid or a non-partitioned Elmer mesh is split
+        @param[in] num_ranks number of MPI ranks, over which a non-partitioned grid is split
         @param[in] rank MPI rank of this process, which computes the block rank + 1 of a split grid
         """
         selected_primary_grids = [
@@ -120,8 +120,7 @@ class GridConfig:
             )
             raise Exception("Invalid grid configuration.")
 
-        is_split = self.grid_type is GridInputType.MATLAB or (self.is_unstructured and not self.is_partitioned)
-        if is_split and num_ranks > 1:
+        if not self.is_partitioned and num_ranks > 1:
             logger.info(f"Splitting the grid over {num_ranks} MPI ranks...")
             self.partition_id = rank + 1
             self.num_partitions = num_ranks
