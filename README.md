@@ -293,18 +293,22 @@ Note that it is necessary to provide a `--start-time` consistent with the given 
 
 ### Running on several MPI ranks
 
-EBFM splits a MATLAB or NetCDF grid or a non-partitioned Elmer mesh over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
+EBFM splits the grid over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
 
 ```sh
 mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
 ```
 
-* Each rank computes a contiguous block of the columns, the first block on rank 0.
+* MATLAB and NetCDF grids and Elmer meshes are split into contiguous blocks of
+  columns, the first block on rank 0. A partitioned Elmer mesh gives one
+  partition to each rank (see above).
 * Rank 0 writes the output file and `--dump-reference` for all ranks. They are
   identical to those of a run on a single rank.
 * Not supported on several ranks, and rejected with an error: shading,
   `--forcing-dir`, `--restart-dir`/`--restart-init`, and
   `--netcdf-dem-mesh-unstructured` on a non-partitioned Elmer mesh.
+* `--no-check-grid-distribution` skips the start-up check that every column is
+  held by exactly one rank.
 
 ### Performance and Profiling Runs
 
