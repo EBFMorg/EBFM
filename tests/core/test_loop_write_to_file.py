@@ -8,12 +8,15 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 from netCDF4 import Dataset
 
 from ebfm.core import LOOP_write_to_file
 from ebfm.core.LOOP_write_to_file import _output_dimensions, main as write_output
+from ebfm.core.comm import defaultComm
+from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.config import ColumnDiscretizationConfig
 
 NL = 4
@@ -21,6 +24,12 @@ NY, NX = 3, 4
 # Flat indices of the glacier points inside the NY x NX structured grid.
 GLACIER_INDICES = (0, 3, 5, 7, 11)
 GPSUM = len(GLACIER_INDICES)
+
+# Element and node ids of the unstructured mesh: a strip of GPSUM triangles, cell i spanning the vertices i, i+1
+# and i+2. Like the ids of an Elmer mesh, they are global and in file order, but neither start at 0 nor are
+# contiguous.
+ELEMENT_IDS = (3, 5, 12, 27, 40)
+NODE_IDS = tuple(2 * (i + 1) for i in range(GPSUM + 2))
 
 _NETCDF_OUTPUT = 2
 
@@ -94,6 +103,7 @@ def _structured_grid():
         "lon_2D": np.zeros((NY, NX)),
         "lat_2D": np.zeros((NY, NX)),
         "ind": np.array(GLACIER_INDICES),
+        "column_id": np.array(GLACIER_INDICES),
     }
 
 
@@ -101,6 +111,7 @@ def _unstructured_grid():
     return {
         "is_unstructured": True,
         "is_partitioned": False,
+        "column_id": np.array(ELEMENT_IDS),
         "x": np.arange(GPSUM, dtype=np.float64),
         "y": np.arange(GPSUM, dtype=np.float64),
         "z": np.full(GPSUM, 100.0),
@@ -109,7 +120,56 @@ def _unstructured_grid():
     }
 
 
-def _write_single_step(outdir, grid, extra_out=None):
+def _mesh():
+    """The mesh of _unstructured_grid(), with the attributes of ebfm.elmer.mesh.Mesh that the writer reads."""
+    n_vertices = len(NODE_IDS)
+    return SimpleNamespace(
+        vertex_ids=np.array(NODE_IDS),
+        x_vertices=10.0 * np.arange(n_vertices),
+        y_vertices=10.0 * (np.arange(n_vertices) % 2),
+        z_vertices=np.full(n_vertices, 50.0),
+        lon_vertices=np.radians(np.arange(n_vertices, dtype=np.float64)),
+        lat_vertices=np.radians(70.0 + np.arange(n_vertices)),
+        cell_to_vertex=np.array([[i, i + 1, i + 2] for i in range(GPSUM)]),
+    )
+
+
+def _unstructured_grid_with_mesh():
+    return {**_unstructured_grid(), "mesh": _mesh()}
+
+
+def _local_mesh(mesh, columns):
+    """The mesh of the given cells only, with their vertices in reverse id order."""
+    vertices = np.unique(mesh.cell_to_vertex[columns])[::-1]
+    local_index = {vertex: i for i, vertex in enumerate(vertices)}
+    return SimpleNamespace(
+        vertex_ids=mesh.vertex_ids[vertices],
+        x_vertices=mesh.x_vertices[vertices],
+        y_vertices=mesh.y_vertices[vertices],
+        z_vertices=mesh.z_vertices[vertices],
+        lon_vertices=mesh.lon_vertices[vertices],
+        lat_vertices=mesh.lat_vertices[vertices],
+        cell_to_vertex=np.array([[local_index[v] for v in cell] for cell in mesh.cell_to_vertex[columns]]),
+    )
+
+
+def _local_share(grid, out, columns):
+    """
+    The grid and OUT that an MPI rank holding only the given columns sees.
+
+    @param[in] columns positions of the rank's columns in the grid, in the order the rank holds them
+    """
+    local_grid = dict(grid)
+    for key in ("column_id", "x", "y", "z", "lon", "lat", "ind"):
+        if key in grid:
+            local_grid[key] = grid[key][columns]
+    if "mesh" in grid:
+        local_grid["mesh"] = _local_mesh(grid["mesh"], columns)
+    local_out = {key: values[columns] for key, values in out.items()}
+    return local_grid, local_out
+
+
+def _write_single_step(outdir, grid, extra_out=None, columns=None):
     """
     Run the writer for a one-step simulation and return the closed output file.
 
@@ -120,6 +180,8 @@ def _write_single_step(outdir, grid, extra_out=None):
     @param[in] grid structured or unstructured grid dict (_structured_grid()/_unstructured_grid())
     @param[in] extra_out optional dict merged into the fabricated OUT before writing, for keys
                          _fake_out() doesn't declare (e.g. the conditional "ebm_diagnostics")
+    @param[in] columns positions of the columns this MPI rank holds (see _local_share); None for all columns.
+                       The writer is called on every rank of ebfm.core.comm.defaultComm.
 
     @returns (path to the written NetCDF file, the writer's outfile dict, the OUT dict
              actually written)
@@ -128,10 +190,12 @@ def _write_single_step(outdir, grid, extra_out=None):
     out = _fake_out(GPSUM, NL)
     if extra_out:
         out.update(extra_out)
+    if columns is not None:
+        grid, out = _local_share(grid, out, columns)
     io = {"outdir": str(outdir), "freqout": 1, "output_type": _NETCDF_OUTPUT}
     time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
 
-    io, outfile = write_output({}, io, out, grid, 0, time, column)
+    io, outfile = write_output({}, io, out, grid, 0, time, column, ColumnGather(defaultComm, grid["column_id"]))
 
     return Path(outdir) / "model_output.nc", outfile, out
 
@@ -184,6 +248,17 @@ class TestNetCDFOutputSmoke(unittest.TestCase):
                     else:
                         self.assertEqual(nc[varname].dimensions, ("time", "cell"))
                         self.assertEqual(nc[varname].shape, (1, GPSUM))
+
+    def test_unstructured_grid_writes_mesh_topology(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, _, _ = _write_single_step(tmp, _unstructured_grid_with_mesh())
+
+            mesh = _mesh()
+            with Dataset(path) as nc:
+                self.assertEqual(len(nc.dimensions["vertex"]), len(NODE_IDS))
+                np.testing.assert_array_equal(nc["x_vertex"][:], mesh.x_vertices)
+                np.testing.assert_array_equal(nc["lat_vertex"][:], np.degrees(mesh.lat_vertices))
+                np.testing.assert_array_equal(nc["cell_vertices"][:], mesh.cell_to_vertex)
 
     def test_structured_grid_scatters_values_onto_glacier_points(self):
         with tempfile.TemporaryDirectory() as tmp:

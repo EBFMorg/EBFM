@@ -219,6 +219,10 @@ Usage example for partitioned mesh:
 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
+Without `--use-part`, MPI rank `r` computes partition `r + 1`. Rank 0 writes the
+output of all ranks to a single file, with the cells ordered by their Elmer
+element id.
+
 Note: The partitioned mesh is not included in this repository.
 
 ### Getting the example data

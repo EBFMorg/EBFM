@@ -17,6 +17,7 @@ from ebfm.core import (
     LOOP_mass_balance,
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
+from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.grid import number_of_columns, validate_grid_distribution
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
@@ -191,6 +192,11 @@ def _main_impl():
     if args.check_grid_distribution and is_parallel_run:
         validate_grid_distribution(grid, ebfm_comm)
 
+    # The output file is written by rank 0, from the columns of all ranks
+    output_gather = ColumnGather(ebfm_comm, grid["column_id"])
+    if is_parallel_run:
+        logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
+
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 
     coupler.setup(grid, time_config)
@@ -342,12 +348,8 @@ def _main_impl():
         OUT["y"] = grid["y"]
         OUT["surface_elevation"] = grid["z"]
 
-        # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
-        # TODO: partitioned output should be supported in a dedicated parallel-safe writer.
-        if not grid["is_partitioned"]:
-            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
-        else:
-            logger.warning("Skipping writing output to file for partitioned runs.")
+        # Write output to files (see the warning emitted before the time loop)
+        io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, output_gather)
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here

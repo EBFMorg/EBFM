@@ -18,6 +18,20 @@ def is_first_time_step(t: int) -> bool:
     return t == 0
 
 
+def is_output_time_step(t: int, io: dict) -> bool:
+    """
+    Check if the current time step is a time step where output has to be written
+
+    Parameters:
+        t (int): Current time step (0-based index).
+        io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
+
+    Returns:
+        bool: True if the current time step is output time step, False otherwise.
+    """
+    return (t + 1) % io["freqout"] == 0
+
+
 def is_final_time_step(t: int, time: dict) -> bool:
     """
     Check if the current time step is the final time step.

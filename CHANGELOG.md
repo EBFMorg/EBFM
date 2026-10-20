@@ -15,6 +15,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * A fatal error now ends EBFM with exit status 1 whenever mpi4py is installed, both standalone and under `mpirun`. EBFM previously aborted MPI with error code 0, so the run, and `mpirun` with it, reported success after logging "Fatal Error in EBFM". The same applies to an MPI handshake version mismatch. A fatal error before the MPI communicator splitting no longer leaves the other components of an MPMD run waiting forever. https://github.com/EBFMorg/EBFM/pull/191
 * Add an example for `--netcdf-dem-mesh-unstructured`: surface elevation and ice thickness from Elmer/Ice XIOS output for the Greenland mesh (`examples/greenland_mesh_v0/xios_dem.nc`). `examples/README.md` describes the contents EBFM expects in such a file. https://github.com/EBFMorg/EBFM/pull/198
 * A run on several MPI ranks whose grid is not distributed over them, e.g. `mpirun -np 4 ebfm --matlab-mesh ...`, where every rank computes every column, now stops before the time loop with an error instead of failing while writing the output file. The check communicates the ids of all columns; `--no-check-grid-distribution` skips it. https://github.com/EBFMorg/EBFM/pull/XXX
+* Partitioned Elmer meshes (`--is-partitioned-elmer-mesh`) now write model output (`Output/model_output.nc`); it was skipped before. On several MPI ranks, rank 0 gathers the cells of all ranks and writes a single file, with the cells ordered by Elmer element id and the vertices that partitions share written once. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 
