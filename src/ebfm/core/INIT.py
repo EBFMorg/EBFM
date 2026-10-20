@@ -254,11 +254,12 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             source_crs_epsg=config.elmer_mesh_crs_epsg,
         )
 
-        # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
-        # see mesh/README.md for the required preprocessing steps.
+        # assuming mesh.nodes contains DEM data in the z component
+        # see README.md for the required preprocessing steps.
         grid["column_id"] = mesh.cell_ids
         _set_cell_center_coordinates(grid, mesh)
-        grid["z"] = np.random.uniform(0, 100, size=len(grid["x"]))  # test values!
+        mesh.z_cells = mesh.z_vertices[mesh.cell_to_vertex].mean(axis=1)
+        grid["z"] = mesh.z_cells
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!

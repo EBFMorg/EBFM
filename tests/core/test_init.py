@@ -412,6 +412,8 @@ class TestMatlabGridSplit(unittest.TestCase):
 class TestElmerGridCoordinates(unittest.TestCase):
     """The columns of a grid built from an Elmer mesh sit at the cell centers of the mesh.
 
+    Without a DEM, a column's elevation is the mean of the z coordinates of its cell's vertices.
+
     The synthetic mesh lies on the Antarctic Peninsula (EPSG:3031), far from Greenland,
     so coordinates that do not follow the mesh cannot pass by accident.
     """
@@ -419,6 +421,7 @@ class TestElmerGridCoordinates(unittest.TestCase):
     _CRS_EPSG = 3031
     _LON = np.array([-65.0, -64.0, -65.0, -64.0])
     _LAT = np.array([-66.0, -66.0, -65.0, -65.0])
+    _Z = np.array([100.0, 200.0, 300.0, 400.0])
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -427,7 +430,7 @@ class TestElmerGridCoordinates(unittest.TestCase):
         self.mesh = TriangleMesh(
             x_vertices=np.asarray(x),
             y_vertices=np.asarray(y),
-            z_vertices=np.zeros(4),
+            z_vertices=self._Z,
             cell_to_vertex=np.array([[0, 1, 2], [1, 3, 2]]),
             vertex_ids=np.arange(1, 5),
             cell_ids=np.arange(1, 3),
@@ -454,6 +457,11 @@ class TestElmerGridCoordinates(unittest.TestCase):
         # Centroids of the two triangles, in degrees east from -180 to 180.
         np.testing.assert_allclose(grid["lat"], [-65.67, -65.33], atol=0.02)
         np.testing.assert_allclose(grid["lon"], [-64.67, -64.33], atol=0.02)
+
+    def test_z_is_the_mean_of_the_vertex_elevations(self):
+        grid = self._init_grid()
+
+        np.testing.assert_allclose(grid["z"], [200.0, 300.0])
 
     def test_lat_lon_are_the_same_with_a_dem(self):
         with mock.patch.object(INIT, "read_dem", return_value=np.zeros(2)):
