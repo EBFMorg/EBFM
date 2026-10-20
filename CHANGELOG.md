@@ -17,6 +17,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * A run on several MPI ranks whose grid is not distributed over them, e.g. `mpirun -np 4 ebfm --matlab-mesh ...`, where every rank computes every column, now stops before the time loop with an error instead of failing while writing the output file. The check communicates the ids of all columns; `--no-check-grid-distribution` skips it. https://github.com/EBFMorg/EBFM/pull/XXX
 * Partitioned Elmer meshes (`--is-partitioned-elmer-mesh`) now write model output (`Output/model_output.nc`); it was skipped before. On several MPI ranks, rank 0 gathers the cells of all ranks and writes a single file, with the cells ordered by Elmer element id and the vertices that partitions share written once. https://github.com/EBFMorg/EBFM/pull/XXX
 * A non-partitioned Elmer mesh (`--elmer-mesh .../MESH`) is now split over the MPI ranks of a parallel run, e.g. `mpirun -np 4 ebfm --elmer-mesh ...`: each rank computes a contiguous block of the cells, the first block on rank 0. The output file equals that of a run on a single rank. The lapse rate of potential temperature is still fitted over all columns, which synchronizes all ranks every time step; EBFM warns about this in parallel runs. No restart file is written in parallel runs. https://github.com/EBFMorg/EBFM/pull/XXX
+* In a parallel run without `--random-seed`, rank 0 now draws the random seed and shares it with all ranks, so the random forcing is the same over the whole domain. Each rank previously drew its own wind speed. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 

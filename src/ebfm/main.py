@@ -187,9 +187,15 @@ def _main_impl():
     time = time_config.to_dict()
     grid, io, phys, column = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
 
-    if args.random_seed is not None:
-        np.random.seed(args.random_seed)
-        logger.info(f"NumPy random seed fixed to {args.random_seed} for reproducibility.")
+    random_seed = args.random_seed
+    if random_seed is None and is_parallel_run:
+        # All ranks must draw the same random numbers, e.g. the wind speed of the random forcing
+        random_seed = int(np.random.SeedSequence().generate_state(1)[0]) if ebfm_comm.rank == 0 else None
+        random_seed = ebfm_comm.bcast(random_seed, root=0)
+
+    if random_seed is not None:
+        np.random.seed(random_seed)
+        logger.info(f"NumPy random seed fixed to {random_seed} for reproducibility.")
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, grid_config, is_parallel_run)
