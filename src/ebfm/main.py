@@ -29,8 +29,8 @@ from ebfm.core.cli import (
     validate_grid_parallel_compat,
     validate_use_part_parallel_compat,
     validate_forcing_parallel_compat,
-    validate_restart_parallel_compat,
     validate_partition_count,
+    validate_restart_compat,
     validate_shading_parallel_compat,
 )
 
@@ -220,8 +220,8 @@ def _main_impl():
     # Ensure forcing files are only read in runs on a single rank.
     validate_forcing_parallel_compat(args, ebfm_comm)
 
-    # Ensure restart files are only read and written in runs on a single rank.
-    validate_restart_parallel_compat(args, ebfm_comm)
+    # Ensure restart files are only read and written for a whole grid on a single rank.
+    validate_restart_compat(args, grid_config, ebfm_comm)
 
     # Ensure shading routine is only used in runs on a single rank.
     validate_shading_parallel_compat(grid_config, ebfm_comm)
@@ -410,11 +410,7 @@ def _main_impl():
         io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
 
     # Write restart file
-    # TODO: should be supported for all cases to avoid case distinction here
-    if not grid["is_partitioned"]:
-        FINAL_create_restart_file.main(OUT, io, args.restart_dir)
-    else:
-        logger.warning("Skipping writing of restart file for partitioned runs.")
+    FINAL_create_restart_file.main(OUT, io, args.restart_dir)
 
     logger.info("Time loop completed.")
 
