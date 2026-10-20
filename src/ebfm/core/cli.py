@@ -342,6 +342,13 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "communicates the ids of all columns; skip it once a setup is known to distribute its grid correctly.",
     )
 
+    parallel_group.add_argument(
+        "--allow-partition-mismatch",
+        action="store_true",
+        help="Allow a number of MPI ranks that differs from the number of partitions of a partitioned Elmer mesh, "
+        "e.g. to compute only some partitions. Each rank still computes one partition.",
+    )
+
     logger_group = parser.add_argument_group("logging configuration")
 
     logger_group.add_argument(
@@ -528,3 +535,27 @@ def validate_shading_parallel_compat(grid_config, comm) -> None:
             "Please deactivate shading via --no-shading or run on a single rank. "
             "See https://github.com/EBFMorg/EBFM/issues/183"
         )
+
+
+def validate_partition_count(args: Namespace, grid_config, comm, logger) -> None:
+    """Check that a partitioned Elmer mesh has exactly one partition per MPI rank.
+
+    Must be called on every rank of comm. With --allow-partition-mismatch a mismatch is only a warning.
+
+    @param[in] args        parsed CLI arguments
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
+    @param[in] logger      logger for the warning
+    """
+    if not grid_config.is_partitioned or grid_config.num_partitions == comm.size:
+        return
+
+    message = (
+        f"The partitioned mesh has {grid_config.num_partitions} partitions, but EBFM runs on {comm.size} MPI "
+        "ranks. Each rank computes exactly one partition, so a run on "
+        f"{grid_config.num_partitions} ranks is needed to compute all of them."
+    )
+    if not args.allow_partition_mismatch:
+        _cli_error(f"{message} Pass --allow-partition-mismatch to run anyway.")
+    if comm.rank == 0:
+        logger.warning(message)

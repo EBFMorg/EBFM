@@ -26,6 +26,7 @@ from ebfm.core.cli import (
     parse_cli_args,
     resolve_numba_threads,
     validate_shading_coupling_compat,
+    validate_partition_count,
     validate_shading_parallel_compat,
 )
 
@@ -146,8 +147,6 @@ def _main_impl():
         # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
         args.use_part = ebfm_comm.rank + 1
 
-    n_partitions = ebfm_comm.size
-
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
     if args.with_numba:
         from ebfm.core.compute_backend import init_numba
@@ -172,7 +171,7 @@ def _main_impl():
     logger.debug("Reading configuration and checking for consistency.")
 
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    grid_config = GridConfig(args, n_partitions)
+    grid_config = GridConfig(args, ebfm_comm.size)
 
     # Ensure shading routine is only used in uncoupled runs.
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.
@@ -180,6 +179,9 @@ def _main_impl():
 
     # Ensure shading routine is only used in runs on a single rank.
     validate_shading_parallel_compat(grid_config, ebfm_comm)
+
+    # Each rank computes exactly one partition of a partitioned mesh
+    validate_partition_count(args, grid_config, ebfm_comm, logger)
 
     logger.debug("Successfully completed consistency checks.")
 

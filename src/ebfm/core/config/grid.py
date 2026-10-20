@@ -27,7 +27,9 @@ class GridConfig:
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool  # Whether the grid is unstructured
     partition_id: int | None  # Partition ID (only relevant if is_partitioned is True)
-    num_partitions: int  # Number of parts EBFM splits a non-partitioned Elmer mesh into, one per MPI rank
+    # Number of partitions of the grid, one per MPI rank: of the mesh files if is_partitioned is True, else the
+    # number of parts EBFM splits a non-partitioned Elmer mesh into. 1 for a grid that is not split.
+    num_partitions: int
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
     fill_missing_elevation: bool  # Whether to set missing elevations to 0 m (only relevant for NETCDF grid type)
@@ -47,12 +49,12 @@ class GridConfig:
         GridInputType.MATLAB,
     }
 
-    def __init__(self, args: Namespace, num_partitions: int = 1):
+    def __init__(self, args: Namespace, num_ranks: int = 1):
         """
         Initialize grid configuration from command line arguments.
 
         @param[in] args command line arguments
-        @param[in] num_partitions number of MPI ranks to split a non-partitioned Elmer mesh over
+        @param[in] num_ranks number of MPI ranks, over which a non-partitioned Elmer mesh is split
         """
         selected_primary_grids = [
             grid_type
@@ -82,11 +84,12 @@ class GridConfig:
             ), "Internal error: partitioned grid configuration requires NetCDF DEM mesh input."
             logger.info("Using partitioned grid...")
             self.partition_id = args.use_part
+            self.num_partitions = len(list(Path(elmer_mesh).glob("part.*.header")))
             logger.info(f"{self.partition_id=}")
-        elif num_partitions > 1 and elmer_mesh is not None:
+        elif num_ranks > 1 and elmer_mesh is not None:
             logger.info("Using global grid for parallel EBFM run...")
             self.partition_id = args.use_part
-            self.num_partitions = num_partitions
+            self.num_partitions = num_ranks
             logger.info(f"{self.partition_id=}")
             logger.info(f"{self.num_partitions=}")
             logger.warning("EBFM will try to partition the grid internally. This can lead to poor performance.")

@@ -216,12 +216,15 @@ path/to/your/elmer/mesh
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42 --allow-partition-mismatch
 ```
 
 Without `--use-part`, MPI rank `r` computes partition `r + 1`. Rank 0 writes the
 output of all ranks to a single file, with the cells ordered by their Elmer
 element id.
+
+A run needs one MPI rank per partition. To compute only some partitions, e.g. a
+single one with `--use-part` as above, pass `--allow-partition-mismatch`.
 
 Note: The partitioned mesh is not included in this repository.
 
@@ -316,7 +319,7 @@ Follow the install instructions from above and run the example command for a cou
 mpirun -np 1 ebfm \
   --elmer-mesh $MESHES/greenland_mesh_v0/MESH/partitioning.128/ \
   --netcdf-dem-mesh $DATA/BedMachineGreenland-v5.nc \
-  --is-partitioned-elmer-mesh --use-part 1 \
+  --is-partitioned-elmer-mesh --use-part 1 --allow-partition-mismatch \
   --coupler-config $CPL_CONFIG --couple-to-elmer-ice --couple-to-icon-atmo \
   : \
   -np 1 $ELMER_ROOT/src/elmer_dummy_f.x $MESHES/greenland_mesh_v0/MESH/partitioning.128 1 $CPL_CONFIG \
