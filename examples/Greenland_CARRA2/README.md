@@ -18,10 +18,11 @@ Each forcing file must provide its data on the active cells of the grid it is us
 
 ## How the files were produced
 
-### Grid file `grid.nc`
+`grid.nc` and the meteorological forcing files were produced using the CARRA2 reanalysis dataset for Greenland. 
+The raw data, downloaded from the CARRA2 web portal (https://cds.climate.copernicus.eu/datasets/reanalysis-pan-carra-means?tab=download), were vectorized such that only grid cells covering the Greenland Ice Sheet were kept. 
+To check the included meteorological fields, use ncdump on the forcing files (e.g., `ncdump -h examples/Greenland_CARRA2/forcing/1990-05-01/P1M.nc`).
 
-TODO
+Reference:
+Copernicus Climate Change Service, Climate Data Store, (2025): pan-Arctic regional reanalysis daily and monthly data from 1986 to present. Copernicus Climate Change Service (C3S) Climate Data Store (CDS), DOI: 10.24381/b19380d8 (Accessed on DD-MMM-YYYY)
 
-### Forcing files
 
-TODO
