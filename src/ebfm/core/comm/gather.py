@@ -25,6 +25,7 @@ class ColumnGather:
         """
         @param[in] comm communicator whose ranks hold the columns
         @param[in] column_ids ids of the columns this rank holds (grid["column_id"]); no other rank may hold them
+                              (see ebfm.core.grid.validate_grid_distribution)
         @param[in] root rank that receives the gathered arrays
         """
         self.comm = comm
