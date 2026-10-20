@@ -10,8 +10,9 @@ neighbours. Nothing in the time loop integrates over a column's footprint, which
 from any set of points, and why the cell centres of an Elmer/Ice mesh can be taken as columns directly.
 
 Horizontal geometry therefore exists only as per-column attributes, listed in PER_COLUMN_FIELDS. The one
-exception is shading, which has to know where a column's neighbours are: it reads `z_2D`, `ind`, `dx`,
-`xind` and `yind`, which only the MATLAB grid type provides.
+exception is the shading look-up table, which needs the terrain surrounding each column, including cells
+that are not columns themselves. It is built from the 2-D DEM of the MATLAB grid type during initialization;
+the time loop only reads one row of it per column.
 """
 
 from enum import Enum
@@ -96,11 +97,11 @@ def validate_grid(grid: GridDict) -> None:
 class ShadingMethod(Enum):
     """Available shading algorithms for topographic shading.
 
-    - `CLASSICAL`: computes shading online each time step by ray-marching from
-        each glacier cell in the current solar azimuth direction.
-    - `LUT`: uses a precomputed look-up table of maximum horizon angles per cell
-        and azimuth sector, which is faster at runtime.
+    Both use a look-up table of maximum horizon angles per column and azimuth sector.
+
+    - `LUT`: EBFM pre-computes the look-up table from the regular 2-D grid during initialization.
+    - `LUT_EXTERNAL`: the look-up table is provided by Elmer/Ice. Not implemented yet.
     """
 
-    CLASSICAL = "classical_shading"
     LUT = "lut_shading"
+    LUT_EXTERNAL = "lut_external_shading"
