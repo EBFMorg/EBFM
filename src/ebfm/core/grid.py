@@ -21,9 +21,12 @@ restores the column order of the whole domain.
 """
 
 from enum import Enum
+import logging
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class GridInputType(Enum):
@@ -135,6 +138,42 @@ def domain_mean(values, comm) -> float:
     # MPI has no mean reduction; sum and count are reduced together, element-wise
     total, count = comm.allreduce(np.array([np.sum(values), len(values)], dtype=np.float64))
     return total / count
+
+
+def validate_grid_distribution(grid: GridDict, comm) -> None:
+    """
+    Check that every column is held by exactly one rank of comm.
+
+    Collective over comm.
+
+    Parameters:
+        grid (GridDict): this rank's part of the grid
+        comm: EBFM's MPI communicator
+
+    Raises:
+        ValueError: on every rank, if a column is held by more than one rank
+    """
+    if comm.size == 1:
+        return
+
+    column_ids_per_rank = comm.gather(grid["column_id"], root=0)
+    n_duplicates = 0
+    if comm.rank == 0:
+        column_ids = np.concatenate(column_ids_per_rank)
+        n_duplicates = len(column_ids) - len(np.unique(column_ids))
+    n_duplicates = comm.bcast(n_duplicates, root=0)
+
+    if n_duplicates > 0:
+        raise ValueError(
+            f"Some columns are held by more than one of the {comm.size} MPI ranks ({n_duplicates} duplicates). "
+            "Each column must be held by exactly one rank, i.e. the grid must be distributed over the ranks."
+        )
+
+    if comm.rank == 0:
+        logger.warning(
+            f"Checked that each column is held by exactly one of the {comm.size} MPI ranks. The check "
+            "communicates the ids of all columns; pass --no-check-grid-distribution to skip it."
+        )
 
 
 class ShadingMethod(Enum):
