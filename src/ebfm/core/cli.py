@@ -235,7 +235,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "--shading",
         default=argparse.SUPPRESS,
         action=argparse.BooleanOptionalAction,
-        help="Enable/disable shading. " + shading_default_info,
+        help="Enable/disable shading. " + shading_default_info + " Not supported for runs on several MPI ranks.",
     )
 
     example_restart_file_name = INIT.create_restart_file_name(CliDefaults.START_TIME.value)
@@ -511,4 +511,20 @@ def validate_shading_coupling_compat(grid_config, coupling_config) -> None:
         _cli_error(
             "Shading routine not implemented for coupled runs. "
             "Please deactivate shading via --no-shading or deactivate coupling."
+        )
+
+
+def validate_shading_parallel_compat(grid_config, comm) -> None:
+    """Check that shading is not enabled in a run on several MPI ranks.
+
+    Must be called on every rank of comm.
+
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
+    """
+    if grid_config.use_shading and comm.size > 1:
+        _cli_error(
+            f"Shading routine not implemented for runs on several MPI ranks ({comm.size} ranks). "
+            "Please deactivate shading via --no-shading or run on a single rank. "
+            "See https://github.com/EBFMorg/EBFM/issues/183"
         )

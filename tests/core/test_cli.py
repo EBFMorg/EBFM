@@ -15,6 +15,7 @@ from ebfm.core.cli import (
     extract_active_coupling_features,
     parse_cli_args,
     validate_shading_coupling_compat,
+    validate_shading_parallel_compat,
 )
 
 from ebfm.core.comm import mpi_available
@@ -353,6 +354,32 @@ class TestValidateShadingCouplingCompat(unittest.TestCase):
         grid, coupling = self._make_configs(use_shading=True, defines_coupling=True)
         with self.assertRaises(SystemExit) as ctx:
             validate_shading_coupling_compat(grid, coupling)
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class TestValidateShadingParallelCompat(unittest.TestCase):
+    """validate_shading_parallel_compat raises a CLI error when shading is on in a run on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, use_shading: bool, comm_size: int):
+        grid_config = MagicMock()
+        grid_config.use_shading = use_shading
+        comm = MagicMock()
+        comm.size = comm_size
+        validate_shading_parallel_compat(grid_config, comm)
+
+    def test_shading_on_single_rank_ok(self):
+        self._validate(use_shading=True, comm_size=1)  # must not raise
+
+    def test_no_shading_on_several_ranks_ok(self):
+        self._validate(use_shading=False, comm_size=4)  # must not raise
+
+    def test_shading_on_several_ranks_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(use_shading=True, comm_size=4)
         self.assertEqual(ctx.exception.code, 2)
 
 

@@ -26,6 +26,7 @@ from ebfm.core.cli import (
     parse_cli_args,
     resolve_numba_threads,
     validate_shading_coupling_compat,
+    validate_shading_parallel_compat,
 )
 
 import ebfm.coupling
@@ -175,6 +176,9 @@ def _main_impl():
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.
     validate_shading_coupling_compat(grid_config, coupling_config)
 
+    # Ensure shading routine is only used in runs on a single rank.
+    validate_shading_parallel_compat(grid_config, ebfm_comm)
+
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
@@ -186,7 +190,7 @@ def _main_impl():
         logger.info(f"NumPy random seed fixed to {args.random_seed} for reproducibility.")
 
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, grid_config)
+    grid = INIT.init_grid(grid, grid_config, is_parallel_run)
 
     # Each rank must compute its own columns, otherwise the ranks would repeat each other's work
     if args.check_grid_distribution and is_parallel_run:

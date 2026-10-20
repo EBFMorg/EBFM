@@ -370,6 +370,10 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
         self.assertTrue(grid["has_shading"])
         precompute.assert_called_once()
 
+    def test_lookup_table_is_rejected_in_a_parallel_run(self):
+        with self.assertRaises(AssertionError):
+            INIT._precompute_shading_matlab({"is_parallel_run": True}, mask_2D=None)
+
 
 class TestReadNetcdfGrid(unittest.TestCase):
     """Missing orography is NaN unless the user opts in to filling it with zero elevation.

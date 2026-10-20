@@ -183,7 +183,7 @@ def init_constants():
     return C
 
 
-def init_grid(grid: GridDict, config: GridConfig):
+def init_grid(grid: GridDict, config: GridConfig, is_parallel_run: bool = False):
     """
     Initializes the GridDict based on the given GridConfig.
 
@@ -194,7 +194,9 @@ def init_grid(grid: GridDict, config: GridConfig):
     Parameters:
         grid (GridDict): Dictionary to store grid-related parameters.
         config (GridConfig): Grid configuration object containing settings for grid initialization.
+        is_parallel_run (bool): Whether the run uses several MPI ranks.
     """
+    grid["is_parallel_run"] = is_parallel_run
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
     grid["has_shading"] = config.use_shading
@@ -425,6 +427,9 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
                         `az_array` and `maxgridangle`.
     @param[in] mask_2D 2-D glacier mask, 1 for glacier cells.
     """
+    # The walk needs the terrain around every column, which a rank of a parallel run does not hold.
+    assert not grid["is_parallel_run"], "The shading look-up table cannot be computed in a run on several MPI ranks."
+
     logger.warning("Using EBFM's internal shading method. Should only be used on regular grids!")
 
     grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
