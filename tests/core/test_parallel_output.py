@@ -68,3 +68,12 @@ def test_parallel_output_file_equals_serial_one(tmp_path, n_ranks, grid_kind, ma
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert filecmp.cmp(serial_file, tmp_path / "parallel" / "model_output.nc", shallow=False)
+
+
+@requires_mpirun
+def test_dump_reference_on_three_ranks(tmp_path):
+    result = _mpirun(3, "dump_reference_on_ranks.py", str(tmp_path / "reference.npz"))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    for rank in range(3):
+        assert f"rank {rank}: ok" in result.stdout, result.stdout + result.stderr

@@ -75,11 +75,16 @@ def _format_stats(arr: np.ndarray) -> str:
     return f"min={arr.min():.4e}  max={arr.max():.4e}  mean={arr.mean():.4e}"
 
 
-def dump_reference(logger, OUT, filepath: str):
-    """Save key output arrays to a .npz file for later comparison."""
-    import numpy as np
+def dump_reference(logger, OUT, filepath: str, gather: ColumnGather):
+    """
+    Save key output arrays to a .npz file for later comparison.
 
-    data = {k: OUT[k] for k in _REFERENCE_KEYS if k in OUT}
+    Collective over gather.comm: like the output file, the root rank gathers the columns of all ranks and writes them.
+    """
+    data = {k: gather.gather(OUT[k]) for k in _REFERENCE_KEYS if k in OUT}
+    if not gather.is_root:
+        return
+
     missing = [k for k in _REFERENCE_KEYS if k not in OUT]
     if missing:
         logger.warning(f"[DUMP] Keys not found in OUT and will be skipped: {missing}")
@@ -392,7 +397,7 @@ def _main_impl():
     logger.info("Time loop completed.")
 
     if args.dump_reference:
-        dump_reference(logger, OUT, args.dump_reference)
+        dump_reference(logger, OUT, args.dump_reference, column_gather)
 
     coupler.finalize()
 
