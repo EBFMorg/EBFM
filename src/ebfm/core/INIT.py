@@ -218,6 +218,7 @@ def init_grid(grid: GridDict, config: GridConfig):
                 source_crs_epsg=config.elmer_mesh_crs_epsg,
             )
 
+        grid["column_id"] = mesh.cell_ids
         grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
 
         logger.debug("Reading DEM from file and interpolating to grid...")
@@ -253,6 +254,7 @@ def init_grid(grid: GridDict, config: GridConfig):
 
         # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
         # see mesh/README.md for the required preprocessing steps.
+        grid["column_id"] = mesh.cell_ids
         grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells  # use cell centers as location for DoFs
         grid["z"] = np.random.uniform(0, 100, size=len(grid["x"]))  # test values!
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
@@ -324,6 +326,7 @@ def init_grid(grid: GridDict, config: GridConfig):
         grid["y"] = grid["y_2D"].flatten()[mask_flat == 1]
         grid["z"] = grid["z_2D"].flatten()[mask_flat == 1]
         grid["ind"] = np.where(mask_flat == 1)
+        grid["column_id"] = grid["ind"][0]
 
         # ---------------------------------------------------------------------
         # Grid slope and aspect

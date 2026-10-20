@@ -13,12 +13,20 @@ Horizontal geometry therefore exists only as per-column attributes, listed in PE
 exception is the shading look-up table, which needs the terrain surrounding each column, including cells
 that are not columns themselves. It is built from the 2-D DEM of the MATLAB grid type during initialization;
 the time loop only reads one row of it per column.
+
+Every column has an id, `column_id`, that is unique over the whole domain, also when the columns are
+distributed over several MPI ranks. For a grid read from an Elmer mesh it is the Elmer element id, for a
+MATLAB grid the flat index of the column in the 2-D fields (`ind`). Sorting the columns by id restores the
+column order of the whole domain.
 """
 
 from enum import Enum
+import logging
 from typing import Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class GridInputType(Enum):
@@ -55,7 +63,19 @@ def number_of_columns(grid: GridDict) -> int:
 
 
 # Fields carrying exactly one entry per snow/firn column. Their common length is `gpsum`.
-PER_COLUMN_FIELDS = ("x", "y", "z", "lat", "lon", "mask", "slope_x", "slope_y", "slope_beta", "slope_gamma")
+PER_COLUMN_FIELDS = (
+    "column_id",
+    "x",
+    "y",
+    "z",
+    "lat",
+    "lon",
+    "mask",
+    "slope_x",
+    "slope_y",
+    "slope_beta",
+    "slope_gamma",
+)
 
 
 def validate_grid(grid: GridDict) -> None:
@@ -92,6 +112,45 @@ def validate_grid(grid: GridDict) -> None:
         values = grid[field]
         assert values.ndim == 1, f"Per-column field '{field}' must be one-dimensional, got shape {values.shape}."
         assert len(values) == gpsum, f"Per-column field '{field}' has length {len(values)}, expected gpsum={gpsum}."
+
+    assert np.issubdtype(grid["column_id"].dtype, np.integer), "Column ids must be integers."
+    assert len(np.unique(grid["column_id"])) == gpsum, "Column ids must be unique."
+
+
+def validate_grid_distribution(grid: GridDict, comm) -> None:
+    """
+    Check that every column is held by exactly one rank of comm.
+
+    Collective over comm.
+
+    Parameters:
+        grid (GridDict): this rank's part of the grid
+        comm: EBFM's MPI communicator
+
+    Raises:
+        ValueError: on every rank, if a column is held by more than one rank
+    """
+    if comm.size == 1:
+        return
+
+    column_ids_per_rank = comm.gather(grid["column_id"], root=0)
+    n_duplicates = 0
+    if comm.rank == 0:
+        column_ids = np.concatenate(column_ids_per_rank)
+        n_duplicates = len(column_ids) - len(np.unique(column_ids))
+    n_duplicates = comm.bcast(n_duplicates, root=0)
+
+    if n_duplicates > 0:
+        raise ValueError(
+            f"Some columns are held by more than one of the {comm.size} MPI ranks ({n_duplicates} duplicates). "
+            "Each column must be held by exactly one rank, i.e. the grid must be distributed over the ranks."
+        )
+
+    if comm.rank == 0:
+        logger.warning(
+            f"Checked that each column is held by exactly one of the {comm.size} MPI ranks. The check "
+            "communicates the ids of all columns; pass --no-check-grid-distribution to skip it."
+        )
 
 
 class ShadingMethod(Enum):
