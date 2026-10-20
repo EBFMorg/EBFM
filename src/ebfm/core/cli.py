@@ -537,6 +537,21 @@ def validate_shading_parallel_compat(grid_config, comm) -> None:
         )
 
 
+def validate_elmerxios_parallel_compat(grid_config, comm) -> None:
+    """Check that an unstructured NetCDF DEM (--netcdf-dem-mesh-unstructured) is not read in a run on several MPI ranks.
+
+    Must be called on every rank of comm.
+
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
+    """
+    if grid_config.grid_type is GridInputType.ELMERXIOS and comm.size > 1:
+        _cli_error(
+            f"--netcdf-dem-mesh-unstructured is not supported for runs on several MPI ranks ({comm.size} ranks). "
+            "Please run on a single rank. See https://github.com/EBFMorg/EBFM/issues/XXX"
+        )
+
+
 def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
     """Check that no forcing files are read in a run on several MPI ranks.
 

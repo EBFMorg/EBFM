@@ -24,6 +24,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * In a run on several MPI ranks, including a partitioned Elmer mesh, the water vapour transmissivity of the incoming shortwave radiation now uses the mean latitude of the whole domain. Each rank previously used the mean latitude of its own columns, which could select a different coefficient than a serial run and change the results. https://github.com/EBFMorg/EBFM/pull/XXX
 * A run on several MPI ranks with restart files (`--restart-dir`, `--restart-init`) now stops with an error. A run on several ranks never wrote a restart file, and could not read one. https://github.com/EBFMorg/EBFM/pull/XXX
 * `--dump-reference` now works on several MPI ranks: like the output file, rank 0 gathers the columns of all ranks and writes a single file, with the columns in the order of a serial run. Every rank previously wrote its own columns to the same file. https://github.com/EBFMorg/EBFM/pull/XXX
+* A run on several MPI ranks with an unstructured NetCDF DEM (`--netcdf-dem-mesh-unstructured`) now stops with an error explaining that this is not supported yet, instead of failing with an `AssertionError` while reading the DEM. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 

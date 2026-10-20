@@ -14,6 +14,7 @@ from ebfm.core.cli import (
     CliDefaults,
     extract_active_coupling_features,
     parse_cli_args,
+    validate_elmerxios_parallel_compat,
     validate_forcing_parallel_compat,
     validate_partition_count,
     validate_restart_parallel_compat,
@@ -22,6 +23,7 @@ from ebfm.core.cli import (
 )
 
 from ebfm.core.comm import mpi_available
+from ebfm.core.grid import GridInputType
 from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 
 # Minimal valid args for each primary grid type.
@@ -383,6 +385,28 @@ class TestValidateShadingParallelCompat(unittest.TestCase):
     def test_shading_on_several_ranks_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             self._validate(use_shading=True, comm_size=4)
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class TestValidateElmerxiosParallelCompat(unittest.TestCase):
+    """validate_elmerxios_parallel_compat raises a CLI error for an unstructured NetCDF DEM on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, grid_type, comm_size: int):
+        validate_elmerxios_parallel_compat(MagicMock(grid_type=grid_type), MagicMock(size=comm_size))
+
+    def test_elmerxios_on_single_rank_ok(self):
+        self._validate(GridInputType.ELMERXIOS, comm_size=1)  # must not raise
+
+    def test_other_grid_type_on_several_ranks_ok(self):
+        self._validate(GridInputType.CUSTOM, comm_size=4)  # must not raise
+
+    def test_elmerxios_on_several_ranks_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(GridInputType.ELMERXIOS, comm_size=4)
         self.assertEqual(ctx.exception.code, 2)
 
 
