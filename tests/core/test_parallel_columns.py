@@ -5,6 +5,7 @@
 """Columns distributed over several MPI ranks are held by exactly one rank each, gathered on one rank in column id
 order and reduced over all ranks."""
 
+import filecmp
 import importlib.util
 import os
 import shutil
@@ -18,6 +19,7 @@ import pytest
 from ebfm.core.comm import defaultComm
 from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.grid import domain_mean, validate_grid_distribution
+from test_loop_write_to_file import _structured_grid, _unstructured_grid_with_mesh, _write_single_step
 
 COMM_TESTS = Path(__file__).resolve().parent / "comm"
 TIMEOUT = 120
@@ -86,3 +88,17 @@ def test_grid_distribution_on_three_ranks(mode, expected):
     assert result.returncode == 0, result.stdout + result.stderr
     for rank in range(3):
         assert f"rank {rank}: {expected}" in result.stdout, result.stdout + result.stderr
+
+
+@requires_mpirun
+@pytest.mark.parametrize("n_ranks", [2, 3])
+@pytest.mark.parametrize(
+    "grid_kind, make_grid",
+    [("structured", _structured_grid), ("unstructured", _unstructured_grid_with_mesh)],
+)
+def test_parallel_output_file_equals_serial_one(tmp_path, n_ranks, grid_kind, make_grid):
+    serial_file, _, _ = _write_single_step(tmp_path / "serial", make_grid())
+    result = _mpirun(n_ranks, "write_output_on_ranks.py", grid_kind, str(tmp_path / "parallel"))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert filecmp.cmp(serial_file, tmp_path / "parallel" / "model_output.nc", shallow=False)

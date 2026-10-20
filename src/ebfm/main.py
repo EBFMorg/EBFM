@@ -242,7 +242,7 @@ def _main_impl():
 
     # Rank 0 collects the columns of all ranks, e.g. to write them to the output file or for --dump-reference
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
-    if ebfm_comm.size > 1 and not grid["is_partitioned"]:
+    if is_parallel_run:
         logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
@@ -396,12 +396,8 @@ def _main_impl():
         OUT["y"] = grid["y"]
         OUT["surface_elevation"] = grid["z"]
 
-        # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
-        # TODO: partitioned output should be supported in a dedicated parallel-safe writer.
-        if not grid["is_partitioned"]:
-            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
-        else:
-            logger.warning("Skipping writing output to file for partitioned runs.")
+        # Write output to files (see the warning emitted before the time loop)
+        io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
