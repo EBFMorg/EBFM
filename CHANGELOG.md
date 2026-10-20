@@ -28,6 +28,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * In a run on several MPI ranks, only rank 0 logs to the console at `--log-level-console`; the other ranks only log warnings and errors there, instead of repeating every message. Log files (`--log-file`, one per rank) are unchanged. The current model time is logged instead of printed. https://github.com/EBFMorg/EBFM/pull/204
 * A MATLAB grid (`--matlab-mesh`) can now run on several MPI ranks, e.g. `mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading`: each rank computes a contiguous block of the columns, and rank 0 writes the output file, which is identical to that of a run on a single rank. Shading is not supported on several ranks and stops the run with an error. https://github.com/EBFMorg/EBFM/pull/202
 * A usage error, e.g. a rejected command line option, now ends the whole MPI job with its exit status when `MPI.COMM_WORLD` has more than one process. EBFM previously exited on its own, and the other processes, e.g. a coupled model in an MPMD run, waited for it forever. A run on a single process still exits without `MPI_ABORT`. https://github.com/EBFMorg/EBFM/pull/206
+* In a run on several MPI ranks, EBFM now checks before the time loop that every column is held by exactly one rank. The check communicates the ids of all columns; `--no-check-grid-distribution` skips it. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 
