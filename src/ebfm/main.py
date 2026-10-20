@@ -213,7 +213,7 @@ def _main_impl():
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.
     validate_shading_coupling_compat(grid_config, coupling_config)
 
-    # Ensure a run on several ranks uses a partitioned mesh.
+    # Ensure a run on several ranks uses a grid that runs there.
     validate_grid_parallel_compat(grid_config, ebfm_comm)
 
     # Ensure forcing files are only read in runs on a single rank.
@@ -244,6 +244,12 @@ def _main_impl():
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
     if is_parallel_run:
         logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
+
+    if is_parallel_run and ebfm_comm.rank == 0:
+        logger.warning(
+            "The lapse rate of potential temperature is fitted over the columns of all ranks, which synchronizes all "
+            f"{ebfm_comm.size} ranks every time step."
+        )
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 

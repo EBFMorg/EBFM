@@ -219,6 +219,11 @@ def init_grid(grid: GridDict, config: GridConfig, comm):
                 source_crs_epsg=config.elmer_mesh_crs_epsg,
             )
 
+            if config.num_partitions > 1:
+                mesh = mesh.get_partition(config.partition_id, config.num_partitions)
+
+        mesh.compute_geometry()
+
         grid["column_id"] = mesh.cell_ids
         _set_cell_center_coordinates(grid, mesh)
 
@@ -247,9 +252,14 @@ def init_grid(grid: GridDict, config: GridConfig, comm):
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
     elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
         mesh: Mesh = read_elmer_mesh(
-            config.mesh_file,
+            mesh_root=config.mesh_file,
             source_crs_epsg=config.elmer_mesh_crs_epsg,
         )
+
+        if config.num_partitions > 1:
+            mesh = mesh.get_partition(config.partition_id, config.num_partitions)
+
+        mesh.compute_geometry()
 
         # assuming mesh.nodes contains DEM data in the z component
         # see README.md for the required preprocessing steps.
