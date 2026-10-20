@@ -2,9 +2,9 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""A run of the MATLAB example on several MPI ranks gives exactly the results of a run on a single rank.
+"""A run on several MPI ranks gives exactly the results of a run on a single rank.
 
-EBFM runs once on a single rank and once per rank count under mpirun, and the runs must give byte-identical output
+Each case runs EBFM once on a single rank and once per rank count under mpirun, and requires byte-identical output
 files and equal --dump-reference snapshots.
 """
 
@@ -21,6 +21,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MATLAB_MESH = REPO_ROOT / "examples" / "dem_and_mask.mat"
+ELMER_MESH = REPO_ROOT / "tests" / "data" / "elmer_mesh" / "MESH"
 TIMEOUT = 300
 
 requires_mpirun = pytest.mark.skipif(
@@ -31,7 +32,20 @@ requires_mpirun = pytest.mark.skipif(
 
 # One day: the output file gets its first record after 8 time steps of 3 hours
 _TIME = ["--random-seed", "1", "--start-time", "1979-07-01T00:00:00Z", "--end-time", "1979-07-02T00:00:00Z"]
-ARGS = ["--matlab-mesh", str(MATLAB_MESH), "--no-shading", *_TIME]
+_ELMER = ["--elmer-mesh", str(ELMER_MESH), "--elmer-mesh-crs-epsg", "3413"]
+
+CASES = {
+    "matlab": ["--matlab-mesh", str(MATLAB_MESH), "--no-shading", *_TIME],
+    "elmer": [*_ELMER, *_TIME],
+    "fake-coupling": [
+        *_ELMER,
+        "--couple-to-elmer-ice",
+        "--couple-to-icon-atmo",
+        "--couple-to-icon-land",
+        "--fake-coupling",
+        *_TIME,
+    ],
+}
 
 
 def _run(args: list[str], n_ranks: int, workdir: Path) -> Path:
@@ -70,14 +84,20 @@ def _assert_same_results(serial: Path, parallel: Path) -> None:
             np.testing.assert_array_equal(actual[key], expected[key], err_msg=key)
 
 
-@pytest.fixture(scope="module")
-def serial(tmp_path_factory) -> Path:
-    return _run(ARGS, 1, tmp_path_factory.mktemp("serial") / "run")
-
-
 @requires_mpirun
-@pytest.mark.parametrize("n_ranks", [2, 3, 4])
-def test_parallel_run_equals_serial_run(tmp_path, serial, n_ranks):
-    parallel = _run(ARGS, n_ranks, tmp_path / f"np{n_ranks}")
+@pytest.mark.parametrize(
+    "case, n_ranks",
+    [
+        ("matlab", 2),
+        ("matlab", 3),
+        ("matlab", 4),
+        ("elmer", 3),
+        ("fake-coupling", 2),
+    ],
+    ids=str,
+)
+def test_parallel_run_equals_serial_run(tmp_path, case, n_ranks):
+    serial = _run(CASES[case], 1, tmp_path / "serial")
+    parallel = _run(CASES[case], n_ranks, tmp_path / f"np{n_ranks}")
 
     _assert_same_results(serial, parallel)
