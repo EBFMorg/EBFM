@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 from netCDF4 import Dataset
+from pyproj import Transformer
 
 from ebfm.core import INIT
 from ebfm.core.INIT import init_config, init_grid, init_initial_conditions
@@ -23,6 +24,7 @@ from ebfm.core.config import ColumnDiscretizationConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
 from ebfm.core.restart import PER_COLUMN_VARIABLES, PER_LAYER_VARIABLES, RESTART_VARIABLES
+from ebfm.elmer.mesh import TriangleMesh
 
 GPSUM = 5
 NL = 4
@@ -405,6 +407,60 @@ class TestMatlabGridSplit(unittest.TestCase):
             with self.subTest(key=key):
                 np.testing.assert_array_equal(np.concatenate([block[key] for block in blocks]), serial[key])
         np.testing.assert_array_equal(np.concatenate([block["ind"][0] for block in blocks]), serial["ind"][0])
+
+
+class TestElmerGridCoordinates(unittest.TestCase):
+    """The columns of a grid built from an Elmer mesh sit at the cell centers of the mesh.
+
+    The synthetic mesh lies on the Antarctic Peninsula (EPSG:3031), far from Greenland,
+    so coordinates that do not follow the mesh cannot pass by accident.
+    """
+
+    _CRS_EPSG = 3031
+    _LON = np.array([-65.0, -64.0, -65.0, -64.0])
+    _LAT = np.array([-66.0, -66.0, -65.0, -65.0])
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        to_mesh_crs = Transformer.from_crs("EPSG:4326", f"EPSG:{self._CRS_EPSG}", always_xy=True)
+        x, y = to_mesh_crs.transform(self._LON, self._LAT)
+        self.mesh = TriangleMesh(
+            x_vertices=np.asarray(x),
+            y_vertices=np.asarray(y),
+            z_vertices=np.zeros(4),
+            cell_to_vertex=np.array([[0, 1, 2], [1, 3, 2]]),
+            vertex_ids=np.arange(1, 5),
+            cell_ids=np.arange(1, 3),
+            source_crs_epsg=self._CRS_EPSG,
+        )
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _init_grid(self, extra_args=()):
+        args = parse_cli_args(
+            ["--elmer-mesh", self.tmpdir.name, "--elmer-mesh-crs-epsg", str(self._CRS_EPSG), *extra_args]
+        )
+        grid_config = GridConfig(args)
+        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        with mock.patch.object(INIT, "read_elmer_mesh", return_value=self.mesh):
+            return init_grid(grid, io, grid_config, defaultComm)
+
+    def test_lat_lon_are_the_cell_centers_of_the_mesh(self):
+        grid = self._init_grid()
+
+        np.testing.assert_allclose(grid["lat"], np.degrees(self.mesh.lat_cells))
+        np.testing.assert_allclose(grid["lon"], np.degrees(self.mesh.lon_cells))
+        # Centroids of the two triangles, in degrees east from -180 to 180.
+        np.testing.assert_allclose(grid["lat"], [-65.67, -65.33], atol=0.02)
+        np.testing.assert_allclose(grid["lon"], [-64.67, -64.33], atol=0.02)
+
+    def test_lat_lon_are_the_same_with_a_dem(self):
+        with mock.patch.object(INIT, "read_dem", return_value=np.zeros(2)):
+            grid = self._init_grid(["--netcdf-dem-mesh", str(Path(self.tmpdir.name) / "dem.nc")])
+
+        np.testing.assert_allclose(grid["lat"], np.degrees(self.mesh.lat_cells))
+        np.testing.assert_allclose(grid["lon"], np.degrees(self.mesh.lon_cells))
 
 
 class TestReadNetcdfGrid(unittest.TestCase):
