@@ -27,6 +27,7 @@ class GridConfig:
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool  # Whether the grid is unstructured
     partition_id: int | None  # Partition ID (only relevant if is_partitioned is True)
+    num_partitions: int  # Number of parts EBFM splits a non-partitioned Elmer mesh into, one per MPI rank
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
     fill_missing_elevation: bool  # Whether to set missing elevations to 0 m (only relevant for NETCDF grid type)
@@ -46,11 +47,12 @@ class GridConfig:
         GridInputType.MATLAB,
     }
 
-    def __init__(self, args: Namespace):
+    def __init__(self, args: Namespace, num_partitions: int = 1):
         """
         Initialize grid configuration from command line arguments.
 
         @param[in] args command line arguments
+        @param[in] num_partitions number of MPI ranks to split a non-partitioned Elmer mesh over
         """
         selected_primary_grids = [
             grid_type
@@ -68,6 +70,7 @@ class GridConfig:
         self.is_partitioned = args.is_partitioned_elmer_mesh
         self.dem_file = None
         self.partition_id = None
+        self.num_partitions = 1
 
         assert (
             not self.is_partitioned or elmer_mesh is not None
@@ -80,6 +83,13 @@ class GridConfig:
             logger.info("Using partitioned grid...")
             self.partition_id = args.use_part
             logger.info(f"{self.partition_id=}")
+        elif num_partitions > 1 and elmer_mesh is not None:
+            logger.info("Using global grid for parallel EBFM run...")
+            self.partition_id = args.use_part
+            self.num_partitions = num_partitions
+            logger.info(f"{self.partition_id=}")
+            logger.info(f"{self.num_partitions=}")
+            logger.warning("EBFM will try to partition the grid internally. This can lead to poor performance.")
         else:
             logger.info("Using non-partitioned grid...")
 

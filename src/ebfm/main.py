@@ -146,6 +146,8 @@ def _main_impl():
         # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
         args.use_part = ebfm_comm.rank + 1
 
+    n_partitions = ebfm_comm.size
+
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
     if args.with_numba:
         from ebfm.core.compute_backend import init_numba
@@ -170,7 +172,7 @@ def _main_impl():
     logger.debug("Reading configuration and checking for consistency.")
 
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    grid_config = GridConfig(args)
+    grid_config = GridConfig(args, n_partitions)
 
     # Ensure shading routine is only used in uncoupled runs.
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.
@@ -196,10 +198,16 @@ def _main_impl():
     if args.check_grid_distribution and is_parallel_run:
         validate_grid_distribution(grid, ebfm_comm)
 
-    # The output file is written by rank 0, from the columns of all ranks
-    output_gather = ColumnGather(ebfm_comm, grid["column_id"])
+    # Gathers the columns of all ranks on rank 0, e.g. to write them to the output file
+    column_gather = ColumnGather(ebfm_comm, grid["column_id"])
     if is_parallel_run:
         logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
+
+    if is_parallel_run and ebfm_comm.rank == 0:
+        logger.warning(
+            "The lapse rate of potential temperature is fitted over the columns of all ranks, which synchronizes all "
+            f"{ebfm_comm.size} ranks every time step."
+        )
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 
@@ -279,7 +287,7 @@ def _main_impl():
             IN["Pres"] = data_from_icon_atmo["sfcpres"]
 
         # Read/set meteorological forcing
-        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config)
+        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config, column_gather)
 
         # Run surface energy balance model
         OUT = LOOP_EBM.main(C, OUT, IN, time, grid, coupler)
@@ -353,14 +361,14 @@ def _main_impl():
         OUT["surface_elevation"] = grid["z"]
 
         # Write output to files (see the warning emitted before the time loop)
-        io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, output_gather)
+        io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
-    if not grid["is_partitioned"]:
+    if not (grid["is_partitioned"] or is_parallel_run):
         FINAL_create_restart_file.main(OUT, io, args.restart_dir)
     else:
-        logger.warning("Skipping writing of restart file for partitioned runs.")
+        logger.warning("Skipping writing of restart file for partitioned or parallel runs.")
 
     logger.info("Time loop completed.")
 

@@ -220,6 +220,11 @@ def init_grid(grid: GridDict, config: GridConfig, is_parallel_run: bool = False)
                 source_crs_epsg=config.elmer_mesh_crs_epsg,
             )
 
+            if config.num_partitions > 1:
+                mesh = mesh.get_partition(config.partition_id, config.num_partitions)
+
+        mesh.compute_geometry()
+
         grid["column_id"] = mesh.cell_ids
         grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
 
@@ -250,15 +255,23 @@ def init_grid(grid: GridDict, config: GridConfig, is_parallel_run: bool = False)
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
     elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
         mesh: Mesh = read_elmer_mesh(
-            config.mesh_file,
+            mesh_root=config.mesh_file,
             source_crs_epsg=config.elmer_mesh_crs_epsg,
         )
+
+        # Test values, drawn for the whole mesh so that a column gets the same value however the mesh is split
+        mesh.z_cells = np.random.uniform(0, 100, size=len(mesh.cell_ids))
+
+        if config.num_partitions > 1:
+            mesh = mesh.get_partition(config.partition_id, config.num_partitions)
+
+        mesh.compute_geometry()
 
         # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
         # see mesh/README.md for the required preprocessing steps.
         grid["column_id"] = mesh.cell_ids
         grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells  # use cell centers as location for DoFs
-        grid["z"] = np.random.uniform(0, 100, size=len(grid["x"]))  # test values!
+        grid["z"] = mesh.z_cells  # test values!
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
