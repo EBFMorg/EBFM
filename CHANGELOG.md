@@ -31,6 +31,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * In a run on several MPI ranks, EBFM now checks before the time loop that every column is held by exactly one rank. The check communicates the ids of all columns; `--no-check-grid-distribution` skips it. https://github.com/EBFMorg/EBFM/pull/XXX
 * Partitioned Elmer meshes (`--is-partitioned-elmer-mesh`) now write model output (`Output/model_output.nc`); it was skipped before. On several MPI ranks, rank 0 gathers the cells of all ranks and writes a single file, with the cells ordered by Elmer element id and the vertices that partitions share written once. https://github.com/EBFMorg/EBFM/pull/XXX
 * A non-partitioned Elmer mesh (`--elmer-mesh` without `--is-partitioned-elmer-mesh`, also with `--netcdf-dem-mesh`) can now run on several MPI ranks, e.g. `mpirun -np 4 ebfm --elmer-mesh ...`: each rank computes a contiguous block of the cells, the first block on rank 0. The output file equals that of a run on a single rank. Fitting the lapse rate of potential temperature over all columns synchronizes all ranks every time step; EBFM warns about this. https://github.com/EBFMorg/EBFM/pull/XXX
+* A run on a partitioned Elmer mesh (`--is-partitioned-elmer-mesh`) whose number of MPI ranks differs from the number of partitions now stops with an error. Each rank computes one partition, so such a run previously skipped partitions without notice. `--allow-partition-mismatch` allows it, with a warning, e.g. to compute a single partition with `--use-part`. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 
