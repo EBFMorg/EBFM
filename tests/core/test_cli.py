@@ -16,6 +16,7 @@ from ebfm.core.cli import (
     parse_cli_args,
     validate_forcing_parallel_compat,
     validate_partition_count,
+    validate_restart_parallel_compat,
     validate_shading_coupling_compat,
     validate_shading_parallel_compat,
 )
@@ -406,6 +407,29 @@ class TestValidateForcingParallelCompat(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             self._validate(forcing_dir="forcing/", comm_size=4)
         self.assertEqual(ctx.exception.code, 2)
+
+
+class TestValidateRestartParallelCompat(unittest.TestCase):
+    """validate_restart_parallel_compat raises a CLI error when restart files are used in a run on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, restart_args, comm_size: int):
+        validate_restart_parallel_compat(_parse(*restart_args), MagicMock(size=comm_size))
+
+    def test_restart_on_single_rank_ok(self):
+        self._validate(["--restart-dir", "restart/", "--restart-init"], comm_size=1)  # must not raise
+
+    def test_no_restart_on_several_ranks_ok(self):
+        self._validate([], comm_size=4)  # must not raise
+
+    def test_restart_on_several_ranks_rejected(self):
+        for restart_args in (["--restart-dir", "restart/"], ["--restart-dir", "restart/", "--restart-init"]):
+            with self.subTest(restart_args=restart_args), self.assertRaises(SystemExit) as ctx:
+                self._validate(restart_args, comm_size=4)
+            self.assertEqual(ctx.exception.code, 2)
 
 
 class TestValidatePartitionCount(unittest.TestCase):

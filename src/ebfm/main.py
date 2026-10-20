@@ -28,6 +28,7 @@ from ebfm.core.cli import (
     validate_shading_coupling_compat,
     validate_forcing_parallel_compat,
     validate_partition_count,
+    validate_restart_parallel_compat,
     validate_shading_parallel_compat,
 )
 
@@ -183,6 +184,9 @@ def _main_impl():
 
     # Ensure forcing files are only read in runs on a single rank.
     validate_forcing_parallel_compat(args, ebfm_comm)
+
+    # Ensure restart files are only read and written in runs on a single rank.
+    validate_restart_parallel_compat(args, ebfm_comm)
 
     # Each rank computes exactly one partition of a partitioned mesh
     validate_partition_count(args, grid_config, ebfm_comm, logger)

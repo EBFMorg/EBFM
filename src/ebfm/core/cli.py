@@ -552,6 +552,21 @@ def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
         )
 
 
+def validate_restart_parallel_compat(args: Namespace, comm) -> None:
+    """Check that no restart files are read or written in a run on several MPI ranks.
+
+    Must be called on every rank of comm.
+
+    @param[in] args parsed CLI arguments
+    @param[in] comm EBFM's MPI communicator
+    """
+    if (args.restart_dir is not None or args.restart_init) and comm.size > 1:
+        _cli_error(
+            f"Restart files (--restart-dir, --restart-init) are not supported for runs on several MPI ranks "
+            f"({comm.size} ranks). Please run on a single rank."
+        )
+
+
 def validate_partition_count(args: Namespace, grid_config, comm, logger) -> None:
     """Check that a partitioned Elmer mesh has exactly one partition per MPI rank.
 
