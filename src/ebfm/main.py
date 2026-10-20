@@ -18,7 +18,7 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.comm.gather import ColumnGather
-from ebfm.core.grid import number_of_columns, validate_grid_distribution
+from ebfm.core.grid import domain_mean, number_of_columns, validate_grid_distribution
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
@@ -209,6 +209,9 @@ def _main_impl():
     # Each rank must compute its own columns, otherwise the ranks would repeat each other's work
     if args.check_grid_distribution and is_parallel_run:
         validate_grid_distribution(grid, ebfm_comm)
+
+    # The water vapour transmissivity in LOOP_EBM_SWin depends on the mean latitude of the whole domain
+    grid["lat_mean"] = domain_mean(grid["lat"], ebfm_comm)
 
     # Gathers the columns of all ranks on rank 0, e.g. to write them to the output file
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])

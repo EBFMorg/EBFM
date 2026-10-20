@@ -91,8 +91,8 @@ def main(C, OUT, IN, grid, cpl: Coupler) -> tuple[np.ndarray, dict]:
         ) ** -1  # SOURCE: McDonald (1960)
         temp_dew_fahr = 32.0 + 1.8 * (temp_dew_kelvin - 273.15)
 
-        # Assign lambda based on latitude region
-        lat_mean_abs = np.abs(np.mean(grid["lat"]))
+        # Assign lambda based on the latitude region of the whole domain
+        lat_mean_abs = np.abs(grid["lat_mean"])
         if lat_mean_abs < 20:
             lambda_value = 2.91
         elif lat_mean_abs < 30:
