@@ -17,6 +17,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Number of DEM values read at a time when sampling a DEM
+DEM_BAND_SIZE = 4 * 1024 * 1024
+
 
 def read_elmer_mesh(
     mesh_root: Path,
@@ -269,8 +272,23 @@ def read_dem(dem_file: Path, xs: NDArray[np.float64], ys: NDArray[np.float64]):
             logger.warning(f"Maximum spacing-normalized mismatch: {np.max(mismatch_y)} in y.")
             print_axis_diagnostics("y", y_axis, ys, idx_y, mismatch_y, y_spacing)
 
-        surf = np.asarray(nc["surface"][:])
-        result = surf[idx_y, idx_x]
+        # Read the DEM in bands of rows, and of each band that holds nearest neighbours only the window around them
+        surface = nc["surface"]
+        rows_per_band = max(1, DEM_BAND_SIZE // surface.shape[1])
+        band = idx_y // rows_per_band
+        order = np.argsort(band, kind="stable")
+        _, band_starts = np.unique(band[order], return_index=True)
+
+        sampled = []
+        for points in np.split(order, band_starts[1:]):
+            ys, xs = idx_y[points], idx_x[points]
+            y_first, x_first = np.min(ys), np.min(xs)
+            window = np.asarray(surface[y_first : np.max(ys) + 1, x_first : np.max(xs) + 1])
+            sampled.append(window[ys - y_first, xs - x_first])
+
+        sampled = np.concatenate(sampled)
+        result = np.empty_like(sampled)
+        result[order] = sampled
 
     return result
 
