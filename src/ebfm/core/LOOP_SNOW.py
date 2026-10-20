@@ -115,8 +115,11 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
 
             # A "grid shift" moves the layer indices: an overfull top layer becomes
             # layer 1, deeper layers move down, the overflow starts a new top layer.
-            no_grid_shift: NDArray[np.bool_] = subZ_top_old + shift_amount <= max_subZ
-            needs_grid_shift: NDArray[np.bool_] = ~no_grid_shift
+            # Columns without snow in this pass are left untouched.
+            receives_snow: NDArray[np.bool_] = shift_amount > 0
+            fits_top_layer: NDArray[np.bool_] = subZ_top_old + shift_amount <= max_subZ
+            no_grid_shift: NDArray[np.bool_] = receives_snow & fits_top_layer
+            needs_grid_shift: NDArray[np.bool_] = receives_snow & ~fits_top_layer
             # Index into the grid with indices, not with the masks, reason: NumPy
             # re-scans the full mask on every indexing operation, flatnonzero pays that
             # scan once and each later access then costs only the affected rows.
