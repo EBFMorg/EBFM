@@ -260,14 +260,11 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         _set_cell_center_coordinates(grid, mesh)
         mesh.z_cells = mesh.z_vertices[mesh.cell_to_vertex].mean(axis=1)
         grid["z"] = mesh.z_cells
-        grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
+        grid["slope_x"], grid["slope_y"] = mesh.vertex_surface_gradient()
+        grid["slope_beta"], grid["slope_gamma"] = _slope_angles(
+            np.hypot(grid["slope_x"], grid["slope_y"]), grid["slope_x"], grid["slope_y"]
+        )
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-
-        # TODO later add slope
-        # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
     elif config.grid_type in (GridInputType.MATLAB, GridInputType.NETCDF):  # Read grid and elevations from a file
         # ---------------------------------------------------------------------
@@ -383,21 +380,7 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             "which `np.gradient` spreads one cell into the mask."
         )
 
-        # Calculate slope_beta and slope_gamma (defining the tilt and orientation of a sloping surface)
-        grid["slope_beta"] = np.arctan(grid["slope"])
-        grid["slope_gamma"] = np.zeros_like(grid["slope"])
-        grid["slope_gamma"][grid["slope_y"] > 0] = np.arctan(
-            -grid["slope_x"][grid["slope_y"] > 0] / grid["slope_y"][grid["slope_y"] > 0]
-        )
-        cond = np.logical_and(grid["slope_y"] < 0, grid["slope_x"] > 0)
-        grid["slope_gamma"][cond] = -np.pi + np.arctan(-grid["slope_x"][cond] / grid["slope_y"][cond])
-        cond = np.logical_and(grid["slope_y"] < 0, grid["slope_x"] < 0)
-        grid["slope_gamma"][cond] = np.pi + np.arctan(-grid["slope_x"][cond] / grid["slope_y"][cond])
-        grid["slope_gamma"][(grid["slope_x"] == 0) & (grid["slope_y"] < 0)] = np.pi
-        grid["slope_gamma"][(grid["slope_x"] == 0) & (grid["slope_y"] == 0)] = 0
-        grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
-        grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
-        grid["slope_gamma"] = -grid["slope_gamma"]
+        grid["slope_beta"], grid["slope_gamma"] = _slope_angles(grid["slope"], grid["slope_x"], grid["slope_y"])
 
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
@@ -425,6 +408,31 @@ def _set_cell_center_coordinates(grid: GridDict, mesh: Mesh) -> None:
     """Use the cell centers of `mesh` as column locations: x/y in the mesh CRS, lat/lon in degrees (lon -180..180)."""
     grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
     grid["lat"], grid["lon"] = np.degrees(mesh.lat_cells), np.degrees(mesh.lon_cells)
+
+
+def _slope_angles(slope, slope_x, slope_y):
+    """
+    Tilt and orientation of a sloping surface.
+
+    Parameters:
+        slope: tangent of the slope angle
+        slope_x, slope_y: elevation change per metre towards east and north
+
+    Returns:
+        slope_beta, slope_gamma: slope angle and slope azimuth (radians)
+    """
+    slope_beta = np.arctan(slope)
+    slope_gamma = np.zeros_like(slope)
+    slope_gamma[slope_y > 0] = np.arctan(-slope_x[slope_y > 0] / slope_y[slope_y > 0])
+    cond = np.logical_and(slope_y < 0, slope_x > 0)
+    slope_gamma[cond] = -np.pi + np.arctan(-slope_x[cond] / slope_y[cond])
+    cond = np.logical_and(slope_y < 0, slope_x < 0)
+    slope_gamma[cond] = np.pi + np.arctan(-slope_x[cond] / slope_y[cond])
+    slope_gamma[(slope_x == 0) & (slope_y < 0)] = np.pi
+    slope_gamma[(slope_x == 0) & (slope_y == 0)] = 0
+    slope_gamma[(slope_x > 0) & (slope_y == 0)] = np.pi / 2
+    slope_gamma[(slope_x < 0) & (slope_y == 0)] = -np.pi / 2
+    return slope_beta, -slope_gamma
 
 
 def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
