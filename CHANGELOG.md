@@ -13,6 +13,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * Remove support for Python 3.10. https://github.com/EBFMorg/EBFM/pull/143
 * `--numba-threads` is now checked against the number of threads Numba accepts, i.e. the CPUs the rank may run on (CPU affinity from MPI binding or the Slurm allocation, e.g. `--cpus-per-task`) or the `NUMBA_NUM_THREADS` environment variable. Exceeding it stops EBFM with an error explaining the cause, instead of a Numba `ValueError` traceback. Exceeding the suggested thread count for the ranks sharing a node is now only a warning; the suggestion no longer divides the CPUs of the whole node by the number of EBFM ranks. https://github.com/EBFMorg/EBFM/pull/190
 * A fatal error now ends EBFM with exit status 1 whenever mpi4py is installed, both standalone and under `mpirun`. EBFM previously aborted MPI with error code 0, so the run, and `mpirun` with it, reported success after logging "Fatal Error in EBFM". The same applies to an MPI handshake version mismatch. A fatal error before the MPI communicator splitting no longer leaves the other components of an MPMD run waiting forever. https://github.com/EBFMorg/EBFM/pull/191
+* Add an example for `--netcdf-dem-mesh-unstructured`: surface elevation and ice thickness from Elmer/Ice XIOS output for the Greenland mesh (`examples/greenland_mesh_v0/xios_dem.nc`). `examples/README.md` describes the contents EBFM expects in such a file. https://github.com/EBFMorg/EBFM/pull/198
 
 # v0.8.0
 

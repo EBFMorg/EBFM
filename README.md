@@ -167,6 +167,20 @@ Important: For some larger files we are using Git LFS. Please make sure to [inst
   ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --elmer-mesh-crs-epsg 3413
   ```
 
+* Elmer Mesh with Elevation data from Elmer/Ice XIOS output: The Elmer mesh file
+  provides x-y coordinates. A NetCDF file written by Elmer/Ice through XIOS
+  provides the surface elevation `zs` and the ice thickness `h` at the mesh
+  nodes. Cells with more than 1 m of ice are treated as glacier. Please use the
+  arguments `--elmer-mesh /path/to/your/elmer/mesh` and
+  `--netcdf-dem-mesh-unstructured /path/to/your/xios_output.nc`. See
+  [`examples/README.md`](examples/README.md) for the required contents of the file.
+
+  Usage example:
+
+  ```sh
+  ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh-unstructured examples/greenland_mesh_v0/xios_dem.nc --elmer-mesh-crs-epsg 3413
+  ```
+
 Note that an Elmer mesh must be provided in a directory following the structure:
 
 ```

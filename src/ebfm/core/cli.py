@@ -220,9 +220,9 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     input_group.add_argument(
         "--netcdf-dem-mesh-unstructured",
         type=Path,
-        help="Path to the unstructured NetCDF mesh file. "
-        f"Optional if using {mesh_opts[GridInputType.ELMER]}. "
-        f"If --netcdf-dem-mesh is provided elevations will be read from the given NetCDF mesh file.",
+        help="Path to an Elmer/Ice XIOS output file with surface elevation (zs) and ice thickness (h) at the nodes "
+        f"of the {mesh_opts[GridInputType.ELMER]}, in the order of its mesh.nodes. "
+        f"Optional if using {mesh_opts[GridInputType.ELMER]}.",
     )
 
     grid_types_without_shading = set(GridConfig.mesh_arg_dests.keys()) - GridConfig.grid_types_supporting_shading

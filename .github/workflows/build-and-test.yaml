@@ -57,6 +57,8 @@ jobs:
           test -f Reboot/restart_1979-01-03T00:00:00Z.nc
       - name: Run example with (pseudo) coupling on an Elmer grid
         run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --elmer-mesh-crs-epsg 3413 --couple-to-icon-atmo --couple-to-icon-land --couple-to-elmer-ice --fake-coupling --no-shading
+      - name: Run example with elevation from Elmer/Ice XIOS output on an Elmer grid
+        run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh-unstructured examples/greenland_mesh_v0/xios_dem.nc --elmer-mesh-crs-epsg 3413 --end-time "1-Jan-1979 03:00"
       # No --couple-to-elmer-ice here: its surface elevation updates grid["z"], which a MATLAB grid cannot follow with
       # its slopes and 2-D elevation, so ElmerIce.validate_grid rejects the combination.
       - name: Run example with (pseudo) coupling on a MATLAB grid
