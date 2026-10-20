@@ -17,7 +17,7 @@ from ebfm.core.cli import (
     validate_elmerxios_parallel_compat,
     validate_forcing_parallel_compat,
     validate_partition_count,
-    validate_restart_parallel_compat,
+    validate_restart_compat,
     validate_shading_coupling_compat,
     validate_shading_parallel_compat,
 )
@@ -433,26 +433,36 @@ class TestValidateForcingParallelCompat(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
 
 
-class TestValidateRestartParallelCompat(unittest.TestCase):
-    """validate_restart_parallel_compat raises a CLI error when restart files are used in a run on several ranks."""
+class TestValidateRestartCompat(unittest.TestCase):
+    """validate_restart_compat raises a CLI error for restart files on several ranks or with a partitioned mesh."""
+
+    RESTART_ARGS = (["--restart-dir", "restart/"], ["--restart-dir", "restart/", "--restart-init"])
 
     def setUp(self):
         # Ensure _parser is set by running a valid parse first.
         parse_cli_args(_MATLAB)
 
-    def _validate(self, restart_args, comm_size: int):
-        validate_restart_parallel_compat(_parse(*restart_args), MagicMock(size=comm_size))
+    def _validate(self, restart_args, comm_size=1, is_partitioned=False):
+        grid_config = MagicMock(is_partitioned=is_partitioned)
+        validate_restart_compat(_parse(*restart_args), grid_config, MagicMock(size=comm_size))
 
     def test_restart_on_single_rank_ok(self):
-        self._validate(["--restart-dir", "restart/", "--restart-init"], comm_size=1)  # must not raise
+        for restart_args in self.RESTART_ARGS:
+            self._validate(restart_args)  # must not raise
 
-    def test_no_restart_on_several_ranks_ok(self):
-        self._validate([], comm_size=4)  # must not raise
+    def test_no_restart_on_several_ranks_with_partitioned_mesh_ok(self):
+        self._validate([], comm_size=4, is_partitioned=True)  # must not raise
 
     def test_restart_on_several_ranks_rejected(self):
-        for restart_args in (["--restart-dir", "restart/"], ["--restart-dir", "restart/", "--restart-init"]):
+        for restart_args in self.RESTART_ARGS:
             with self.subTest(restart_args=restart_args), self.assertRaises(SystemExit) as ctx:
                 self._validate(restart_args, comm_size=4)
+            self.assertEqual(ctx.exception.code, 2)
+
+    def test_restart_with_partitioned_mesh_rejected(self):
+        for restart_args in self.RESTART_ARGS:
+            with self.subTest(restart_args=restart_args), self.assertRaises(SystemExit) as ctx:
+                self._validate(restart_args, is_partitioned=True)
             self.assertEqual(ctx.exception.code, 2)
 
 

@@ -29,7 +29,7 @@ from ebfm.core.cli import (
     validate_elmerxios_parallel_compat,
     validate_forcing_parallel_compat,
     validate_partition_count,
-    validate_restart_parallel_compat,
+    validate_restart_compat,
     validate_shading_parallel_compat,
 )
 
@@ -194,8 +194,8 @@ def _main_impl():
     # Ensure forcing files are only read in runs on a single rank.
     validate_forcing_parallel_compat(args, ebfm_comm)
 
-    # Ensure restart files are only read and written in runs on a single rank.
-    validate_restart_parallel_compat(args, ebfm_comm)
+    # Ensure restart files are only read and written for a whole grid on a single rank.
+    validate_restart_compat(args, grid_config, ebfm_comm)
 
     # Each rank computes exactly one partition of a partitioned mesh
     validate_partition_count(args, grid_config, ebfm_comm, logger)
@@ -392,11 +392,7 @@ def _main_impl():
         io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
 
     # Write restart file
-    # TODO: should be supported for all cases to avoid case distinction here
-    if not (grid["is_partitioned"] or is_parallel_run):
-        FINAL_create_restart_file.main(OUT, io, args.restart_dir)
-    else:
-        logger.warning("Skipping writing of restart file for partitioned or parallel runs.")
+    FINAL_create_restart_file.main(OUT, io, args.restart_dir)
 
     logger.info("Time loop completed.")
 
