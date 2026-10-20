@@ -386,19 +386,7 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
 
         # Calculate slope_beta and slope_gamma (defining the tilt and orientation of a sloping surface)
         grid["slope_beta"] = np.arctan(grid["slope"])
-        grid["slope_gamma"] = np.zeros_like(grid["slope"])
-        grid["slope_gamma"][grid["slope_y"] > 0] = np.arctan(
-            -grid["slope_x"][grid["slope_y"] > 0] / grid["slope_y"][grid["slope_y"] > 0]
-        )
-        cond = np.logical_and(grid["slope_y"] < 0, grid["slope_x"] > 0)
-        grid["slope_gamma"][cond] = -np.pi + np.arctan(-grid["slope_x"][cond] / grid["slope_y"][cond])
-        cond = np.logical_and(grid["slope_y"] < 0, grid["slope_x"] < 0)
-        grid["slope_gamma"][cond] = np.pi + np.arctan(-grid["slope_x"][cond] / grid["slope_y"][cond])
-        grid["slope_gamma"][(grid["slope_x"] == 0) & (grid["slope_y"] < 0)] = np.pi
-        grid["slope_gamma"][(grid["slope_x"] == 0) & (grid["slope_y"] == 0)] = 0
-        grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
-        grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
-        grid["slope_gamma"] = -grid["slope_gamma"]
+        grid["slope_gamma"] = slope_azimuth(grid["slope_x"], grid["slope_y"])
 
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
@@ -420,6 +408,22 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
     validate_grid(grid)
 
     return grid
+
+
+def slope_azimuth(slope_x: np.ndarray, slope_y: np.ndarray) -> np.ndarray:
+    """
+    Azimuth of the direction a sloping surface faces, as used for the incidence angle in LOOP_EBM_SWin.
+
+    0 is south-facing, -pi/2 east-facing, pi/2 west-facing and +-pi north-facing. Flat cells get 0.
+
+    Parameters:
+        slope_x (np.ndarray): Surface gradient towards east (dz/dx).
+        slope_y (np.ndarray): Surface gradient towards north (dz/dy).
+    """
+    gamma = np.arctan2(slope_x, slope_y)
+    # arctan2(0, -0.0) is pi
+    gamma[(slope_x == 0) & (slope_y == 0)] = 0.0
+    return gamma
 
 
 def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
