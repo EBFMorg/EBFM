@@ -72,6 +72,11 @@ jobs:
           # Run dummy script second; EBFM on rank 0, dummy on rank 1
           mpirun -np 1 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00" : \
                  -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py second
+      - name: Run examples on several MPI ranks
+        if: ${{ matrix.run_mpi }}
+        run: |
+          mpirun -np 4 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
+          mpirun -np 4 .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --elmer-mesh-crs-epsg 3413 --couple-to-icon-atmo --couple-to-icon-land --couple-to-elmer-ice --fake-coupling --no-shading
 
   # LFS checkout is expensive (downloads all tracked binary files).
   # Run this stage only after build-and-test has passed to avoid wasting
