@@ -225,6 +225,8 @@ On several MPI ranks, `--use-part` is not allowed: rank i computes the partition
 mpirun -n 4 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --elmer-mesh-crs-epsg 3413
 ```
 
+Rank 0 writes the output of all ranks to a single file, with the cells ordered by their Elmer element id.
+
 Besides a partitioned mesh, only a MATLAB grid runs on several MPI ranks (see [Running on several MPI ranks](#running-on-several-mpi-ranks)).
 
 Note: The partitioned mesh is not included in this repository.
