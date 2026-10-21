@@ -26,7 +26,9 @@ class GridConfig:
     dem_file: Path | None  # Path to the DEM file (only relevant for CUSTOM grid type)
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool  # Whether the grid is unstructured
-    partition_id: int | None  # Partition ID (only relevant if is_partitioned is True)
+    partition_id: int | None  # Partition ID (only relevant if is_partitioned is True or num_partitions > 1)
+    # Number of blocks EBFM splits the columns of a MATLAB grid into, one per MPI rank; 1 for a grid that is not split
+    num_partitions: int
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
     fill_missing_elevation: bool  # Whether to set missing elevations to 0 m (only relevant for NETCDF grid type)
@@ -46,11 +48,13 @@ class GridConfig:
         GridInputType.MATLAB,
     }
 
-    def __init__(self, args: Namespace):
+    def __init__(self, args: Namespace, num_ranks: int = 1, rank: int = 0):
         """
         Initialize grid configuration from command line arguments.
 
         @param[in] args command line arguments
+        @param[in] num_ranks number of MPI ranks, over which a MATLAB grid is split
+        @param[in] rank MPI rank of this process, which computes the block rank + 1 of a split grid
         """
         selected_primary_grids = [
             grid_type
@@ -68,6 +72,7 @@ class GridConfig:
         self.is_partitioned = args.is_partitioned_elmer_mesh
         self.dem_file = None
         self.partition_id = None
+        self.num_partitions = 1
 
         assert (
             not self.is_partitioned or elmer_mesh is not None
@@ -112,6 +117,11 @@ class GridConfig:
                 "Please refer to the documentation for correct configuration."
             )
             raise Exception("Invalid grid configuration.")
+
+        if self.grid_type is GridInputType.MATLAB and num_ranks > 1:
+            logger.info(f"Splitting the grid over {num_ranks} MPI ranks...")
+            self.partition_id = rank + 1
+            self.num_partitions = num_ranks
 
         self.use_shading = self._check_shading(args)
         self.fill_missing_elevation = args.fill_missing_elevation

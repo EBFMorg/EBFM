@@ -204,7 +204,7 @@ def _main_impl():
     logger.debug("Reading configuration and checking for consistency.")
 
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    grid_config = GridConfig(args)
+    grid_config = GridConfig(args, ebfm_comm.size, ebfm_comm.rank)
 
     # Ensure shading routine is only used in uncoupled runs.
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.
@@ -235,6 +235,8 @@ def _main_impl():
 
     # Rank 0 collects the columns of all ranks, e.g. to write them to the output file or for --dump-reference
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
+    if ebfm_comm.size > 1 and not grid["is_partitioned"]:
+        logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 
