@@ -216,10 +216,16 @@ path/to/your/elmer/mesh
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42 --elmer-mesh-crs-epsg 3413
 ```
 
-Without `--use-part`, each MPI rank computes one partition, rank i the partition i + 1 (e.g. `mpirun -np 128 ebfm ... --is-partitioned-elmer-mesh`); a partitioned mesh is the only grid EBFM runs on several MPI ranks.
+On several MPI ranks, `--use-part` is not allowed: rank i computes the partition i + 1, e.g. the partitions 1 to 4 with:
+
+```sh
+mpirun -n 4 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --elmer-mesh-crs-epsg 3413
+```
+
+A partitioned mesh is the only grid EBFM runs on several MPI ranks.
 
 Note: The partitioned mesh is not included in this repository.
 
