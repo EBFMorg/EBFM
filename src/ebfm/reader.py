@@ -108,6 +108,9 @@ def read_dem_xios(dem_file: Path, mesh: TriangleMesh):
     and maps to cell centers via arithmetic averaging of scalar field values.
     (For coordinate averaging, see mesh._compute_cell_centers() which uses spherical geometry.)
 
+    The file stores the values by Elmer node id: the value of node id i is at position i - 1. The mesh may hold only
+    part of the nodes, e.g. the partition of one MPI rank.
+
     Args:
         dem_file (Path): Path to the DEM NetCDF file.
         mesh (TriangleMesh): Mesh object with vertex and cell information
@@ -118,16 +121,21 @@ def read_dem_xios(dem_file: Path, mesh: TriangleMesh):
 
     import netCDF4
 
-    nc = netCDF4.Dataset(dem_file)
+    with netCDF4.Dataset(dem_file) as nc:
+        # Read node data from nc file
+        zs_nodes = np.squeeze(nc["zs"][:]).data
+        h_nodes = np.squeeze(nc["h"][:]).data
 
-    # Read vertex data from nc file
-    zs_vertices = np.squeeze(nc["zs"][:]).data
-    h_vertices = np.squeeze(nc["h"][:]).data
+    n_nodes = len(zs_nodes)
+    if mesh.vertex_ids.min() < 1 or mesh.vertex_ids.max() > n_nodes:
+        raise ValueError(
+            f"The Elmer mesh has node ids {mesh.vertex_ids.min()}..{mesh.vertex_ids.max()}, but {dem_file} has values "
+            f"for node ids 1..{n_nodes} only."
+        )
 
-    assert len(zs_vertices) == len(mesh.x_vertices), (
-        f"Surface mesh ({len(zs_vertices)} vertices) and Elmer mesh "
-        f"({len(mesh.x_vertices)} vertices) do not have the same number of vertices"
-    )
+    # Values of the mesh's vertices, in the order of its local vertex indices
+    zs_vertices = zs_nodes[mesh.vertex_ids - 1]
+    h_vertices = h_nodes[mesh.vertex_ids - 1]
 
     # Map vertex values to cell centers by arithmetic averaging (scalar fields)
     n_cells = mesh.cell_to_vertex.shape[0]
