@@ -356,7 +356,8 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         type=str,
         choices=list(log_levels_map.keys()),
         default=CliDefaults.LOG_LEVEL_CONSOLE.value,
-        help="Log level for console output for all MPI ranks (unless overridden by custom settings in utils.py).",
+        help="Log level for console output. In runs on several MPI ranks, it applies to rank 0; the other ranks "
+        "only log warnings and errors to the console.",
     )
 
     logger_group.add_argument(

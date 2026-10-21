@@ -25,6 +25,7 @@ SPDX-License-Identifier: CC-BY-4.0
     * Without `--random-seed`, rank 0 now draws the random seed and shares it with all ranks, so the random forcing is the same over the whole domain. Each rank previously drew its own.
     * `--dump-reference` now holds the columns of all ranks, ordered by Elmer element id. Every rank previously wrote its own partition to the same file.
     * `--print-diagnostics` now reports the column count and `smb` statistics of the whole domain, logged by rank 0. Each rank previously reported its own partition.
+* In a run on several MPI ranks, only rank 0 logs to the console at `--log-level-console`; the other ranks only log warnings and errors there, instead of repeating every message. Log files (`--log-file`, one per rank) are unchanged. The current model time is logged instead of printed. https://github.com/EBFMorg/EBFM/pull/204
 
 # v0.8.0
 
