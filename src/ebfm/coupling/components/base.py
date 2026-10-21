@@ -362,14 +362,14 @@ class Component(ABC):
         """
         pass
 
-    def validate_grid(self, grid: "GridDict"):
+    def prepare_grid(self, grid: "GridDict"):
         """
-        Check that the grid EBFM runs on meets the requirements of this coupling.
+        Check that the grid EBFM runs on meets the requirements of this coupling, and adapt it where needed.
 
         Called once per coupled component from Coupler.setup, before any field is registered, so that an
         incompatible grid is rejected before the time loop rather than during the first exchange. A component
         that couples to any grid does not override this.
 
-        @param[in] grid grid EBFM runs on
+        @param[in,out] grid grid EBFM runs on
         """
         pass

@@ -198,6 +198,7 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         config (GridConfig): Grid configuration object containing settings for grid initialization.
         comm: EBFM's MPI communicator, whose ranks hold the columns of the domain.
     """
+    grid["is_parallel_run"] = comm.size > 1
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
     grid["has_shading"] = config.use_shading
@@ -222,7 +223,7 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             )
 
         grid["column_id"] = mesh.cell_ids
-        grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
+        _set_cell_center_coordinates(grid, mesh)
 
         logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
@@ -235,8 +236,6 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             grid["z"] = mesh.z_cells
             min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
             grid["mask"] = (h_cells > min_thickness_glacier).astype(int)
-
-        grid["lat"], grid["lon"] = np.degrees(mesh.lat_cells), np.degrees(mesh.lon_cells)
 
         if "mask" not in grid:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
@@ -255,21 +254,17 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             source_crs_epsg=config.elmer_mesh_crs_epsg,
         )
 
-        # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
-        # see mesh/README.md for the required preprocessing steps.
+        # assuming mesh.nodes contains DEM data in the z component
+        # see README.md for the required preprocessing steps.
         grid["column_id"] = mesh.cell_ids
-        grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells  # use cell centers as location for DoFs
-        grid["z"] = np.random.uniform(0, 100, size=len(grid["x"]))  # test values!
-        grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
-        grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
-        grid["lon"] = np.zeros_like(grid["x"]) + 320  # test values!
-        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
+        _set_cell_center_coordinates(grid, mesh)
+        mesh.z_cells = mesh.z_vertices[mesh.cell_to_vertex].mean(axis=1)
+        grid["z"] = mesh.z_cells
+        grid["slope_x"], grid["slope_y"] = mesh.vertex_surface_gradient()
+        grid["slope_beta"], grid["slope_gamma"] = _slope_angles(
+            np.hypot(grid["slope_x"], grid["slope_y"]), grid["slope_x"], grid["slope_y"]
+        )
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-
-        # TODO later add slope
-        # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
     elif config.grid_type in (GridInputType.MATLAB, GridInputType.NETCDF):  # Read grid and elevations from a file
         # ---------------------------------------------------------------------
@@ -320,16 +315,20 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             grid["lon_2D"] = input_data["lon"]
             grid["lat_2D"] = input_data["lat"]
 
-        # Create 1-D mask
-        grid["mask"] = mask_2D[mask_2D == 1]
+        # Columns as flat indices into the 2-D fields; in a run on several MPI ranks a contiguous block of them,
+        # the first block on rank 0. The 2-D fields stay whole: the output writer places all columns into them.
+        ind = np.flatnonzero(mask_2D == 1)
+        if config.num_partitions > 1:
+            assert 1 <= config.partition_id <= config.num_partitions, f"Invalid partition id {config.partition_id}."
+            ind = np.array_split(ind, config.num_partitions)[config.partition_id - 1]
+        grid["ind"] = (ind,)
+        grid["column_id"] = ind
 
         # Store 1-D (vectorized) grid information
-        mask_flat = mask_2D.flatten()
-        grid["x"] = grid["x_2D"].flatten()[mask_flat == 1]
-        grid["y"] = grid["y_2D"].flatten()[mask_flat == 1]
-        grid["z"] = grid["z_2D"].flatten()[mask_flat == 1]
-        grid["ind"] = np.where(mask_flat == 1)
-        grid["column_id"] = grid["ind"][0]
+        grid["mask"] = mask_2D.flat[ind]
+        grid["x"] = grid["x_2D"].flat[ind]
+        grid["y"] = grid["y_2D"].flat[ind]
+        grid["z"] = grid["z_2D"].flat[ind]
 
         # ---------------------------------------------------------------------
         # Grid slope and aspect
@@ -351,12 +350,12 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         grid["slope_beta_2D"] = np.arctan(grid["slope"])
 
         # Convert 2-D fields to 1-D vectors
-        grid["slope"] = grid["slope"].flatten()[mask_flat == 1]
-        grid["slope_x"] = grid["slope_x"].flatten()[mask_flat == 1]
-        grid["slope_y"] = grid["slope_y"].flatten()[mask_flat == 1]
-        grid["aspect"] = grid["aspect"].flatten()[mask_flat == 1]
-        grid["lat"] = grid["lat_2D"].flatten()[mask_flat == 1]
-        grid["lon"] = grid["lon_2D"].flatten()[mask_flat == 1]
+        grid["slope"] = grid["slope"].flat[ind]
+        grid["slope_x"] = grid["slope_x"].flat[ind]
+        grid["slope_y"] = grid["slope_y"].flat[ind]
+        grid["aspect"] = grid["aspect"].flat[ind]
+        grid["lat"] = grid["lat_2D"].flat[ind]
+        grid["lon"] = grid["lon_2D"].flat[ind]
 
         # four individual asserts to avoid overhead when turning on optimization
         assert np.isfinite(grid["slope"]).all(), (
@@ -381,21 +380,7 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             "which `np.gradient` spreads one cell into the mask."
         )
 
-        # Calculate slope_beta and slope_gamma (defining the tilt and orientation of a sloping surface)
-        grid["slope_beta"] = np.arctan(grid["slope"])
-        grid["slope_gamma"] = np.zeros_like(grid["slope"])
-        grid["slope_gamma"][grid["slope_y"] > 0] = np.arctan(
-            -grid["slope_x"][grid["slope_y"] > 0] / grid["slope_y"][grid["slope_y"] > 0]
-        )
-        cond = np.logical_and(grid["slope_y"] < 0, grid["slope_x"] > 0)
-        grid["slope_gamma"][cond] = -np.pi + np.arctan(-grid["slope_x"][cond] / grid["slope_y"][cond])
-        cond = np.logical_and(grid["slope_y"] < 0, grid["slope_x"] < 0)
-        grid["slope_gamma"][cond] = np.pi + np.arctan(-grid["slope_x"][cond] / grid["slope_y"][cond])
-        grid["slope_gamma"][(grid["slope_x"] == 0) & (grid["slope_y"] < 0)] = np.pi
-        grid["slope_gamma"][(grid["slope_x"] == 0) & (grid["slope_y"] == 0)] = 0
-        grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
-        grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
-        grid["slope_gamma"] = -grid["slope_gamma"]
+        grid["slope_beta"], grid["slope_gamma"] = _slope_angles(grid["slope"], grid["slope_x"], grid["slope_y"])
 
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
@@ -419,6 +404,37 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
     return grid
 
 
+def _set_cell_center_coordinates(grid: GridDict, mesh: Mesh) -> None:
+    """Use the cell centers of `mesh` as column locations: x/y in the mesh CRS, lat/lon in degrees (lon -180..180)."""
+    grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
+    grid["lat"], grid["lon"] = np.degrees(mesh.lat_cells), np.degrees(mesh.lon_cells)
+
+
+def _slope_angles(slope, slope_x, slope_y):
+    """
+    Tilt and orientation of a sloping surface.
+
+    Parameters:
+        slope: tangent of the slope angle
+        slope_x, slope_y: elevation change per metre towards east and north
+
+    Returns:
+        slope_beta, slope_gamma: slope angle and slope azimuth (radians)
+    """
+    slope_beta = np.arctan(slope)
+    slope_gamma = np.zeros_like(slope)
+    slope_gamma[slope_y > 0] = np.arctan(-slope_x[slope_y > 0] / slope_y[slope_y > 0])
+    cond = np.logical_and(slope_y < 0, slope_x > 0)
+    slope_gamma[cond] = -np.pi + np.arctan(-slope_x[cond] / slope_y[cond])
+    cond = np.logical_and(slope_y < 0, slope_x < 0)
+    slope_gamma[cond] = np.pi + np.arctan(-slope_x[cond] / slope_y[cond])
+    slope_gamma[(slope_x == 0) & (slope_y < 0)] = np.pi
+    slope_gamma[(slope_x == 0) & (slope_y == 0)] = 0
+    slope_gamma[(slope_x > 0) & (slope_y == 0)] = np.pi / 2
+    slope_gamma[(slope_x < 0) & (slope_y == 0)] = -np.pi / 2
+    return slope_beta, -slope_gamma
+
+
 def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
     """Pre-compute the shading look-up table of a MATLAB grid.
 
@@ -432,6 +448,9 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
                         `az_array` and `maxgridangle`.
     @param[in] mask_2D 2-D glacier mask, 1 for glacier cells.
     """
+    # The walk starts from every glacier cell of the 2-D grid, not only from the columns of this rank.
+    assert not grid["is_parallel_run"], "The shading look-up table cannot be computed in a run on several MPI ranks."
+
     logger.warning("Using EBFM's internal shading method. Should only be used on regular grids!")
 
     grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)

@@ -134,7 +134,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         for component in self._coupled_components.values():
             component.set_ebfm_time(time)
-            component.validate_grid(grid)
+            component.prepare_grid(grid)
             field_definitions |= component.get_field_definitions()
 
         self._setup(grid, field_definitions)
