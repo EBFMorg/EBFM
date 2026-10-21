@@ -219,6 +219,8 @@ Usage example for partitioned mesh:
 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
 ```
 
+Without `--use-part`, each MPI rank computes one partition, rank i the partition i + 1 (e.g. `mpirun -np 128 ebfm ... --is-partitioned-elmer-mesh`); a partitioned mesh is the only grid EBFM runs on several MPI ranks.
+
 Note: The partitioned mesh is not included in this repository.
 
 ### Getting the example data
