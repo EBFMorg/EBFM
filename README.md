@@ -296,6 +296,9 @@ mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
 * MATLAB and NetCDF grids and Elmer meshes are split into contiguous blocks of
   columns, the first block on rank 0. A partitioned Elmer mesh gives one
   partition to each rank (see above).
+* With a non-partitioned Elmer mesh, every rank reads the whole mesh, and EBFM
+  warns about it. For large meshes, use a partitioned mesh (requires
+  `--netcdf-dem-mesh`).
 * Rank 0 writes the output file and `--dump-reference` for all ranks. They are
   identical to those of a run on a single rank.
 * Not supported on several ranks, and rejected with an error: shading,

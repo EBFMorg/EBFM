@@ -92,7 +92,7 @@ class GridConfig:
             self.num_partitions = num_ranks
             logger.info(f"{self.partition_id=}")
             logger.info(f"{self.num_partitions=}")
-            logger.warning("EBFM will try to partition the grid internally. This can lead to poor performance.")
+            logger.info("EBFM will try to partition the grid internally. This can lead to poor performance.")
         else:
             logger.info("Using non-partitioned grid...")
 

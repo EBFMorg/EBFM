@@ -599,3 +599,23 @@ def validate_partition_count(args: Namespace, grid_config, comm, logger) -> None
         _cli_error(f"{message} Pass --allow-partition-mismatch to run anyway.")
     if comm.rank == 0:
         logger.warning(message)
+
+
+def warn_non_partitioned_mesh_parallel(grid_config, comm, logger) -> None:
+    """Warn that every MPI rank reads the whole mesh when a non-partitioned Elmer mesh is split over several ranks.
+
+    Must be called on every rank of comm. Warns on rank 0 only.
+
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
+    @param[in] logger      logger for the warning
+    """
+    is_elmer_mesh = grid_config.grid_type in (GridInputType.ELMER, GridInputType.CUSTOM, GridInputType.ELMERXIOS)
+    if not is_elmer_mesh or grid_config.is_partitioned or comm.size == 1 or comm.rank != 0:
+        return
+
+    logger.warning(
+        f"EBFM runs on {comm.size} MPI ranks with a non-partitioned Elmer mesh, so every rank reads the whole mesh. "
+        "For large meshes, use a mesh with one partition per rank (--is-partitioned-elmer-mesh, which requires "
+        "--netcdf-dem-mesh)."
+    )
