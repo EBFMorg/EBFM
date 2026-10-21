@@ -6,13 +6,15 @@
 
 import unittest
 import io
+import os
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from ebfm.core.cli import (
     CliDefaults,
     extract_active_coupling_features,
+    mpi_launcher_size,
     parse_cli_args,
     validate_forcing_parallel_compat,
     validate_grid_parallel_compat,
@@ -216,6 +218,32 @@ class TestGpuOptions(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             _parse("--gpu-vendor", "nvidia")
         self.assertEqual(ctx.exception.code, 2)
+
+
+class TestMpiLauncherWithoutMpi4py(unittest.TestCase):
+    """Started by an MPI launcher on several processes, EBFM needs mpi4py; otherwise every process runs serially."""
+
+    def _parse(self, environment: dict, mpi_available: bool):
+        with patch.dict(os.environ), patch("ebfm.core.cli.mpi_available", mpi_available):
+            for variable in ("OMPI_COMM_WORLD_SIZE", "PMI_SIZE"):
+                os.environ.pop(variable, None)
+            os.environ.update(environment)
+            self.assertEqual(mpi_launcher_size(), int(next(iter(environment.values()), 1)))
+            return parse_cli_args(_MATLAB)
+
+    def test_several_processes_without_mpi4py_rejected(self):
+        for environment in ({"OMPI_COMM_WORLD_SIZE": "4"}, {"PMI_SIZE": "2"}):
+            with self.subTest(environment=environment), self.assertRaises(SystemExit) as ctx:
+                self._parse(environment, mpi_available=False)
+            self.assertEqual(ctx.exception.code, 2)
+
+    def test_single_process_without_mpi4py_ok(self):
+        for environment in ({}, {"OMPI_COMM_WORLD_SIZE": "1"}):
+            with self.subTest(environment=environment):
+                self._parse(environment, mpi_available=False)  # must not raise
+
+    def test_several_processes_with_mpi4py_ok(self):
+        self._parse({"OMPI_COMM_WORLD_SIZE": "4"}, mpi_available=True)  # must not raise
 
 
 class TestLocalGroupLabel(unittest.TestCase):

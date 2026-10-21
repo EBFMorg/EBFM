@@ -17,6 +17,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * Add safeguards for illegal MPI runs. https://github.com/EBFMorg/EBFM/pull/201
     * EBFM on several MPI ranks now stops at startup with an error unless it runs on a partitioned Elmer mesh (`--is-partitioned-elmer-mesh`), one partition per rank. With `--matlab-mesh`, `--netcdf-mesh`, or `--elmer-mesh` without `--is-partitioned-elmer-mesh`, every rank previously computed the whole grid, and the run failed later, e.g. while the ranks wrote the same output file.
     * EBFM on several MPI ranks now stops at startup with an error if forcing files (`--forcing-dir`) or restart files (`--restart-dir`, `--restart-init`) are used, also on a partitioned Elmer mesh. On a partitioned mesh, `--forcing-dir` previously failed when reading the first forcing file, `--restart-init` failed at the shape check of the restart file, and `--restart-dir` finished without writing a restart file, with a warning at the end. EBFM on a single rank, e.g. as one component of a coupled MPMD run, is unaffected.
+    * EBFM started by an MPI launcher on several processes (e.g. `mpirun -np 4 ebfm ...`) without mpi4py now stops with an error asking to install `ebfm[mpi]`. Every process previously ran the whole model on its own, and the processes then failed while writing the same output file. Detected via the launcher's `OMPI_COMM_WORLD_SIZE` (Open MPI) or `PMI_SIZE` (MPICH, Intel MPI, `srun --mpi=pmi2`).
 
 # v0.8.0
 
