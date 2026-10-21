@@ -19,6 +19,12 @@ SPDX-License-Identifier: CC-BY-4.0
     * EBFM on several MPI ranks now stops at startup with an error if `--use-part` is given. Every rank previously computed the same partition.
     * EBFM on several MPI ranks now stops at startup with an error if forcing files (`--forcing-dir`) or restart files (`--restart-dir`, `--restart-init`) are used, also on a partitioned Elmer mesh. On a partitioned mesh, `--forcing-dir` previously failed when reading the first forcing file, `--restart-init` failed at the shape check of the restart file, and `--restart-dir` finished without writing a restart file, with a warning at the end. EBFM on a single rank, e.g. as one component of a coupled MPMD run, is unaffected.
     * EBFM started by an MPI launcher on several processes (e.g. `mpirun -np 4 ebfm ...`) without mpi4py now stops with an error asking to install `ebfm[mpi]`. Every process previously ran the whole model on its own, and the processes then failed while writing the same output file. Detected via the launcher's `OMPI_COMM_WORLD_SIZE` (Open MPI) or `PMI_SIZE` (MPICH, Intel MPI, `srun --mpi=pmi2`).
+* The results of a run on a partitioned Elmer mesh (`--is-partitioned-elmer-mesh`) on several MPI ranks no longer depend on the partitioning. https://github.com/EBFMorg/EBFM/pull/203
+    * The mean latitude that selects the water vapour transmissivity of the incoming shortwave radiation is now computed over the whole domain. Each rank previously used the mean latitude of its own partition.
+    * The lapse rate of potential temperature, used by the sensible and latent heat fluxes, is now fitted over the whole domain. Each rank previously fitted it over its own partition.
+    * Without `--random-seed`, rank 0 now draws the random seed and shares it with all ranks, so the random forcing is the same over the whole domain. Each rank previously drew its own.
+    * `--dump-reference` now holds the columns of all ranks, ordered by Elmer element id. Every rank previously wrote its own partition to the same file.
+    * `--print-diagnostics` now reports the column count and `smb` statistics of the whole domain, logged by rank 0. Each rank previously reported its own partition.
 
 # v0.8.0
 

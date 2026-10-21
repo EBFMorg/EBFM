@@ -114,6 +114,29 @@ def validate_grid(grid: GridDict) -> None:
     assert len(np.unique(grid["column_id"])) == gpsum, "Column ids must be unique."
 
 
+def domain_mean(values, comm) -> float:
+    """
+    Mean of a per-column field over the columns of all ranks of comm.
+
+    Collective over comm. With a single rank it is np.mean(values). With several ranks it is the sum of the local
+    sums divided by the number of columns, which adds the values in a different order, so it can differ from the
+    serial mean in the last bits.
+
+    Parameters:
+        values: this rank's values of the field
+        comm: EBFM's MPI communicator
+
+    Returns:
+        float: the mean, the same on every rank
+    """
+    if comm.size == 1:
+        return np.mean(values)
+
+    # MPI has no mean reduction; sum and count are reduced together, element-wise
+    total, count = comm.allreduce(np.array([np.sum(values), len(values)], dtype=np.float64))
+    return total / count
+
+
 class ShadingMethod(Enum):
     """Available shading algorithms for topographic shading.
 

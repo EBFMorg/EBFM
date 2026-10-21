@@ -18,6 +18,7 @@ from ebfm.core import INIT
 from ebfm.core.INIT import init_config, init_grid, init_initial_conditions
 from ebfm.core.FINAL_create_restart_file import main as write_restart_file
 from ebfm.core.cli import parse_cli_args
+from ebfm.core.comm import defaultComm
 from ebfm.core.config import ColumnDiscretizationConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
@@ -352,7 +353,7 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), shading_flag])
         grid_config = GridConfig(args)
         grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config)
+        return init_grid(grid, io, grid_config, defaultComm)
 
     def test_shading_disabled_skips_the_lookup_table(self):
         grid = self._init_grid("--no-shading")
