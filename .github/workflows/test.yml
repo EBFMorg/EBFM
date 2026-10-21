@@ -71,6 +71,9 @@ jobs:
         # single-rank and implementation-agnostic, so use the one that works out of the box.
         mpi: openmpi
 
+    - name: Keep Open MPI's TCP traffic on the loopback interface
+      run: echo "btl_tcp_if_include=lo" >> ~/.openmpi/mca-params.conf
+
     - name: Install tox
       run: |
         python -m pip install --upgrade pip
