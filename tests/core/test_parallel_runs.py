@@ -22,6 +22,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MATLAB_MESH = REPO_ROOT / "examples" / "dem_and_mask.mat"
 ELMER_MESH = REPO_ROOT / "tests" / "data" / "elmer_mesh" / "MESH"
+XIOS_DEM = ELMER_MESH.parent / "xios_dem.nc"
 TIMEOUT = 300
 
 requires_mpirun = pytest.mark.skipif(
@@ -37,6 +38,7 @@ _ELMER = ["--elmer-mesh", str(ELMER_MESH), "--elmer-mesh-crs-epsg", "3413"]
 CASES = {
     "matlab": ["--matlab-mesh", str(MATLAB_MESH), "--no-shading", *_TIME],
     "elmer": [*_ELMER, *_TIME],
+    "elmerxios": [*_ELMER, "--netcdf-dem-mesh-unstructured", str(XIOS_DEM), *_TIME],
     "fake-coupling": [
         *_ELMER,
         "--couple-to-elmer-ice",
@@ -92,6 +94,7 @@ def _assert_same_results(serial: Path, parallel: Path) -> None:
         ("matlab", 3),
         ("matlab", 4),
         ("elmer", 3),
+        ("elmerxios", 3),
         ("fake-coupling", 2),
     ],
     ids=str,
