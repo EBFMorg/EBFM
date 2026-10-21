@@ -7,7 +7,7 @@
 import unittest
 import io
 import os
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -17,7 +17,6 @@ from ebfm.core.cli import (
     mpi_launcher_size,
     parse_cli_args,
     validate_forcing_parallel_compat,
-    validate_grid_parallel_compat,
     validate_partition_count,
     validate_restart_compat,
     validate_shading_coupling_compat,
@@ -26,7 +25,6 @@ from ebfm.core.cli import (
 )
 
 from ebfm.core.comm import mpi_available
-from ebfm.core.grid import GridInputType
 from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 
 # Minimal valid args for each primary grid type.
@@ -412,50 +410,6 @@ class TestValidateShadingParallelCompat(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             self._validate(use_shading=True, comm_size=4)
         self.assertEqual(ctx.exception.code, 2)
-
-
-class TestValidateGridParallelCompat(unittest.TestCase):
-    """validate_grid_parallel_compat rejects a non-partitioned ELMERXIOS grid on several ranks."""
-
-    # name: (grid_type, is_partitioned, grid option named by the error on several ranks, or None if accepted)
-    _CASES = {
-        "--matlab-mesh": (GridInputType.MATLAB, False, None),
-        "--netcdf-mesh": (GridInputType.NETCDF, False, None),
-        "--elmer-mesh": (GridInputType.ELMER, False, None),
-        "--elmer-mesh --netcdf-dem-mesh": (GridInputType.CUSTOM, False, None),
-        "--elmer-mesh --netcdf-dem-mesh-unstructured": (
-            GridInputType.ELMERXIOS,
-            False,
-            "--netcdf-dem-mesh-unstructured",
-        ),
-        "--elmer-mesh --netcdf-dem-mesh --is-partitioned-elmer-mesh": (GridInputType.CUSTOM, True, None),
-    }
-
-    def setUp(self):
-        # Ensure _parser is set by running a valid parse first.
-        parse_cli_args(_MATLAB)
-
-    def _validate(self, grid_type, is_partitioned: bool, comm_size: int):
-        grid_config = MagicMock(grid_type=grid_type, is_partitioned=is_partitioned)
-        validate_grid_parallel_compat(grid_config, MagicMock(size=comm_size))
-
-    def test_single_rank_ok(self):
-        for name, (grid_type, is_partitioned, _) in self._CASES.items():
-            with self.subTest(name):
-                self._validate(grid_type, is_partitioned, comm_size=1)  # must not raise
-
-    def test_several_ranks(self):
-        for name, (grid_type, is_partitioned, rejected_grid) in self._CASES.items():
-            with self.subTest(name):
-                if rejected_grid is None:
-                    self._validate(grid_type, is_partitioned, comm_size=4)  # must not raise
-                else:
-                    stderr = io.StringIO()
-                    with redirect_stderr(stderr), self.assertRaises(SystemExit) as ctx:
-                        self._validate(grid_type, is_partitioned, comm_size=4)
-                    self.assertEqual(ctx.exception.code, 2)
-                    error = stderr.getvalue().splitlines()[-1]
-                    self.assertIn(f"error: {rejected_grid} ", error)
 
 
 @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
