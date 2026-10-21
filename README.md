@@ -225,7 +225,7 @@ On several MPI ranks, `--use-part` is not allowed: rank i computes the partition
 mpirun -n 4 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --elmer-mesh-crs-epsg 3413
 ```
 
-A partitioned mesh is the only grid EBFM runs on several MPI ranks.
+Besides a partitioned mesh, only a MATLAB grid runs on several MPI ranks (see [Running on several MPI ranks](#running-on-several-mpi-ranks)).
 
 Note: The partitioned mesh is not included in this repository.
 
@@ -285,6 +285,21 @@ ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart --re
 ```
 
 Note that it is necessary to provide a `--start-time` consistent with the given restart file.
+
+### Running on several MPI ranks
+
+EBFM splits a MATLAB grid over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
+
+```sh
+mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
+```
+
+* Each rank computes a contiguous block of the columns, the first block on rank 0.
+* Rank 0 writes the output file and `--dump-reference` for all ranks. They are
+  identical to those of a run on a single rank.
+* Not supported on several ranks, and rejected with an error: shading,
+  `--forcing-dir`, `--restart-dir`/`--restart-init`, and grids other than a
+  MATLAB grid or a partitioned Elmer mesh.
 
 ### Performance and Profiling Runs
 

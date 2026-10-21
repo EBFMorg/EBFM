@@ -552,7 +552,9 @@ def validate_shading_parallel_compat(grid_config, comm) -> None:
 
 
 def validate_grid_parallel_compat(grid_config, comm) -> None:
-    """Check that a run on several MPI ranks uses a partitioned Elmer mesh, of which each rank computes one partition.
+    """Check that a run on several MPI ranks uses a grid that runs there.
+
+    EBFM splits a MATLAB grid over the ranks; of a partitioned Elmer mesh, each rank computes one partition.
 
     Must be called on every rank of comm.
 
@@ -560,11 +562,14 @@ def validate_grid_parallel_compat(grid_config, comm) -> None:
     @param[in] comm        EBFM's MPI communicator
     """
     if comm.size == 1:
+        # Every grid runs on a single rank
         return
 
     if grid_config.grid_type is GridInputType.MATLAB:
-        rejected_grid = "--matlab-mesh"
-    elif grid_config.grid_type is GridInputType.NETCDF:
+        # EBFM splits the columns over the ranks
+        return
+
+    if grid_config.grid_type is GridInputType.NETCDF:
         rejected_grid = "--netcdf-mesh"
     elif not grid_config.is_partitioned:
         rejected_grid = "--elmer-mesh without --is-partitioned-elmer-mesh"
@@ -573,7 +578,7 @@ def validate_grid_parallel_compat(grid_config, comm) -> None:
 
     _cli_error(
         f"{rejected_grid} is not supported for runs on several MPI ranks ({comm.size} ranks). "
-        "Only a partitioned Elmer mesh (--is-partitioned-elmer-mesh) runs on several ranks, one partition per rank. "
+        "Only --matlab-mesh and a partitioned Elmer mesh (--is-partitioned-elmer-mesh) run on several ranks. "
         "Please run on a single rank."
     )
 
