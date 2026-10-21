@@ -346,7 +346,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         type=int,
         default=argparse.SUPPRESS,  # To not print (default: ...) in --help
         help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. "
-        "If not provided, the MPI rank + 1 will be used as partition ID.",
+        "If not provided, the MPI rank + 1 will be used as partition ID. Only allowed in runs on a single MPI rank.",
     )
 
     logger_group = parser.add_argument_group("logging configuration")
@@ -554,6 +554,21 @@ def validate_grid_parallel_compat(grid_config, comm) -> None:
         "Only a partitioned Elmer mesh (--is-partitioned-elmer-mesh) runs on several ranks, one partition per rank. "
         "Please run on a single rank."
     )
+
+
+def validate_use_part_parallel_compat(args: Namespace, comm) -> None:
+    """Check that --use-part is not given in a run on several MPI ranks, where every rank would compute it.
+
+    Must be called on every rank of comm, before args.use_part defaults to the rank's partition.
+
+    @param[in] args parsed CLI arguments
+    @param[in] comm EBFM's MPI communicator
+    """
+    if hasattr(args, "use_part") and comm.size > 1:
+        _cli_error(
+            f"--use-part is not supported for runs on several MPI ranks ({comm.size} ranks), since every rank would "
+            f"compute partition {args.use_part}. Please leave out --use-part: rank i then computes partition i + 1."
+        )
 
 
 def validate_forcing_parallel_compat(args: Namespace, comm) -> None:

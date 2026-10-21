@@ -20,6 +20,7 @@ from ebfm.core.cli import (
     validate_grid_parallel_compat,
     validate_restart_parallel_compat,
     validate_shading_coupling_compat,
+    validate_use_part_parallel_compat,
 )
 
 from ebfm.core.comm import mpi_available
@@ -420,6 +421,30 @@ class TestValidateGridParallelCompat(unittest.TestCase):
                     error = stderr.getvalue().splitlines()[-1]
                     self.assertIn(f"error: {rejected_grid} ", error)
                     self.assertIn("Only a partitioned Elmer mesh (--is-partitioned-elmer-mesh)", error)
+
+
+@unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
+class TestValidateUsePartParallelCompat(unittest.TestCase):
+    """validate_use_part_parallel_compat raises a CLI error for --use-part in a run on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, use_part, comm_size: int):
+        args = _parse(*(["--use-part", use_part] if use_part else []), base=_PARTITIONED_ELMER)
+        validate_use_part_parallel_compat(args, MagicMock(size=comm_size))
+
+    def test_use_part_on_single_rank_ok(self):
+        self._validate(use_part="42", comm_size=1)  # must not raise
+
+    def test_no_use_part_on_several_ranks_ok(self):
+        self._validate(use_part=None, comm_size=4)  # must not raise
+
+    def test_use_part_on_several_ranks_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(use_part="42", comm_size=4)
+        self.assertEqual(ctx.exception.code, 2)
 
 
 class TestValidateForcingParallelCompat(unittest.TestCase):
