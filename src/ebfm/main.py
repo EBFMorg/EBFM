@@ -229,7 +229,7 @@ def _main_impl():
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config, ebfm_comm)
 
-    # Rank 0 collects the columns of all ranks, e.g. for --dump-reference
+    # Rank 0 collects the columns of all ranks, e.g. to write them to the output file or for --dump-reference
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
@@ -386,7 +386,7 @@ def _main_impl():
         # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
         # TODO: partitioned output should be supported in a dedicated parallel-safe writer.
         if not grid["is_partitioned"]:
-            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
+            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
         else:
             logger.warning("Skipping writing output to file for partitioned runs.")
 
