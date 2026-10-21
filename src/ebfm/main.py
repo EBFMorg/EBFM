@@ -32,6 +32,7 @@ from ebfm.core.cli import (
     validate_restart_compat,
     validate_shading_parallel_compat,
     validate_output_frequency_time_step_compat,
+    warn_non_partitioned_mesh_parallel,
 )
 
 import ebfm.coupling
@@ -247,6 +248,7 @@ def _main_impl():
 
     # Each rank computes exactly one partition of a partitioned mesh
     validate_partition_count(args, grid_config, ebfm_comm, logger)
+    warn_non_partitioned_mesh_parallel(grid_config, ebfm_comm, logger)
 
     logger.debug("Successfully completed consistency checks.")
 
