@@ -27,6 +27,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * `--netcdf-dem-mesh-unstructured` now works on several MPI ranks. EBFM looks up the values of the XIOS file by Elmer node id (the value of node id i at position i - 1), so each rank reads the values of its own nodes. A file without values for all node ids of the mesh is rejected with an error. https://github.com/EBFMorg/EBFM/pull/197
 * Restart files (`--restart-dir`, `--restart-init`) with a partitioned Elmer mesh now stop the run with an error, also on a single rank. Such a run previously skipped writing the restart file with a warning at its end. https://github.com/EBFMorg/EBFM/pull/197
 * In a run on several MPI ranks, only rank 0 logs to the console at `--log-level-console`; the other ranks only log warnings and errors there, instead of repeating every message. Log files (`--log-file`, one per rank) are unchanged. The current model time is logged instead of printed, and `--print-diagnostics` reports the column count and `smb` statistics of the whole domain instead of each rank's own. https://github.com/EBFMorg/EBFM/pull/197
+* EBFM started by an MPI launcher on several processes (e.g. `mpirun -np 4 ebfm ...`) without mpi4py now stops with an error asking to install `ebfm[mpi]`. Every process previously ran the whole model on its own, and the processes then failed while writing the same output file. Detected via the launcher's `OMPI_COMM_WORLD_SIZE` (Open MPI) or `PMI_SIZE` (MPICH, Intel MPI, `srun --mpi=pmi2`). https://github.com/EBFMorg/EBFM/pull/197
 
 # v0.8.0
 

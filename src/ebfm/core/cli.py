@@ -12,6 +12,7 @@ to enforce internal invariants independently of the CLI layer.
 """
 
 import argparse
+import os
 from argparse import ArgumentParser, Namespace
 from datetime import datetime
 from enum import Enum
@@ -20,6 +21,7 @@ from pathlib import Path
 import isodate
 
 import ebfm.core
+import ebfm.core.comm
 from ebfm.core import INIT
 from ebfm.core.comm import mpi_available
 from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ, iso8601
@@ -36,6 +38,19 @@ def _cli_error(msg: str) -> None:
     """Call parser.error() on the module-level parser. Must be called after parse_cli_args()."""
     assert _parser is not None, "_cli_error() called before parse_cli_args()"
     _parser.error(msg)
+
+
+def mpi_launcher_size() -> int:
+    """Number of processes an MPI launcher started, read from the environment it sets; 1 if none is found.
+
+    Covers Open MPI's mpirun (OMPI_COMM_WORLD_SIZE) and PMI-based launchers such as MPICH's mpiexec, Intel MPI and
+    srun --mpi=pmi2 (PMI_SIZE). Works without mpi4py.
+    """
+    for variable in ("OMPI_COMM_WORLD_SIZE", "PMI_SIZE"):
+        value = os.environ.get(variable, "")
+        if value.isdigit():
+            return int(value)
+    return 1
 
 
 class CliDefaults(Enum):
@@ -486,6 +501,14 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     active_mpi_opts = [opt for opt, active in _mpi_opts.items() if active]
     if active_mpi_opts and not mpi_available:
         parser.error(f"{', '.join(active_mpi_opts)} require MPI. Install via: pip install 'ebfm[mpi]'")
+
+    n_launched = mpi_launcher_size()
+    if n_launched > 1 and not mpi_available:
+        parser.error(
+            f"EBFM was started on {n_launched} MPI processes, but mpi4py cannot be imported "
+            f"({getattr(ebfm.core.comm, 'mpi_import_error', 'not installed')}), so every process would run the whole "
+            "model on its own. Install via: pip install 'ebfm[mpi]'"
+        )
 
     return args
 
