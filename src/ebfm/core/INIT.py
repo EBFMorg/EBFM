@@ -198,6 +198,7 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         config (GridConfig): Grid configuration object containing settings for grid initialization.
         comm: EBFM's MPI communicator, whose ranks hold the columns of the domain.
     """
+    grid["is_parallel_run"] = comm.size > 1
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
     grid["has_shading"] = config.use_shading
@@ -432,6 +433,9 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
                         `az_array` and `maxgridangle`.
     @param[in] mask_2D 2-D glacier mask, 1 for glacier cells.
     """
+    # The walk starts from every glacier cell of the 2-D grid, not only from the columns of this rank.
+    assert not grid["is_parallel_run"], "The shading look-up table cannot be computed in a run on several MPI ranks."
+
     logger.warning("Using EBFM's internal shading method. Should only be used on regular grids!")
 
     grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
