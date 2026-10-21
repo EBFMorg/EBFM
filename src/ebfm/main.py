@@ -25,6 +25,9 @@ from ebfm.core.cli import (
     parse_cli_args,
     resolve_numba_threads,
     validate_shading_coupling_compat,
+    validate_grid_parallel_compat,
+    validate_forcing_parallel_compat,
+    validate_restart_parallel_compat,
 )
 
 import ebfm.coupling
@@ -171,6 +174,15 @@ def _main_impl():
     # Ensure shading routine is only used in uncoupled runs.
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.
     validate_shading_coupling_compat(grid_config, coupling_config)
+
+    # Ensure a run on several ranks uses a partitioned mesh.
+    validate_grid_parallel_compat(grid_config, ebfm_comm)
+
+    # Ensure forcing files are only read in runs on a single rank.
+    validate_forcing_parallel_compat(args, ebfm_comm)
+
+    # Ensure restart files are only read and written in runs on a single rank.
+    validate_restart_parallel_compat(args, ebfm_comm)
 
     logger.debug("Successfully completed consistency checks.")
 

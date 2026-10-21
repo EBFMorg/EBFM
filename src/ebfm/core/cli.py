@@ -504,3 +504,60 @@ def validate_shading_coupling_compat(grid_config, coupling_config) -> None:
             "Shading routine not implemented for coupled runs. "
             "Please deactivate shading via --no-shading or deactivate coupling."
         )
+
+
+def validate_grid_parallel_compat(grid_config, comm) -> None:
+    """Check that a run on several MPI ranks uses a partitioned Elmer mesh, of which each rank computes one partition.
+
+    Must be called on every rank of comm.
+
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
+    """
+    if comm.size == 1:
+        return
+
+    if grid_config.grid_type is GridInputType.MATLAB:
+        rejected_grid = "--matlab-mesh"
+    elif grid_config.grid_type is GridInputType.NETCDF:
+        rejected_grid = "--netcdf-mesh"
+    elif not grid_config.is_partitioned:
+        rejected_grid = "--elmer-mesh without --is-partitioned-elmer-mesh"
+    else:
+        return
+
+    _cli_error(
+        f"{rejected_grid} is not supported for runs on several MPI ranks ({comm.size} ranks). "
+        "Only a partitioned Elmer mesh (--is-partitioned-elmer-mesh) runs on several ranks, one partition per rank. "
+        "Please run on a single rank."
+    )
+
+
+def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
+    """Check that no forcing files are read in a run on several MPI ranks.
+
+    Must be called on every rank of comm.
+
+    @param[in] args parsed CLI arguments
+    @param[in] comm EBFM's MPI communicator
+    """
+    if args.forcing_dir is not None and comm.size > 1:
+        _cli_error(
+            f"Forcing files (--forcing-dir) are not supported for runs on several MPI ranks ({comm.size} ranks). "
+            "Please run on a single rank."
+        )
+
+
+def validate_restart_parallel_compat(args: Namespace, comm) -> None:
+    """Check that no restart files are read or written in a run on several MPI ranks.
+
+    Must be called on every rank of comm.
+
+    @param[in] args parsed CLI arguments
+    @param[in] comm EBFM's MPI communicator
+    """
+    if (args.restart_dir is not None or args.restart_init) and comm.size > 1:
+        _cli_error(
+            f"Restart files (--restart-dir, --restart-init) are not supported for runs on several MPI ranks "
+            f"({comm.size} ranks). Please run on a single rank."
+        )

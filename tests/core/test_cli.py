@@ -6,7 +6,7 @@
 
 import unittest
 import io
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -14,16 +14,21 @@ from ebfm.core.cli import (
     CliDefaults,
     extract_active_coupling_features,
     parse_cli_args,
+    validate_forcing_parallel_compat,
+    validate_grid_parallel_compat,
+    validate_restart_parallel_compat,
     validate_shading_coupling_compat,
 )
 
 from ebfm.core.comm import mpi_available
+from ebfm.core.grid import GridInputType
 from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 
 # Minimal valid args for each primary grid type.
 _MATLAB = ["--matlab-mesh", "mesh.mat"]
 _ELMER = ["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413"]
 _CARRA2 = ["--netcdf-mesh", "mesh.nc"]
+_PARTITIONED_ELMER = _ELMER + ["--netcdf-dem-mesh", "mesh.nc", "--is-partitioned-elmer-mesh"]
 
 
 def _parse(*extra: str, base: list[str] = _MATLAB):
@@ -346,6 +351,109 @@ class TestValidateShadingCouplingCompat(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             validate_shading_coupling_compat(grid, coupling)
         self.assertEqual(ctx.exception.code, 2)
+
+
+class TestValidateGridParallelCompat(unittest.TestCase):
+    """validate_grid_parallel_compat raises a CLI error on several ranks for every grid but a partitioned Elmer mesh."""
+
+    # name: (grid_type, is_partitioned, grid option named by the error on several ranks, or None if accepted)
+    _CASES = {
+        "--matlab-mesh": (GridInputType.MATLAB, False, "--matlab-mesh"),
+        "--netcdf-mesh": (GridInputType.NETCDF, False, "--netcdf-mesh"),
+        "--elmer-mesh": (GridInputType.ELMER, False, "--elmer-mesh"),
+        "--elmer-mesh --netcdf-dem-mesh": (GridInputType.CUSTOM, False, "--elmer-mesh"),
+        "--elmer-mesh --netcdf-dem-mesh-unstructured": (GridInputType.ELMERXIOS, False, "--elmer-mesh"),
+        "--elmer-mesh --netcdf-dem-mesh --is-partitioned-elmer-mesh": (GridInputType.CUSTOM, True, None),
+    }
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, grid_type, is_partitioned: bool, comm_size: int):
+        grid_config = MagicMock(grid_type=grid_type, is_partitioned=is_partitioned)
+        validate_grid_parallel_compat(grid_config, MagicMock(size=comm_size))
+
+    def test_single_rank_ok(self):
+        for name, (grid_type, is_partitioned, _) in self._CASES.items():
+            with self.subTest(name):
+                self._validate(grid_type, is_partitioned, comm_size=1)  # must not raise
+
+    def test_several_ranks(self):
+        for name, (grid_type, is_partitioned, rejected_grid) in self._CASES.items():
+            with self.subTest(name):
+                if rejected_grid is None:
+                    self._validate(grid_type, is_partitioned, comm_size=4)  # must not raise
+                else:
+                    stderr = io.StringIO()
+                    with redirect_stderr(stderr), self.assertRaises(SystemExit) as ctx:
+                        self._validate(grid_type, is_partitioned, comm_size=4)
+                    self.assertEqual(ctx.exception.code, 2)
+                    error = stderr.getvalue().splitlines()[-1]
+                    self.assertIn(f"error: {rejected_grid} ", error)
+                    self.assertIn("Only a partitioned Elmer mesh (--is-partitioned-elmer-mesh)", error)
+
+
+class TestValidateForcingParallelCompat(unittest.TestCase):
+    """validate_forcing_parallel_compat raises a CLI error when forcing files are read in a run on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, forcing_dir, comm_size: int):
+        args = _parse(*(["--forcing-dir", forcing_dir] if forcing_dir else []))
+        validate_forcing_parallel_compat(args, MagicMock(size=comm_size))
+
+    def test_forcing_on_single_rank_ok(self):
+        self._validate(forcing_dir="forcing/", comm_size=1)  # must not raise
+
+    def test_no_forcing_on_several_ranks_ok(self):
+        self._validate(forcing_dir=None, comm_size=4)  # must not raise
+
+    def test_forcing_on_several_ranks_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(forcing_dir="forcing/", comm_size=4)
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class TestValidateRestartParallelCompat(unittest.TestCase):
+    """validate_restart_parallel_compat raises a CLI error when restart files are used in a run on several ranks."""
+
+    _RESTART_ARGS = {
+        "--restart-dir": ["--restart-dir", "restart/"],
+        "--restart-init": ["--restart-init"],
+        "--restart-dir --restart-init": ["--restart-dir", "restart/", "--restart-init"],
+    }
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, restart_args, comm_size: int, base: list[str] = _MATLAB):
+        validate_restart_parallel_compat(_parse(*restart_args, base=base), MagicMock(size=comm_size))
+
+    def test_restart_on_single_rank_ok(self):
+        for name, restart_args in self._RESTART_ARGS.items():
+            with self.subTest(name):
+                self._validate(restart_args, comm_size=1)  # must not raise
+
+    def test_no_restart_on_several_ranks_ok(self):
+        self._validate([], comm_size=4)  # must not raise
+
+    def test_restart_on_several_ranks_rejected(self):
+        for name, restart_args in self._RESTART_ARGS.items():
+            with self.subTest(name), self.assertRaises(SystemExit) as ctx:
+                self._validate(restart_args, comm_size=4)
+            self.assertEqual(ctx.exception.code, 2)
+
+    @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
+    def test_restart_on_several_ranks_rejected_for_partitioned_mesh(self):
+        """A partitioned mesh runs on several ranks, but without restart files."""
+        for name, restart_args in self._RESTART_ARGS.items():
+            with self.subTest(name), self.assertRaises(SystemExit) as ctx:
+                self._validate(restart_args, comm_size=4, base=_PARTITIONED_ELMER)
+            self.assertEqual(ctx.exception.code, 2)
 
 
 class TestCliCalendarArgument(unittest.TestCase):
