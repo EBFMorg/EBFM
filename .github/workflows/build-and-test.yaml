@@ -11,6 +11,7 @@ jobs:
   build-and-test:
     name: Build and test (${{ matrix.variant }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
@@ -38,6 +39,9 @@ jobs:
           # several ranks report the same rank number -- which is exactly what the handshake step
           # below checks.
           mpi: openmpi
+      - name: Keep Open MPI's TCP traffic on the loopback interface
+        if: ${{ matrix.run_mpi }}
+        run: echo "btl_tcp_if_include=lo" >> ~/.openmpi/mca-params.conf
       - name: Create virtual environment and install EBFM
         run: |
           python3 -m venv .venv
@@ -65,6 +69,7 @@ jobs:
         run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon-atmo --couple-to-icon-land --fake-coupling --no-shading
       - name: Run example with MPI handshake
         if: ${{ matrix.run_mpi }}
+        timeout-minutes: 5
         run: |
           # Run dummy script first; dummy on rank 0, EBFM on rank 1
           mpirun -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py first : \
