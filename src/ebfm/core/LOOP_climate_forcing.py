@@ -7,6 +7,7 @@ from isodate.duration import Duration
 from netCDF4 import Dataset
 import numpy as np
 
+from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.config import ForcingConfig, ForcingType
 
 from .LOOP_general_functions import is_first_time_step
@@ -17,7 +18,7 @@ from ebfm.core.constants import WATER_DENSITY
 logger = logging.getLogger(__name__)
 
 
-def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
+def main(C, grid, IN, t, time, OUT, config: ForcingConfig, gather: ColumnGather) -> tuple[dict, dict]:
     """
     Meteorological forcing: Specify or read meteorological input and derive
     associated meteorological fields.
@@ -29,7 +30,8 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
         t (int): Current time step.
         time (dict): Time-related variables.
         OUT (dict): Output variables from the model.
-        cpl (Coupler): Coupling object for data exchange with external models.
+        config (ForcingConfig): Meteorological forcing configuration.
+        gather (ColumnGather): Gathers the columns of all MPI ranks, for the lapse rate of the whole domain.
 
     Returns:
         Updated IN and OUT dictionaries. Fields include:
@@ -90,12 +92,7 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig) -> tuple[dict, dict]:
 
     # Potential temperature and lapse rate
     IN["Theta"] = IN["T"] * (C["Pref"] / IN["Pres"]) ** (C["Rd"] / C["Cp"])
-    all_same = np.all(grid["z"] == grid["z"][0])
-    if not all_same:
-        poly_coeff = np.polyfit(grid["z"], IN["Theta"], deg=1)
-        IN["Theta_lapse"] = max(poly_coeff[0], 0.0015)
-    else:
-        IN["Theta_lapse"] = 0.0015
+    IN["Theta_lapse"] = _potential_temperature_lapse_rate(grid["z"], IN["Theta"], gather)
 
     ###########################################################
     # STORE RELEVANT VARIABLES IN OUT
@@ -267,6 +264,35 @@ def read_forcing_file(IN, C, time, forcing_file_dir, slice_duration=Duration(mon
     IN["rain"] += IN["P"] * (1 + IN["T"] - C["rainsnowT"]) / 2 * in_between_mask
 
     return IN
+
+
+def _potential_temperature_lapse_rate(z, Theta, gather: ColumnGather) -> float:
+    """
+    Lapse rate of potential temperature, fitted over all columns of the domain.
+
+    Collective over gather.comm: the fit runs on the root rank, in column id order, so that the result does not
+    depend on how the columns are distributed over the ranks.
+
+    @param[in] z elevation of this rank's columns (m)
+    @param[in] Theta potential temperature of this rank's columns (K)
+
+    @returns the slope of Theta over z (K m-1), at least 0.0015
+    """
+    # TODO: Gathering z and Theta of all columns on one rank every time step synchronizes all ranks and is expensive
+    #       in parallel runs.
+    all_z = gather.gather(z)
+    all_Theta = gather.gather(Theta)
+
+    lapse_rate = None
+    if gather.is_root:
+        if np.all(all_z == all_z[0]):
+            lapse_rate = 0.0015
+        else:
+            lapse_rate = max(np.polyfit(all_z, all_Theta, deg=1)[0], 0.0015)
+
+    if gather.comm.size > 1:
+        lapse_rate = gather.comm.bcast(lapse_rate, root=gather.root)
+    return lapse_rate
 
 
 def set_random_weather_data(IN, C, time, grid):

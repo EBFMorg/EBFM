@@ -17,7 +17,7 @@ from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
-from .grid import GridInputType, GridDict, ShadingMethod, number_of_columns, validate_grid
+from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
 from .restart import validate_all_variables_present, validate_variable_shape
 
 from .constants import DAYS_PER_YEAR, LATENT_HEAT_OF_FUSION, MELTING_POINT, SECONDS_PER_DAY, WATER_DENSITY
@@ -183,18 +183,20 @@ def init_constants():
     return C
 
 
-def init_grid(grid: GridDict, io, config: GridConfig):
+def init_grid(grid: GridDict, io, config: GridConfig, comm):
     """
     Initializes the GridDict based on the given GridConfig.
 
     * Depending on provided grid file in GridConfig parses the grid and stores it in GridDict.
     * Adds elevation to the grid if a DEM file is provided in GridConfig.
     * Calculates grid slopes and aspects for shading when grid type is MATLAB.
+    * Computes the mean latitude of the whole domain. Collective over comm.
 
     Parameters:
         grid (GridDict): Dictionary to store grid-related parameters.
         io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         config (GridConfig): Grid configuration object containing settings for grid initialization.
+        comm: EBFM's MPI communicator, whose ranks hold the columns of the domain.
     """
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
@@ -407,6 +409,10 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
+
+    # Mean latitude of the whole domain, i.e. over the columns of all MPI ranks, not only those of this rank; the same
+    # on every rank. The water vapour transmissivity in LOOP_EBM_SWin depends on it.
+    grid["lat_mean_whole_domain"] = domain_mean(grid["lat"], comm)
 
     validate_grid(grid)
 

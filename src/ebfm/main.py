@@ -112,6 +112,25 @@ def print_diagnostics(grid, OUT, t, gather: ColumnGather):
         diagnostics_logger.info(f"[t={t + 1}] smb_cumulative: {_format_stats(smb_cum)}")
 
 
+def set_random_seed(logger, random_seed: int | None, comm):
+    """
+    Seed NumPy's random number generator with the same seed on every rank of comm.
+
+    Collective over comm. Without a given seed, a run on several ranks uses a seed drawn on rank 0, so that all ranks
+    draw the same random numbers, e.g. the wind speed of the random forcing; a run on a single rank stays unseeded.
+
+    @param[in] random_seed seed from --random-seed, or None
+    @param[in] comm EBFM's MPI communicator
+    """
+    if random_seed is None and comm.size > 1:
+        random_seed = int(np.random.SeedSequence().generate_state(1)[0]) if comm.rank == 0 else None
+        random_seed = comm.bcast(random_seed, root=0)
+
+    if random_seed is not None:
+        np.random.seed(random_seed)
+        logger.info(f"NumPy random seed fixed to {random_seed} for reproducibility.")
+
+
 def _main_impl():
     args = parse_cli_args()
 
@@ -205,12 +224,10 @@ def _main_impl():
     time = time_config.to_dict()
     grid, io, phys, column = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
 
-    if args.random_seed is not None:
-        np.random.seed(args.random_seed)
-        logger.info(f"NumPy random seed fixed to {args.random_seed} for reproducibility.")
+    set_random_seed(logger, args.random_seed, ebfm_comm)
 
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, io, grid_config)
+    grid = INIT.init_grid(grid, io, grid_config, ebfm_comm)
 
     # Rank 0 collects the columns of all ranks, e.g. for --dump-reference
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
@@ -293,7 +310,7 @@ def _main_impl():
             IN["Pres"] = data_from_icon_atmo["sfcpres"]
 
         # Read/set meteorological forcing
-        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config)
+        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config, column_gather)
 
         # Run surface energy balance model
         OUT = LOOP_EBM.main(C, OUT, IN, time, grid, coupler)
