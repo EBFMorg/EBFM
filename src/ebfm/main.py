@@ -29,6 +29,7 @@ from ebfm.core.cli import (
     validate_use_part_parallel_compat,
     validate_forcing_parallel_compat,
     validate_restart_parallel_compat,
+    validate_shading_parallel_compat,
 )
 
 import ebfm.coupling
@@ -217,6 +218,9 @@ def _main_impl():
 
     # Ensure restart files are only read and written in runs on a single rank.
     validate_restart_parallel_compat(args, ebfm_comm)
+
+    # Ensure shading routine is only used in runs on a single rank.
+    validate_shading_parallel_compat(grid_config, ebfm_comm)
 
     logger.debug("Successfully completed consistency checks.")
 
