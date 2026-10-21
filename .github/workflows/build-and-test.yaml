@@ -39,6 +39,9 @@ jobs:
           # several ranks report the same rank number -- which is exactly what the handshake step
           # below checks.
           mpi: openmpi
+      - name: Keep Open MPI's TCP traffic on the loopback interface
+        if: ${{ matrix.run_mpi }}
+        run: echo "btl_tcp_if_include=lo" >> ~/.openmpi/mca-params.conf
       - name: Create virtual environment and install EBFM
         run: |
           python3 -m venv .venv
