@@ -13,6 +13,11 @@ Horizontal geometry therefore exists only as per-column attributes, listed in PE
 exception is the shading look-up table, which needs the terrain surrounding each column, including cells
 that are not columns themselves. It is built from the 2-D DEM of the MATLAB grid type during initialization;
 the time loop only reads one row of it per column.
+
+Every column has an id, `column_id`, that is unique over the whole domain, also when the columns are
+distributed over several MPI ranks. For a grid read from an Elmer mesh it is the Elmer element id, for a
+MATLAB or NetCDF grid the flat index of the column in the 2-D fields (`ind`). Sorting the columns by id
+restores the column order of the whole domain.
 """
 
 from enum import Enum
@@ -55,7 +60,19 @@ def number_of_columns(grid: GridDict) -> int:
 
 
 # Fields carrying exactly one entry per snow/firn column. Their common length is `gpsum`.
-PER_COLUMN_FIELDS = ("x", "y", "z", "lat", "lon", "mask", "slope_x", "slope_y", "slope_beta", "slope_gamma")
+PER_COLUMN_FIELDS = (
+    "column_id",
+    "x",
+    "y",
+    "z",
+    "lat",
+    "lon",
+    "mask",
+    "slope_x",
+    "slope_y",
+    "slope_beta",
+    "slope_gamma",
+)
 
 
 def validate_grid(grid: GridDict) -> None:
@@ -92,6 +109,9 @@ def validate_grid(grid: GridDict) -> None:
         values = grid[field]
         assert values.ndim == 1, f"Per-column field '{field}' must be one-dimensional, got shape {values.shape}."
         assert len(values) == gpsum, f"Per-column field '{field}' has length {len(values)}, expected gpsum={gpsum}."
+
+    assert np.issubdtype(grid["column_id"].dtype, np.integer), "Column ids must be integers."
+    assert len(np.unique(grid["column_id"])) == gpsum, "Column ids must be unique."
 
 
 class ShadingMethod(Enum):

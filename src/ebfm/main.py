@@ -17,7 +17,7 @@ from ebfm.core import (
     LOOP_mass_balance,
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
-from ebfm.core.grid import number_of_columns
+from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
@@ -74,11 +74,16 @@ def _format_stats(arr: np.ndarray) -> str:
     return f"min={arr.min():.4e}  max={arr.max():.4e}  mean={arr.mean():.4e}"
 
 
-def dump_reference(logger, OUT, filepath: str):
-    """Save key output arrays to a .npz file for later comparison."""
-    import numpy as np
+def dump_reference(logger, OUT, filepath: str, gather: ColumnGather):
+    """
+    Save key output arrays to a .npz file for later comparison.
 
-    data = {k: OUT[k] for k in _REFERENCE_KEYS if k in OUT}
+    Collective over gather.comm: the root rank gathers the columns of all ranks and writes them, ordered by column id.
+    """
+    data = {k: gather.gather(OUT[k]) for k in _REFERENCE_KEYS if k in OUT}
+    if not gather.is_root:
+        return
+
     missing = [k for k in _REFERENCE_KEYS if k not in OUT]
     if missing:
         logger.warning(f"[DUMP] Keys not found in OUT and will be skipped: {missing}")
@@ -86,13 +91,19 @@ def dump_reference(logger, OUT, filepath: str):
     logger.info(f"[DUMP] Reference snapshot saved to '{filepath}' (keys: {list(data.keys())})")
 
 
-def print_diagnostics(grid, OUT, t):
-    """Log key diagnostic values each timestep for performance and correctness analysis."""
+def print_diagnostics(grid, OUT, t, gather: ColumnGather):
+    """
+    Log key diagnostic values each timestep for performance and correctness analysis.
 
-    gpsum = number_of_columns(grid)
+    Collective over gather.comm: the root rank gathers the columns of all ranks and logs the values of the whole grid.
+    """
+    smb = gather.gather(OUT["smb"]) if "smb" in OUT else None
+    smb_cum = gather.gather(OUT["smb_cumulative"]) if "smb_cumulative" in OUT else None
+    if not gather.is_root:
+        return
+
+    gpsum = len(gather.column_ids)
     has_shading = grid.get("has_shading", False)
-    smb = OUT.get("smb")
-    smb_cum = OUT.get("smb_cumulative")
 
     diagnostics_logger.info(f"[t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
     if smb is not None:
@@ -200,6 +211,9 @@ def _main_impl():
 
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config)
+
+    # Rank 0 collects the columns of all ranks, e.g. for --dump-reference
+    column_gather = ColumnGather(ebfm_comm, grid["column_id"])
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 
@@ -322,7 +336,7 @@ def _main_impl():
         OUT = LOOP_mass_balance.main(OUT, IN, C)
 
         if args.print_diagnostics:
-            print_diagnostics(grid, OUT, t)
+            print_diagnostics(grid, OUT, t, column_gather)
 
         if coupler.has_coupling_to("elmer_ice"):
             elmer_ice = coupler.get_component("elmer_ice")
@@ -369,7 +383,7 @@ def _main_impl():
     logger.info("Time loop completed.")
 
     if args.dump_reference:
-        dump_reference(logger, OUT, args.dump_reference)
+        dump_reference(logger, OUT, args.dump_reference, column_gather)
 
     coupler.finalize()
 
