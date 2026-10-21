@@ -10,6 +10,7 @@ SPDX-License-Identifier: CC-BY-4.0
     * Add feature to use NetCDF meshes with DEM as input (`--netcdf-mesh`)
     * Add option to set missing elevations of NetCDF meshes to 0 m (`--fill-missing-elevation`)
     * Add feature to read forcing files from folder (`--forcing-dir`)
+* A NetCDF DEM (`--netcdf-dem-mesh`) is now read in bands of at most 16 MB around the sampled points instead of as a whole. With the full-resolution `BedMachineGreenland-v5.nc` this lowers the peak memory of grid initialization from about 1.1 GB to about 0.3 GB, on every MPI rank of a run on a partitioned mesh. https://github.com/EBFMorg/EBFM/pull/200
 * Remove support for Python 3.10. https://github.com/EBFMorg/EBFM/pull/143
 * `--numba-threads` is now checked against the number of threads Numba accepts, i.e. the CPUs the rank may run on (CPU affinity from MPI binding or the Slurm allocation, e.g. `--cpus-per-task`) or the `NUMBA_NUM_THREADS` environment variable. Exceeding it stops EBFM with an error explaining the cause, instead of a Numba `ValueError` traceback. Exceeding the suggested thread count for the ranks sharing a node is now only a warning; the suggestion no longer divides the CPUs of the whole node by the number of EBFM ranks. https://github.com/EBFMorg/EBFM/pull/190
 * A fatal error now ends EBFM with exit status 1 whenever mpi4py is installed, both standalone and under `mpirun`. EBFM previously aborted MPI with error code 0, so the run, and `mpirun` with it, reported success after logging "Fatal Error in EBFM". The same applies to an MPI handshake version mismatch. A fatal error before the MPI communicator splitting no longer leaves the other components of an MPMD run waiting forever. https://github.com/EBFMorg/EBFM/pull/191
@@ -26,6 +27,7 @@ SPDX-License-Identifier: CC-BY-4.0
     * `--dump-reference` now holds the columns of all ranks, ordered by Elmer element id. Every rank previously wrote its own partition to the same file.
     * `--print-diagnostics` now reports the column count and `smb` statistics of the whole domain, logged by rank 0. Each rank previously reported its own partition.
 * In a run on several MPI ranks, only rank 0 logs to the console at `--log-level-console`; the other ranks only log warnings and errors there, instead of repeating every message. Log files (`--log-file`, one per rank) are unchanged. The current model time is logged instead of printed. https://github.com/EBFMorg/EBFM/pull/204
+* A MATLAB grid (`--matlab-mesh`) can now run on several MPI ranks, e.g. `mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading`: each rank computes a contiguous block of the columns, and rank 0 writes the output file, which is identical to that of a run on a single rank. Shading is not supported on several ranks and stops the run with an error. https://github.com/EBFMorg/EBFM/pull/202
 
 # v0.8.0
 

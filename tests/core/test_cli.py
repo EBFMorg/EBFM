@@ -19,6 +19,7 @@ from ebfm.core.cli import (
     validate_forcing_parallel_compat,
     validate_grid_parallel_compat,
     validate_restart_parallel_compat,
+    validate_shading_parallel_compat,
     validate_shading_coupling_compat,
     validate_use_part_parallel_compat,
 )
@@ -382,12 +383,34 @@ class TestValidateShadingCouplingCompat(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
 
 
+class TestValidateShadingParallelCompat(unittest.TestCase):
+    """validate_shading_parallel_compat raises a CLI error when shading is on in a run on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, use_shading: bool, comm_size: int):
+        validate_shading_parallel_compat(MagicMock(use_shading=use_shading), MagicMock(size=comm_size))
+
+    def test_shading_on_single_rank_ok(self):
+        self._validate(use_shading=True, comm_size=1)  # must not raise
+
+    def test_no_shading_on_several_ranks_ok(self):
+        self._validate(use_shading=False, comm_size=4)  # must not raise
+
+    def test_shading_on_several_ranks_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(use_shading=True, comm_size=4)
+        self.assertEqual(ctx.exception.code, 2)
+
+
 class TestValidateGridParallelCompat(unittest.TestCase):
-    """validate_grid_parallel_compat raises a CLI error on several ranks for every grid but a partitioned Elmer mesh."""
+    """validate_grid_parallel_compat rejects every grid but MATLAB and a partitioned Elmer mesh on several ranks."""
 
     # name: (grid_type, is_partitioned, grid option named by the error on several ranks, or None if accepted)
     _CASES = {
-        "--matlab-mesh": (GridInputType.MATLAB, False, "--matlab-mesh"),
+        "--matlab-mesh": (GridInputType.MATLAB, False, None),
         "--netcdf-mesh": (GridInputType.NETCDF, False, "--netcdf-mesh"),
         "--elmer-mesh": (GridInputType.ELMER, False, "--elmer-mesh"),
         "--elmer-mesh --netcdf-dem-mesh": (GridInputType.CUSTOM, False, "--elmer-mesh"),
@@ -420,7 +443,7 @@ class TestValidateGridParallelCompat(unittest.TestCase):
                     self.assertEqual(ctx.exception.code, 2)
                     error = stderr.getvalue().splitlines()[-1]
                     self.assertIn(f"error: {rejected_grid} ", error)
-                    self.assertIn("Only a partitioned Elmer mesh (--is-partitioned-elmer-mesh)", error)
+                    self.assertIn("Only --matlab-mesh and a partitioned Elmer mesh", error)
 
 
 @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")

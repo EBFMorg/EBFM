@@ -29,6 +29,7 @@ from ebfm.core.cli import (
     validate_use_part_parallel_compat,
     validate_forcing_parallel_compat,
     validate_restart_parallel_compat,
+    validate_shading_parallel_compat,
 )
 
 import ebfm.coupling
@@ -203,7 +204,7 @@ def _main_impl():
     logger.debug("Reading configuration and checking for consistency.")
 
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    grid_config = GridConfig(args)
+    grid_config = GridConfig(args, ebfm_comm.size, ebfm_comm.rank)
 
     # Ensure shading routine is only used in uncoupled runs.
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.
@@ -218,6 +219,9 @@ def _main_impl():
     # Ensure restart files are only read and written in runs on a single rank.
     validate_restart_parallel_compat(args, ebfm_comm)
 
+    # Ensure shading routine is only used in runs on a single rank.
+    validate_shading_parallel_compat(grid_config, ebfm_comm)
+
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
@@ -229,8 +233,10 @@ def _main_impl():
     C = INIT.init_constants()
     grid = INIT.init_grid(grid, io, grid_config, ebfm_comm)
 
-    # Rank 0 collects the columns of all ranks, e.g. for --dump-reference
+    # Rank 0 collects the columns of all ranks, e.g. to write them to the output file or for --dump-reference
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
+    if ebfm_comm.size > 1 and not grid["is_partitioned"]:
+        logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 
@@ -386,7 +392,7 @@ def _main_impl():
         # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
         # TODO: partitioned output should be supported in a dedicated parallel-safe writer.
         if not grid["is_partitioned"]:
-            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
+            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
         else:
             logger.warning("Skipping writing output to file for partitioned runs.")
 

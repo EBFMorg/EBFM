@@ -198,6 +198,7 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         config (GridConfig): Grid configuration object containing settings for grid initialization.
         comm: EBFM's MPI communicator, whose ranks hold the columns of the domain.
     """
+    grid["is_parallel_run"] = comm.size > 1
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
     grid["has_shading"] = config.use_shading
@@ -320,16 +321,20 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             grid["lon_2D"] = input_data["lon"]
             grid["lat_2D"] = input_data["lat"]
 
-        # Create 1-D mask
-        grid["mask"] = mask_2D[mask_2D == 1]
+        # Columns as flat indices into the 2-D fields; in a run on several MPI ranks a contiguous block of them,
+        # the first block on rank 0. The 2-D fields stay whole: the output writer places all columns into them.
+        ind = np.flatnonzero(mask_2D == 1)
+        if config.num_partitions > 1:
+            assert 1 <= config.partition_id <= config.num_partitions, f"Invalid partition id {config.partition_id}."
+            ind = np.array_split(ind, config.num_partitions)[config.partition_id - 1]
+        grid["ind"] = (ind,)
+        grid["column_id"] = ind
 
         # Store 1-D (vectorized) grid information
-        mask_flat = mask_2D.flatten()
-        grid["x"] = grid["x_2D"].flatten()[mask_flat == 1]
-        grid["y"] = grid["y_2D"].flatten()[mask_flat == 1]
-        grid["z"] = grid["z_2D"].flatten()[mask_flat == 1]
-        grid["ind"] = np.where(mask_flat == 1)
-        grid["column_id"] = grid["ind"][0]
+        grid["mask"] = mask_2D.flat[ind]
+        grid["x"] = grid["x_2D"].flat[ind]
+        grid["y"] = grid["y_2D"].flat[ind]
+        grid["z"] = grid["z_2D"].flat[ind]
 
         # ---------------------------------------------------------------------
         # Grid slope and aspect
@@ -351,12 +356,12 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         grid["slope_beta_2D"] = np.arctan(grid["slope"])
 
         # Convert 2-D fields to 1-D vectors
-        grid["slope"] = grid["slope"].flatten()[mask_flat == 1]
-        grid["slope_x"] = grid["slope_x"].flatten()[mask_flat == 1]
-        grid["slope_y"] = grid["slope_y"].flatten()[mask_flat == 1]
-        grid["aspect"] = grid["aspect"].flatten()[mask_flat == 1]
-        grid["lat"] = grid["lat_2D"].flatten()[mask_flat == 1]
-        grid["lon"] = grid["lon_2D"].flatten()[mask_flat == 1]
+        grid["slope"] = grid["slope"].flat[ind]
+        grid["slope_x"] = grid["slope_x"].flat[ind]
+        grid["slope_y"] = grid["slope_y"].flat[ind]
+        grid["aspect"] = grid["aspect"].flat[ind]
+        grid["lat"] = grid["lat_2D"].flat[ind]
+        grid["lon"] = grid["lon_2D"].flat[ind]
 
         # four individual asserts to avoid overhead when turning on optimization
         assert np.isfinite(grid["slope"]).all(), (
@@ -432,6 +437,9 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
                         `az_array` and `maxgridangle`.
     @param[in] mask_2D 2-D glacier mask, 1 for glacier cells.
     """
+    # The walk starts from every glacier cell of the 2-D grid, not only from the columns of this rank.
+    assert not grid["is_parallel_run"], "The shading look-up table cannot be computed in a run on several MPI ranks."
+
     logger.warning("Using EBFM's internal shading method. Should only be used on regular grids!")
 
     grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
