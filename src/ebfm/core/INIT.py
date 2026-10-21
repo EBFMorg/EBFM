@@ -320,16 +320,16 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             grid["lon_2D"] = input_data["lon"]
             grid["lat_2D"] = input_data["lat"]
 
-        # Create 1-D mask
-        grid["mask"] = mask_2D[mask_2D == 1]
+        # Columns as flat indices into the 2-D fields
+        ind = np.flatnonzero(mask_2D == 1)
+        grid["ind"] = (ind,)
+        grid["column_id"] = ind
 
         # Store 1-D (vectorized) grid information
-        mask_flat = mask_2D.flatten()
-        grid["x"] = grid["x_2D"].flatten()[mask_flat == 1]
-        grid["y"] = grid["y_2D"].flatten()[mask_flat == 1]
-        grid["z"] = grid["z_2D"].flatten()[mask_flat == 1]
-        grid["ind"] = np.where(mask_flat == 1)
-        grid["column_id"] = grid["ind"][0]
+        grid["mask"] = mask_2D.flat[ind]
+        grid["x"] = grid["x_2D"].flat[ind]
+        grid["y"] = grid["y_2D"].flat[ind]
+        grid["z"] = grid["z_2D"].flat[ind]
 
         # ---------------------------------------------------------------------
         # Grid slope and aspect
@@ -351,12 +351,12 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         grid["slope_beta_2D"] = np.arctan(grid["slope"])
 
         # Convert 2-D fields to 1-D vectors
-        grid["slope"] = grid["slope"].flatten()[mask_flat == 1]
-        grid["slope_x"] = grid["slope_x"].flatten()[mask_flat == 1]
-        grid["slope_y"] = grid["slope_y"].flatten()[mask_flat == 1]
-        grid["aspect"] = grid["aspect"].flatten()[mask_flat == 1]
-        grid["lat"] = grid["lat_2D"].flatten()[mask_flat == 1]
-        grid["lon"] = grid["lon_2D"].flatten()[mask_flat == 1]
+        grid["slope"] = grid["slope"].flat[ind]
+        grid["slope_x"] = grid["slope_x"].flat[ind]
+        grid["slope_y"] = grid["slope_y"].flat[ind]
+        grid["aspect"] = grid["aspect"].flat[ind]
+        grid["lat"] = grid["lat_2D"].flat[ind]
+        grid["lon"] = grid["lon_2D"].flat[ind]
 
         # four individual asserts to avoid overhead when turning on optimization
         assert np.isfinite(grid["slope"]).all(), (
