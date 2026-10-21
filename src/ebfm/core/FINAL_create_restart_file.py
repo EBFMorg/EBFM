@@ -58,10 +58,14 @@ def main(OUT, io, restartdir: Path):
 
             logger.info(f"Boot file saved to {io['bootfileout']}")
 
-    OUT["timelastsnow_netCDF"] = date2num(
-        OUT["timelastsnow"],
-        units="days since 1970-01-01 00:00:00",
-        calendar="gregorian",
+    # float64 even if all times are whole days, for which date2num returns integers
+    OUT["timelastsnow_netCDF"] = np.asarray(
+        date2num(
+            OUT["timelastsnow"],
+            units="days since 1970-01-01 00:00:00",
+            calendar="gregorian",
+        ),
+        dtype=np.float64,
     )
     OUT = {var_name: OUT[var_name] for var_name in RESTART_VARIABLES}
 
