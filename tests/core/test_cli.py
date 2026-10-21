@@ -22,9 +22,11 @@ from ebfm.core.cli import (
     validate_shading_coupling_compat,
     validate_shading_parallel_compat,
     validate_use_part_parallel_compat,
+    warn_non_partitioned_mesh_parallel,
 )
 
 from ebfm.core.comm import mpi_available
+from ebfm.core.grid import GridInputType
 from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 
 # Minimal valid args for each primary grid type.
@@ -536,6 +538,37 @@ class TestValidatePartitionCount(unittest.TestCase):
         self.logger.reset_mock()
         self._validate(num_partitions=128, rank=1, allow=True)
         self.logger.warning.assert_not_called()
+
+
+class TestWarnNonPartitionedMeshParallel(unittest.TestCase):
+    """Splitting a non-partitioned Elmer mesh over several MPI ranks warns once, on rank 0."""
+
+    def setUp(self):
+        self.logger = MagicMock()
+
+    def _warn(self, grid_type=GridInputType.CUSTOM, is_partitioned=False, comm_size=4, rank=0):
+        grid_config = MagicMock(grid_type=grid_type, is_partitioned=is_partitioned)
+        warn_non_partitioned_mesh_parallel(grid_config, MagicMock(size=comm_size, rank=rank), self.logger)
+
+    def test_non_partitioned_elmer_mesh_on_several_ranks_warns_on_rank_0(self):
+        for grid_type in (GridInputType.ELMER, GridInputType.CUSTOM, GridInputType.ELMERXIOS):
+            with self.subTest(grid_type=grid_type):
+                self.logger.reset_mock()
+                self._warn(grid_type=grid_type)
+                self.logger.warning.assert_called_once()
+
+    def test_no_warning(self):
+        cases = {
+            "rank 1": dict(rank=1),
+            "single rank": dict(comm_size=1),
+            "partitioned mesh": dict(is_partitioned=True),
+            "MATLAB grid": dict(grid_type=GridInputType.MATLAB),
+        }
+        for name, kwargs in cases.items():
+            with self.subTest(name):
+                self.logger.reset_mock()
+                self._warn(**kwargs)
+                self.logger.warning.assert_not_called()
 
 
 class TestCliCalendarArgument(unittest.TestCase):
