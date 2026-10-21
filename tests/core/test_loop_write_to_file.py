@@ -14,6 +14,8 @@ from netCDF4 import Dataset
 
 from ebfm.core import LOOP_write_to_file
 from ebfm.core.LOOP_write_to_file import _output_dimensions, main as write_output
+from ebfm.core.comm import defaultComm
+from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.config import ColumnDiscretizationConfig
 
 NL = 4
@@ -21,6 +23,9 @@ NY, NX = 3, 4
 # Flat indices of the glacier points inside the NY x NX structured grid.
 GLACIER_INDICES = (0, 3, 5, 7, 11)
 GPSUM = len(GLACIER_INDICES)
+
+# Element ids of the unstructured grid. Like the ids of an Elmer mesh, they neither start at 0 nor are contiguous.
+ELEMENT_IDS = (3, 5, 12, 27, 40)
 
 _NETCDF_OUTPUT = 2
 
@@ -94,6 +99,7 @@ def _structured_grid():
         "lon_2D": np.zeros((NY, NX)),
         "lat_2D": np.zeros((NY, NX)),
         "ind": np.array(GLACIER_INDICES),
+        "column_id": np.array(GLACIER_INDICES),
     }
 
 
@@ -101,6 +107,7 @@ def _unstructured_grid():
     return {
         "is_unstructured": True,
         "is_partitioned": False,
+        "column_id": np.array(ELEMENT_IDS),
         "x": np.arange(GPSUM, dtype=np.float64),
         "y": np.arange(GPSUM, dtype=np.float64),
         "z": np.full(GPSUM, 100.0),
@@ -131,7 +138,7 @@ def _write_single_step(outdir, grid, extra_out=None):
     io = {"outdir": str(outdir), "freqout": 1, "output_type": _NETCDF_OUTPUT}
     time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
 
-    io, outfile = write_output({}, io, out, grid, 0, time, column)
+    io, outfile = write_output({}, io, out, grid, 0, time, column, ColumnGather(defaultComm, grid["column_id"]))
 
     return Path(outdir) / "model_output.nc", outfile, out
 
