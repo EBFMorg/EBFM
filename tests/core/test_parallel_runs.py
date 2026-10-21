@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from test_elmer_mesh import _write_xios_dem
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 TIMEOUT = 600
@@ -82,12 +83,23 @@ def _assert_same_results(serial: Path, parallel: Path) -> None:
 def elmer_mesh(tmp_path_factory) -> Path:
     mesh_dir = tmp_path_factory.mktemp("elmer") / "MESH"
     _write_elmer_mesh(mesh_dir)
+    n_nodes = int((mesh_dir / "mesh.header").read_text().split()[0])
+    _write_xios_dem(mesh_dir.parent / "xios_dem.nc", n_nodes)
     return mesh_dir
 
 
 CASES = {
     "matlab": lambda mesh: ["--matlab-mesh", str(EXAMPLES / "dem_and_mask.mat"), "--no-shading", *_TIME],
     "elmer": lambda mesh: ["--elmer-mesh", str(mesh), "--elmer-mesh-crs-epsg", "3413", *_TIME],
+    "elmerxios": lambda mesh: [
+        "--elmer-mesh",
+        str(mesh),
+        "--elmer-mesh-crs-epsg",
+        "3413",
+        "--netcdf-dem-mesh-unstructured",
+        str(mesh.parent / "xios_dem.nc"),
+        *_TIME,
+    ],
     "fake-coupling": lambda mesh: [
         "--elmer-mesh",
         str(mesh),
@@ -104,7 +116,9 @@ CASES = {
 
 @requires_mpirun
 @pytest.mark.parametrize(
-    "case, n_ranks", [("matlab", 3), ("matlab", 4), ("elmer", 3), ("fake-coupling", 2)], ids=lambda value: str(value)
+    "case, n_ranks",
+    [("matlab", 3), ("matlab", 4), ("elmer", 3), ("elmerxios", 3), ("fake-coupling", 2)],
+    ids=lambda value: str(value),
 )
 def test_parallel_run_equals_serial_run(tmp_path, elmer_mesh, case, n_ranks):
     args = CASES[case](elmer_mesh)

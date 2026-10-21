@@ -299,8 +299,7 @@ mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
 * Rank 0 writes the output file and `--dump-reference` for all ranks. They are
   identical to those of a run on a single rank.
 * Not supported on several ranks, and rejected with an error: shading,
-  `--forcing-dir`, `--restart-dir`/`--restart-init` and
-  `--netcdf-dem-mesh-unstructured`.
+  `--forcing-dir` and `--restart-dir`/`--restart-init`.
 * `--no-check-grid-distribution` skips the start-up check that every column is
   held by exactly one rank.
 

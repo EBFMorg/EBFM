@@ -221,7 +221,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "--netcdf-dem-mesh-unstructured",
         type=Path,
         help="Path to an Elmer/Ice XIOS output file with surface elevation (zs) and ice thickness (h) at the nodes "
-        f"of the {mesh_opts[GridInputType.ELMER]}, in the order of its mesh.nodes. "
+        f"of the {mesh_opts[GridInputType.ELMER]}, stored by node id (node id i at position i - 1). "
         f"Optional if using {mesh_opts[GridInputType.ELMER]}.",
     )
 
@@ -535,21 +535,6 @@ def validate_shading_parallel_compat(grid_config, comm) -> None:
             f"Shading routine not implemented for runs on several MPI ranks ({comm.size} ranks). "
             "Please deactivate shading via --no-shading or run on a single rank. "
             "See https://github.com/EBFMorg/EBFM/issues/183"
-        )
-
-
-def validate_elmerxios_parallel_compat(grid_config, comm) -> None:
-    """Check that an unstructured NetCDF DEM (--netcdf-dem-mesh-unstructured) is not read in a run on several MPI ranks.
-
-    Must be called on every rank of comm.
-
-    @param[in] grid_config resolved GridConfig
-    @param[in] comm        EBFM's MPI communicator
-    """
-    if grid_config.grid_type is GridInputType.ELMERXIOS and comm.size > 1:
-        _cli_error(
-            f"--netcdf-dem-mesh-unstructured is not supported for runs on several MPI ranks ({comm.size} ranks). "
-            "Please run on a single rank. See https://github.com/EBFMorg/EBFM/issues/196"
         )
 
 
