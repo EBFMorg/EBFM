@@ -11,6 +11,7 @@ jobs:
   build-and-test:
     name: Build and test (${{ matrix.variant }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
@@ -65,6 +66,7 @@ jobs:
         run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon-atmo --couple-to-icon-land --fake-coupling --no-shading
       - name: Run example with MPI handshake
         if: ${{ matrix.run_mpi }}
+        timeout-minutes: 5
         run: |
           # Run dummy script first; dummy on rank 0, EBFM on rank 1
           mpirun -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py first : \
@@ -74,6 +76,7 @@ jobs:
                  -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py second
       - name: Run examples on several MPI ranks
         if: ${{ matrix.run_mpi }}
+        timeout-minutes: 5
         run: |
           mpirun -np 4 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
           mpirun -np 4 .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --elmer-mesh-crs-epsg 3413 --couple-to-icon-atmo --couple-to-icon-land --couple-to-elmer-ice --fake-coupling --no-shading
