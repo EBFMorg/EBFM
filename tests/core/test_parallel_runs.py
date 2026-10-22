@@ -78,8 +78,8 @@ def _log_tails(workdir: Path, n_lines: int = 15) -> str:
 
 
 def _assert_same_results(serial: Path, parallel: Path) -> None:
-    output_file = Path("Output") / "output_1979-07-01T00:00:00Z.nc"
-    assert filecmp.cmp(serial / output_file, parallel / output_file, shallow=False)
+    (output_file,) = (serial / "Output").glob("output_*.nc")
+    assert filecmp.cmp(output_file, parallel / "Output" / output_file.name, shallow=False)
 
     with np.load(serial / "reference.npz") as expected, np.load(parallel / "reference.npz") as actual:
         assert sorted(actual.files) == sorted(expected.files)
