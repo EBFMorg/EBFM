@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""A fatal error must end EBFM with a non-zero exit status, standalone and under mpirun."""
+"""A fatal error must end EBFM with a non-zero exit status, standalone and under mpirun, and end an MPMD run."""
 
 import ast
 import importlib.util
@@ -45,6 +45,26 @@ def test_mpmd(stage):
     cmd = ["mpirun", "-np", "1", sys.executable, str(SIMULATE_FATAL_ERROR), stage]
     cmd += [":", "-np", "1", sys.executable, "-c", "from mpi4py import MPI; MPI.COMM_WORLD.Barrier()"]
     _assert_failed(_run(cmd))
+
+
+def test_usage_error_standalone_exits_without_abort():
+    result = _run([sys.executable, str(SIMULATE_FATAL_ERROR), "usage-error"])
+
+    assert "simulated usage error" in result.stderr, result.stderr
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "MPI_ABORT" not in result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("mpirun") is None, reason="mpirun not available")
+@pytest.mark.skipif(importlib.util.find_spec("mpi4py") is None, reason="mpi4py not installed")
+def test_usage_error_mpmd_aborts():
+    """A usage error of EBFM ends the MPMD run instead of leaving the second component waiting in a barrier."""
+    cmd = ["mpirun", "-np", "1", sys.executable, str(SIMULATE_FATAL_ERROR), "usage-error"]
+    cmd += [":", "-np", "1", sys.executable, "-c", "from mpi4py import MPI; MPI.COMM_WORLD.Barrier()"]
+    result = _run(cmd)
+
+    assert "simulated usage error" in result.stderr, result.stderr
+    assert result.returncode != 0, result.stdout + result.stderr
 
 
 def test_no_abort_without_errorcode():
