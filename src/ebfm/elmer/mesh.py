@@ -58,6 +58,9 @@ class Mesh:
     y_vertices: NDArray[np.float64]
     # optional height values of vertices stored in z coordinate
     z_vertices: NDArray[np.float64]
+    # EPSG code of the projection of x/y
+    source_crs_epsg: int
+    # The following coordinates are derived from x/y_vertices by compute_geometry()
     # longitude/latitude coordinates of vertices in radians, ordering follows local ids [0,1,...,n_vertices-1]
     lon_vertices: NDArray[np.float64]
     lat_vertices: NDArray[np.float64]
@@ -91,7 +94,19 @@ class Mesh:
         self.vertex_ids = vertex_ids
         self.cell_ids = cell_ids
         self.cell_to_vertex = cell_to_vertex
-        transformer = pyproj.Transformer.from_crs(source_crs_epsg, 4326, always_xy=True)
+        self.source_crs_epsg = source_crs_epsg
+        # Initialize z_cells to zeros (to be filled/overwritten by DEM)
+        n_cells = self.cell_to_vertex.shape[0]
+        self.z_cells = np.zeros(n_cells)
+
+    def compute_geometry(self) -> None:
+        """
+        Derive the lon/lat coordinates of the vertices and the coordinates of the cell centers.
+
+        Transforming the vertices is the expensive part of setting up a mesh. Call this once the mesh holds the cells
+        it will be used with, e.g. after get_partition, so that only those are transformed.
+        """
+        transformer = pyproj.Transformer.from_crs(self.source_crs_epsg, 4326, always_xy=True)
         self.lon_vertices, self.lat_vertices = transformer.transform(self.x_vertices, self.y_vertices, radians=True)
 
         # Compute cell centers (lon/lat) by averaging vertices on the unit sphere
@@ -99,11 +114,38 @@ class Mesh:
             self.lon_vertices, self.lat_vertices, self.cell_to_vertex
         )
 
-        inverse_transformer = pyproj.Transformer.from_crs(4326, source_crs_epsg, always_xy=True)
+        inverse_transformer = pyproj.Transformer.from_crs(4326, self.source_crs_epsg, always_xy=True)
         self.x_cells, self.y_cells = inverse_transformer.transform(self.lon_cells, self.lat_cells, radians=True)
-        # Initialize z_cells to zeros (to be filled/overwritten by DEM)
-        n_cells = self.cell_to_vertex.shape[0]
-        self.z_cells = np.zeros(n_cells)
+
+    def get_partition(self, partition_id: int, n_partitions: int) -> "Mesh":
+        """
+        The part of this mesh that one of `n_partitions` partitions holds.
+
+        The cells are split into `n_partitions` contiguous blocks in their current order, and partition 1 holds the
+        first block. A partition keeps the vertices its cells use, so a vertex on the border between two partitions
+        belongs to both.
+
+        @param[in] partition_id id of the partition, from 1 to n_partitions
+        @param[in] n_partitions number of partitions
+
+        @returns a mesh of the same type with the cells of the partition, including their z_cells
+        """
+        assert 1 <= partition_id <= n_partitions, f"Partition id {partition_id} is not in 1..{n_partitions}."
+
+        cells = np.array_split(np.arange(len(self.cell_ids)), n_partitions)[partition_id - 1]
+        vertices, cell_to_vertex = np.unique(self.cell_to_vertex[cells], return_inverse=True)
+
+        partition = type(self)(
+            x_vertices=self.x_vertices[vertices],
+            y_vertices=self.y_vertices[vertices],
+            z_vertices=self.z_vertices[vertices],
+            cell_to_vertex=cell_to_vertex.reshape(len(cells), -1),
+            vertex_ids=self.vertex_ids[vertices],
+            cell_ids=self.cell_ids[cells],
+            source_crs_epsg=self.source_crs_epsg,
+        )
+        partition.z_cells = self.z_cells[cells]
+        return partition
 
 
 class TriangleMesh(Mesh):

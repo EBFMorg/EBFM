@@ -27,7 +27,8 @@ class GridConfig:
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool  # Whether the grid is unstructured
     partition_id: int | None  # Partition ID (only relevant if is_partitioned is True or num_partitions > 1)
-    # Number of blocks EBFM splits the columns of a MATLAB grid into, one per MPI rank; 1 for a grid that is not split
+    # Number of partitions of the grid, one per MPI rank: of the mesh files if is_partitioned is True, else the
+    # number of blocks EBFM splits a non-partitioned grid into. 1 for a grid that is not split.
     num_partitions: int
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
@@ -53,7 +54,7 @@ class GridConfig:
         Initialize grid configuration from command line arguments.
 
         @param[in] args command line arguments
-        @param[in] num_ranks number of MPI ranks, over which a MATLAB grid is split
+        @param[in] num_ranks number of MPI ranks, over which a non-partitioned grid is split
         @param[in] rank MPI rank of this process, which computes the block rank + 1 of a split grid
         """
         selected_primary_grids = [
@@ -84,6 +85,7 @@ class GridConfig:
             ), "Internal error: partitioned grid configuration requires NetCDF DEM mesh input."
             logger.info("Using partitioned grid...")
             self.partition_id = args.use_part
+            self.num_partitions = len(list(Path(elmer_mesh).glob("part.*.header")))
             logger.info(f"{self.partition_id=}")
         else:
             logger.info("Using non-partitioned grid...")
@@ -118,7 +120,7 @@ class GridConfig:
             )
             raise Exception("Invalid grid configuration.")
 
-        if self.grid_type is GridInputType.MATLAB and num_ranks > 1:
+        if not self.is_partitioned and num_ranks > 1:
             logger.info(f"Splitting the grid over {num_ranks} MPI ranks...")
             self.partition_id = rank + 1
             self.num_partitions = num_ranks
