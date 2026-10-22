@@ -2,7 +2,8 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Collect the columns that the ranks of EBFM's communicator hold on one rank, e.g. to write them to a file."""
+"""Collect the columns that the ranks of EBFM's communicator hold on one rank, e.g. to write them to a file, and
+distribute them again, e.g. after reading them from a file."""
 
 import numpy as np
 from numpy.typing import NDArray
@@ -12,13 +13,13 @@ from ebfm.core.comm import Comm
 
 class ColumnGather:
     """
-    Gathers per-column arrays of all ranks on a root rank, ordered by column id.
+    Gathers per-column arrays of all ranks on a root rank, ordered by column id, and scatters them back.
 
     Every rank holds a subset of the columns, identified by their ids (grid["column_id"], see ebfm.core.grid).
     The root rank receives the columns of all ranks sorted by id.
 
-    Construction and every gather are collective: all ranks of the communicator must take part, in the same
-    order. With a single rank, nothing is communicated and the gathers return their input unchanged.
+    Construction and every gather and scatter are collective: all ranks of the communicator must take part, in the
+    same order. With a single rank, nothing is communicated and they return their input unchanged.
     """
 
     def __init__(self, comm: Comm, column_ids: NDArray[np.integer], root: int = 0):
@@ -38,6 +39,7 @@ class ColumnGather:
             self._order = None
             return
 
+        self._counts = comm.gather(self.n_local_columns, root=root)
         all_column_ids = self.gather_unordered(column_ids)
         if self.is_root:
             self._order = np.argsort(all_column_ids, kind="stable")
@@ -96,3 +98,52 @@ class ColumnGather:
         if not self.is_root:
             return None
         return gathered[self._order]
+
+    def scatter_unordered(self, values: NDArray | None) -> NDArray:
+        """
+        Split an array of the root rank along its first axis into consecutive blocks, one per rank in rank order.
+
+        The inverse of gather_unordered: rank r receives as many rows as it has columns, the rows that follow those
+        of the ranks before it.
+
+        @param[in] values on the root rank, an array with one row per column of all ranks; ignored on other ranks
+
+        @returns this rank's rows
+        """
+        if self.comm.size == 1:
+            return values
+
+        layout = None
+        if self.is_root:
+            values = np.ascontiguousarray(values)
+            assert values.shape[0] == sum(
+                self._counts
+            ), f"Expected one row per column of all ranks ({sum(self._counts)}), got an array of shape {values.shape}."
+            layout = (values.dtype, values.shape[1:])
+        dtype, trailing_shape = self.comm.bcast(layout, root=self.root)
+
+        local = np.empty((self.n_local_columns, *trailing_shape), dtype=dtype)
+        values_per_row = int(np.prod(trailing_shape))
+        send = (values, [n * values_per_row for n in self._counts]) if self.is_root else None
+        self.comm.Scatterv(send, local, root=self.root)
+        return local
+
+    def scatter(self, values: NDArray | None) -> NDArray:
+        """
+        Give every rank the rows of its columns from an array of the root rank ordered by column id.
+
+        The inverse of gather.
+
+        @param[in] values on the root rank, an array with one row per column of all ranks, in the order of
+                          column_ids; ignored on other ranks
+
+        @returns the rows of this rank's columns, in the order of its column ids
+        """
+        if self.comm.size == 1:
+            return values
+
+        unordered = None
+        if self.is_root:
+            unordered = np.empty_like(values)
+            unordered[self._order] = values
+        return self.scatter_unordered(unordered)

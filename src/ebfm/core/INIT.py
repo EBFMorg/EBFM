@@ -16,9 +16,11 @@ from datetime import datetime
 from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
+from .comm import defaultComm
+from .comm.gather import ColumnGather
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
-from .restart import validate_all_variables_present, validate_variable_shape
+from .restart import read_restart_file
 
 from .constants import DAYS_PER_YEAR, LATENT_HEAT_OF_FUSION, MELTING_POINT, SECONDS_PER_DAY, WATER_DENSITY
 
@@ -682,7 +684,13 @@ def read_NETCDF_grid(gridfile: Path, fill_missing_elevation: bool = False):
 
 
 def init_initial_conditions(
-    C, grid: GridDict, io, time, column: ColumnDiscretizationConfig, init_with_restart_file: bool
+    C,
+    grid: GridDict,
+    io,
+    time,
+    column: ColumnDiscretizationConfig,
+    init_with_restart_file: bool,
+    gather: ColumnGather | None = None,
 ):
     """
     Sets the model's initial conditions at the start of the simulation.
@@ -694,6 +702,8 @@ def init_initial_conditions(
         time (dict): Dictionary with time-related parameters (e.g. ts).
         column (ColumnDiscretizationConfig): How each column is divided into layers.
         init_with_restart_file (bool): Flag indicating whether to initialize from a restart file or set manually.
+        gather (ColumnGather): The columns of all MPI ranks, which read the restart file together; None for the
+            columns of a single rank. Collective over its communicator when reading a restart file.
 
     Returns:
         OUT (dict): Dictionary containing model outputs initialized with default or restart file values.
@@ -717,36 +727,9 @@ def init_initial_conditions(
     if init_with_restart_file:
         logger.info(f"Initialize from restart file: {io['bootfilein']}...")
 
-        # Open the NetCDF file
-        with Dataset(io["bootfilein"], "r") as ncfile:
-            validate_all_variables_present(ncfile.variables, io["bootfilein"])
-            # Iterate through all variables in the file
-            for var_name in ncfile.variables:
-                # Read the variable data. netCDF4 returns a numpy.ma.MaskedArray
-                # here whenever the variable defines a fill value, regardless of
-                # whether any missing values are actually present.
-                var_data = ncfile.variables[var_name][:]
-                # Restart files are expected to be fully populated. Mixing masked
-                # arrays into the simulation state is unsafe: numpy's masked-array
-                # ufuncs silently ignore `where=` when combining masks (only the
-                # data respects `where`), so masks can leak into cells they
-                # should not and snowball across timesteps. Verify the assumption
-                # holds, then drop down to a plain ndarray.
-                assert not np.ma.is_masked(var_data), (
-                    f"Restart variable '{var_name}' in {io['bootfilein']} contains missing values, "
-                    "which is not supported."
-                )
-                if isinstance(var_data, np.ma.MaskedArray):
-                    var_data = var_data.data
-
-                # Perform consistency checks
-                validate_variable_shape(var_name, var_data.shape, gpsum, nl, io["bootfilein"])
-
-                # If a variable has no dimensions (scalar), convert it to a Python scalar
-                if var_data.shape == ():  # Scalar variable
-                    var_data = var_data.item()
-                # Save the variable data to the dictionary
-                OUT[var_name] = var_data
+        if gather is None:
+            gather = ColumnGather(defaultComm, grid["column_id"])
+        OUT = read_restart_file(io["bootfilein"], nl, gather, grid)
 
         OUT["timelastsnow"] = num2date(
             OUT["timelastsnow_netCDF"],

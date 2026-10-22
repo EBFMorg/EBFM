@@ -29,7 +29,6 @@ from ebfm.core.cli import (
     validate_use_part_parallel_compat,
     validate_forcing_parallel_compat,
     validate_partition_count,
-    validate_restart_compat,
     validate_shading_parallel_compat,
     warn_non_partitioned_mesh_parallel,
 )
@@ -217,9 +216,6 @@ def _main_impl():
     # Ensure forcing files are only read in runs on a single rank.
     validate_forcing_parallel_compat(args, ebfm_comm)
 
-    # Ensure restart files are only read and written for a whole grid on a single rank.
-    validate_restart_compat(args, grid_config, ebfm_comm)
-
     # Ensure shading routine is only used in runs on a single rank.
     validate_shading_parallel_compat(grid_config, ebfm_comm)
 
@@ -242,7 +238,8 @@ def _main_impl():
     if args.check_grid_distribution and is_parallel_run:
         validate_grid_distribution(grid, ebfm_comm)
 
-    # Rank 0 collects the columns of all ranks, e.g. to write them to the output file or for --dump-reference
+    # Rank 0 collects the columns of all ranks, e.g. to write them to the output file, the restart file or for
+    # --dump-reference
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
     if is_parallel_run:
         logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
@@ -253,7 +250,9 @@ def _main_impl():
             f"{ebfm_comm.size} ranks every time step."
         )
 
-    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
+    OUT, IN, OUTFILE = INIT.init_initial_conditions(
+        C, grid, io, time, column, init_with_restart_file=args.restart_init, gather=column_gather
+    )
 
     coupler.setup(grid, time_config)
 
@@ -398,7 +397,7 @@ def _main_impl():
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
 
-        # Needed by FINAL_create_restart_file.main(OUT, io). The grid carries the elevation of the current
+        # Needed by FINAL_create_restart_file.main. The grid carries the elevation of the current
         # time step, whether it was read during initialization or received from Elmer/Ice just above.
         OUT["x"] = grid["x"]
         OUT["y"] = grid["y"]
@@ -408,7 +407,7 @@ def _main_impl():
         io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
 
     # Write restart file
-    FINAL_create_restart_file.main(OUT, io, args.restart_dir)
+    FINAL_create_restart_file.main(OUT, io, args.restart_dir, column_gather)
 
     logger.info("Time loop completed.")
 

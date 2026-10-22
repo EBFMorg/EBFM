@@ -596,30 +596,6 @@ def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
         )
 
 
-def validate_restart_compat(args: Namespace, grid_config, comm) -> None:
-    """Check that restart files are only read and written for a whole grid on a single MPI rank.
-
-    Must be called on every rank of comm.
-
-    @param[in] args        parsed CLI arguments
-    @param[in] grid_config resolved GridConfig
-    @param[in] comm        EBFM's MPI communicator
-    """
-    if args.restart_dir is None and not args.restart_init:
-        return
-
-    if comm.size > 1:
-        _cli_error(
-            f"Restart files (--restart-dir, --restart-init) are not supported for runs on several MPI ranks "
-            f"({comm.size} ranks). Please run on a single rank."
-        )
-    if grid_config.is_partitioned:
-        _cli_error(
-            "Restart files (--restart-dir, --restart-init) are not supported for partitioned meshes "
-            "(--is-partitioned-elmer-mesh)."
-        )
-
-
 def validate_partition_count(args: Namespace, grid_config, comm, logger) -> None:
     """Check that a partitioned Elmer mesh has exactly one partition per MPI rank.
 

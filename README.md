@@ -291,6 +291,11 @@ ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart --re
 
 Note that it is necessary to provide a `--start-time` consistent with the given restart file.
 
+A restart file holds the columns of the whole grid together with their ids
+(`column_id`), so a run may continue from it on any number of MPI ranks and on
+a partitioned mesh. A restart file without `column_id`, written by an older
+version of EBFM, holds the columns in the order of a run on a single rank.
+
 ### Running on several MPI ranks
 
 EBFM splits the grid over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
@@ -305,10 +310,11 @@ mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
 * With a non-partitioned Elmer mesh, every rank reads the whole mesh, and EBFM
   warns about it. For large meshes, use a partitioned mesh (requires
   `--netcdf-dem-mesh`).
-* Rank 0 writes the output file and `--dump-reference` for all ranks. They are
-  identical to those of a run on a single rank.
-* Not supported on several ranks, and rejected with an error: shading,
-  `--forcing-dir` and `--restart-dir`/`--restart-init`.
+* Rank 0 writes the output file, the restart file and `--dump-reference` for
+  all ranks, and reads the restart file. They are identical to those of a run
+  on a single rank.
+* Not supported on several ranks, and rejected with an error: shading and
+  `--forcing-dir`.
 * `--no-check-grid-distribution` skips the start-up check that every column is
   held by exactly one rank.
 
