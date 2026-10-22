@@ -10,6 +10,7 @@ elevation rises non-linearly from south to north, so the partitions, latitude ba
 and in the lapse rate fitted over their own columns.
 """
 
+import filecmp
 import importlib.util
 import os
 import shutil
@@ -126,3 +127,30 @@ def test_partitioned_run_equals_serial_run(tmp_path):
     assert sorted(partitioned) == sorted(serial)
     for key in serial:
         np.testing.assert_array_equal(partitioned[key], serial[key], err_msg=key)
+
+
+@requires_mpirun
+def test_partitioned_run_continues_from_the_restart_file_of_a_serial_run(tmp_path):
+    """The partitioned run matches the rows of the restart file to its cells by Elmer element id."""
+    mesh_dir = tmp_path / "MESH"
+    _write_mesh(mesh_dir)
+    _write_dem(tmp_path / "dem.nc")
+    _run(tmp_path, mesh_dir, 1, "--restart-dir", str(tmp_path / "serial"))
+    (restart_file,) = (tmp_path / "serial").glob("restart_*.nc")
+    (tmp_path / "partitioned").mkdir()
+    shutil.copy(restart_file, tmp_path / "partitioned" / restart_file.name)
+
+    def second_leg(n_ranks: int, restart_dir: str, *args: str) -> dict[str, np.ndarray]:
+        times = ["--start-time", "1979-07-01T12:00:00Z", "--end-time", "1979-07-02T00:00:00Z"]
+        return _run(
+            tmp_path, mesh_dir, n_ranks, *times, "--restart-dir", str(tmp_path / restart_dir), "--restart-init", *args
+        )
+
+    serial = second_leg(1, "serial")
+    partitioned = second_leg(N_PARTITIONS, "partitioned", "--is-partitioned-elmer-mesh")
+
+    assert sorted(partitioned) == sorted(serial)
+    for key in serial:
+        np.testing.assert_array_equal(partitioned[key], serial[key], err_msg=key)
+    (written,) = [f.name for f in (tmp_path / "partitioned").glob("restart_*.nc") if f.name != restart_file.name]
+    assert filecmp.cmp(tmp_path / "serial" / written, tmp_path / "partitioned" / written, shallow=False)

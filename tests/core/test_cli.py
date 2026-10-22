@@ -18,7 +18,6 @@ from ebfm.core.cli import (
     parse_cli_args,
     validate_forcing_parallel_compat,
     validate_partition_count,
-    validate_restart_compat,
     validate_shading_coupling_compat,
     validate_shading_parallel_compat,
     validate_use_part_parallel_compat,
@@ -459,50 +458,6 @@ class TestValidateForcingParallelCompat(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             self._validate(forcing_dir="forcing/", comm_size=4)
         self.assertEqual(ctx.exception.code, 2)
-
-
-class TestValidateRestartCompat(unittest.TestCase):
-    """validate_restart_compat rejects restart files in a run on several ranks or on a partitioned mesh."""
-
-    _RESTART_ARGS = {
-        "--restart-dir": ["--restart-dir", "restart/"],
-        "--restart-init": ["--restart-init"],
-        "--restart-dir --restart-init": ["--restart-dir", "restart/", "--restart-init"],
-    }
-
-    def setUp(self):
-        # Ensure _parser is set by running a valid parse first.
-        parse_cli_args(_MATLAB)
-
-    def _validate(self, restart_args, comm_size=1, is_partitioned=False):
-        grid_config = MagicMock(is_partitioned=is_partitioned)
-        validate_restart_compat(_parse(*restart_args), grid_config, MagicMock(size=comm_size))
-
-    def _assert_rejected(self, **kwargs):
-        for name, restart_args in self._RESTART_ARGS.items():
-            with self.subTest(name), self.assertRaises(SystemExit) as ctx:
-                self._validate(restart_args, **kwargs)
-            self.assertEqual(ctx.exception.code, 2)
-
-    def test_restart_on_single_rank_ok(self):
-        for name, restart_args in self._RESTART_ARGS.items():
-            with self.subTest(name):
-                self._validate(restart_args)  # must not raise
-
-    def test_no_restart_on_several_ranks_ok(self):
-        self._validate([], comm_size=4)  # must not raise
-
-    def test_no_restart_on_several_ranks_with_partitioned_mesh_ok(self):
-        self._validate([], comm_size=4, is_partitioned=True)  # must not raise
-
-    def test_restart_on_several_ranks_rejected(self):
-        self._assert_rejected(comm_size=4)
-
-    def test_restart_with_partitioned_mesh_rejected(self):
-        self._assert_rejected(is_partitioned=True)
-
-    def test_restart_on_several_ranks_with_partitioned_mesh_rejected(self):
-        self._assert_rejected(comm_size=4, is_partitioned=True)
 
 
 class TestValidatePartitionCount(unittest.TestCase):
