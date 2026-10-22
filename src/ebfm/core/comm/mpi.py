@@ -33,6 +33,19 @@ def abort(errorcode: int = 1):
         comm.Abort(errorcode)
 
 
+def abort_if_several_processes(errorcode: int):
+    """
+    Abort like abort(), but only if MPI.COMM_WORLD has more than one process.
+
+    A process that exits without aborting leaves the others waiting for it, e.g. the other components of an MPMD run
+    in the MPI handshake or in a coupling exchange.
+
+    @param[in] errorcode exit status returned to the invoking environment, e.g. by mpirun.
+    """
+    if _is_initialized() and MPI.COMM_WORLD.size > 1:
+        abort(errorcode)
+
+
 _global_comm: MPI.Comm | None = None
 
 

@@ -413,9 +413,25 @@ def _main_impl():
     logger.info("Closing down EBFM.")
 
 
+def _exit_status(exit: SystemExit) -> int:
+    """The exit status the Python interpreter returns for exit."""
+    if exit.code is None:
+        return 0
+    if isinstance(exit.code, int):
+        return exit.code
+    return 1
+
+
 def main():
     try:
         _main_impl()
+    except SystemExit as exit:
+        # E.g. a usage error: on its own, this process would exit and leave the other processes of an MPMD run waiting
+        if _exit_status(exit) != 0 and ebfm.core.comm.mpi_available:
+            from ebfm.core.comm import mpi as comm_mpi
+
+            comm_mpi.abort_if_several_processes(_exit_status(exit))
+        raise
     except Exception as e:
         logger = getLogger(__name__)
         logger.exception("Fatal Error in EBFM")
