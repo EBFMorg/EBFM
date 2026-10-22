@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 """Columns distributed over several MPI ranks are held by exactly one rank each, gathered on one rank in column id
-order and reduced over all ranks."""
+order, scattered back and reduced over all ranks."""
 
 import filecmp
 import importlib.util
@@ -52,6 +52,23 @@ def test_single_rank_gathers_without_communication():
 @requires_mpirun
 def test_gather_on_three_ranks():
     result = _mpirun(3, "gather_columns.py")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    for rank in range(3):
+        assert f"rank {rank}: ok" in result.stdout, result.stdout + result.stderr
+
+
+def test_single_rank_scatters_without_communication():
+    gather = ColumnGather(defaultComm, np.array([4, 2, 9]))
+    values = np.array([1.0, 2.0, 3.0])
+
+    assert gather.scatter(values) is values
+    assert gather.scatter_unordered(values) is values
+
+
+@requires_mpirun
+def test_scatter_on_three_ranks():
+    result = _mpirun(3, "scatter_columns.py")
 
     assert result.returncode == 0, result.stdout + result.stderr
     for rank in range(3):
