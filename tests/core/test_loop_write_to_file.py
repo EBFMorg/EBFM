@@ -27,8 +27,6 @@ GPSUM = len(GLACIER_INDICES)
 # Element ids of the unstructured grid. Like the ids of an Elmer mesh, they neither start at 0 nor are contiguous.
 ELEMENT_IDS = (3, 5, 12, 27, 40)
 
-_NETCDF_OUTPUT = 2
-
 
 def _make_column():
     return ColumnDiscretizationConfig(nl=NL, split=(2,))
@@ -135,22 +133,21 @@ def _write_single_step(outdir, grid, extra_out=None):
     out = _fake_out(GPSUM, NL)
     if extra_out:
         out.update(extra_out)
-    io = {"outdir": str(outdir), "freqout": 1, "output_type": _NETCDF_OUTPUT}
+    io = {"outdir": str(outdir), "freqout": 1}
     time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
 
-    io, outfile = write_output({}, io, out, grid, 0, time, column, ColumnGather(defaultComm, grid["column_id"]))
+    _, outfile = write_output({}, io, out, grid, 0, time, column, ColumnGather(defaultComm, grid["column_id"]))
 
     return Path(outdir) / "model_output.nc", outfile, out
 
 
 class TestNetCDFOutputSmoke(unittest.TestCase):
     """
-    End-to-end checks for the NetCDF output path (io["output_type"] == 2).
+    End-to-end checks for the NetCDF output.
 
-    This is the default output type set in INIT, and the writer takes the column
-    discretization as a separate argument from the grid. These tests drive the
-    real entry point so that a helper whose signature or arguments drift out of
-    sync fails here instead of at runtime.
+    The writer takes the column discretization as a separate argument from the
+    grid. These tests drive the real entry point so that a helper whose
+    signature or arguments drift out of sync fails here instead of at runtime.
     """
 
     def test_structured_grid_writes_all_declared_variables(self):

@@ -106,9 +106,7 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
         write_restart_file = False
 
     io["writebootfile"] = write_restart_file
-
     io["freqout"] = 8  # OUTPUT: frequency of storing output (every n-th time-step)
-    io["output_type"] = 2  # Set output file type: 1 = binary files, 2 = netCDF file
 
     # Ensure output and reboot directories exist
     os.makedirs(io["outdir"], exist_ok=True)
