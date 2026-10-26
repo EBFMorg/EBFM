@@ -258,14 +258,10 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         _set_cell_center_coordinates(grid, mesh)
         mesh.z_cells = mesh.z_vertices[mesh.cell_to_vertex].mean(axis=1)
         grid["z"] = mesh.z_cells
-        grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
+        grid["slope_x"], grid["slope_y"] = mesh.vertex_surface_gradient()
+        grid["slope_beta"] = np.arctan(np.hypot(grid["slope_x"], grid["slope_y"]))
+        grid["slope_gamma"] = slope_azimuth(grid["slope_x"], grid["slope_y"])
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-
-        # TODO later add slope
-        # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
     elif config.grid_type in (GridInputType.MATLAB, GridInputType.NETCDF):  # Read grid and elevations from a file
         # ---------------------------------------------------------------------
