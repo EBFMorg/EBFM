@@ -245,56 +245,6 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
         elif var_type == "sum":
             OUTFILE["TEMP"][varname] += temp_long
 
-    def save_binary_files():
-        """
-        Write model output to binary files and save run information.
-
-        Parameters:
-        - OUTFILE: Dictionary storing output details and temporary data.
-        - io: Dictionary holding I/O parameters, e.g., freqout, outdir.
-        - OUT: Dictionary with variables to be output.
-        - grid: Grid information.
-        - t: Current time step.
-        - time: Dictionary containing time-related variables.
-        - C: Dictionary of constants.
-
-        Returns:
-        - Updated OUTFILE and io dictionaries.
-        """
-
-        # Save output to binary files at the first time step
-        if is_first_time_step(t) and gather.is_root:
-            if not os.path.exists(io["outdir"]):
-                os.makedirs(io["outdir"])
-
-            io["fid"] = {}
-            for entry in OUTFILE["varsout"]:
-                varname = entry[0]
-                filepath = os.path.join(io["outdir"], f"OUT_{varname}.bin")
-                io["fid"][varname] = open(filepath, "wb")
-
-        # Write variables to binary files when `freqout` is met
-        if is_output_time_step(t, io):  # TODO: correct?
-            for entry in OUTFILE["varsout"]:
-                varname = entry[0]
-                OUTFILE[varname] = gather.gather(OUTFILE["TEMP"][varname])
-
-        if is_output_time_step(t, io) and gather.is_root:
-            for entry in OUTFILE["varsout"]:
-                varname = entry[0]
-                io["fid"][varname].write(OUTFILE[varname].astype("float32").tobytes())
-
-        # Close all file streams and save run metadata at the final time step
-        if is_final_time_step(t, time) and gather.is_root:
-            for file in io["fid"].values():
-                file.close()
-
-            # TODO: WORK IN PROGRESS
-            # Prepare the runinfo dictionary
-            # runinfo = {"grid": grid, "time": time, "IOout": io, "Cout": C}
-
-        return True
-
     def save_netCDF_file():
         """
         Save model output stored in OUTFILE to a NetCDF file.
@@ -380,12 +330,7 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
 
         return True
 
-    # Save output as binary or netCDF files
-    if io["output_type"] == 1:
-        save_binary_files()
-    elif io["output_type"] == 2:
-        save_netCDF_file()
-    else:
-        print("Invalid output type. Please choose 1 for binary files or 2 for NetCDF.")
+    # Save output as netCDF file
+    save_netCDF_file()
 
     return io, OUTFILE
