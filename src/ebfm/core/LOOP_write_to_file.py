@@ -164,7 +164,10 @@ def _write_output_variable(nc_file, varname, var_1D, time_index, grid, column):
 
 def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
     """
-    Accumulate the output variables of this time step and write them to file every io["freqout"] steps.
+    Accumulate the output variables of this time step and write them to a NetCDF file every io["freqout"] steps.
+
+    Structured grids are written on dimensions (time, y, x). Unstructured grids are written on dimensions
+    (time, cell), with optional mesh topology if grid["mesh"] is available.
 
     Collective over gather.comm: each rank accumulates its own columns, the root rank gathers the columns of
     all ranks and writes them to a single file.
@@ -214,10 +217,6 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
                 ["ebm_Emelt", "W m^-2", "mean", "Melt energy of EBFM's own energy balance"],
             ]
 
-        io["varsout"] = [
-            {"varname": v[0], "units": v[1], "type": v[2], "description": v[3]} for v in OUTFILE["varsout"]
-        ]
-
     # Update OUTFILE.TEMP with variables to be stored
     for entry in OUTFILE["varsout"]:
         varname, var_type = entry[0], entry[2]
@@ -245,92 +244,79 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
         elif var_type == "sum":
             OUTFILE["TEMP"][varname] += temp_long
 
-    def save_netCDF_file():
-        """
-        Save model output stored in OUTFILE to a NetCDF file.
+    # Epoch for time variable
+    time_units = "days since 1970-01-01 00:00:00"
+    time_calendar = "gregorian"
 
-        Structured grids are written on dimensions (time, y, x).
-        Unstructured grids are written on dimensions (time, cell), with
-        optional mesh topology if grid["mesh"] is available.
-        """
-        # Epoch for time variable
-        time_units = "days since 1970-01-01 00:00:00"
-        time_calendar = "gregorian"
+    # The root rank defines the file from the grid of all ranks
+    if is_first_time_step(t):
+        io["output_grid"] = _gather_grid(gather, grid)
 
-        # The root rank defines the file from the grid of all ranks
-        if is_first_time_step(t):
-            io["output_grid"] = _gather_grid(gather, grid)
+    # Initialize NetCDF file at the first time step
+    if is_first_time_step(t) and gather.is_root:
+        if not os.path.exists(io["outdir"]):
+            os.makedirs(io["outdir"])
 
-        # Initialize NetCDF file at the first time step
-        if is_first_time_step(t) and gather.is_root:
-            if not os.path.exists(io["outdir"]):
-                os.makedirs(io["outdir"])
+        # Create NetCDF file
+        nc_filepath = os.path.join(io["outdir"], "model_output.nc")
+        io["nc_file"] = Dataset(nc_filepath, "w", format="NETCDF4")
+        io["nc_file"].createDimension("time", None)  # Unlimited time dimension
 
-            # Create NetCDF file
-            nc_filepath = os.path.join(io["outdir"], "model_output.nc")
-            io["nc_file"] = Dataset(nc_filepath, "w", format="NETCDF4")
-            io["nc_file"].createDimension("time", None)  # Unlimited time dimension
+        if io["output_grid"]["is_unstructured"]:
+            _write_unstructured_grid(io["nc_file"], io["output_grid"])
+        else:
+            _write_structured_grid(io["nc_file"], io["output_grid"])
 
-            if io["output_grid"]["is_unstructured"]:
-                _write_unstructured_grid(io["nc_file"], io["output_grid"])
-            else:
-                _write_structured_grid(io["nc_file"], io["output_grid"])
+        io["nc_file"].createDimension("nl", column.nl)  # Vertical layers for `sub` variables
 
-            io["nc_file"].createDimension("nl", column.nl)  # Vertical layers for `sub` variables
+        # Define standard output variables
+        for entry in OUTFILE["varsout"]:
+            varname = entry[0]
+            var_units = entry[1]
+            var_desc = entry[3]
 
-            # Define standard output variables
-            for entry in OUTFILE["varsout"]:
-                varname = entry[0]
-                var_units = entry[1]
-                var_desc = entry[3]
+            dimensions, chunksizes = _output_dimensions(varname, io["output_grid"], column)
 
-                dimensions, chunksizes = _output_dimensions(varname, io["output_grid"], column)
+            nc_var = io["nc_file"].createVariable(
+                varname=varname,
+                datatype=np.float32,
+                dimensions=dimensions,
+                zlib=True,
+                complevel=4,
+                fill_value=_FILL_VALUE,
+                chunksizes=chunksizes,
+            )
 
-                nc_var = io["nc_file"].createVariable(
-                    varname=varname,
-                    datatype=np.float32,
-                    dimensions=dimensions,
-                    zlib=True,
-                    complevel=4,
-                    fill_value=_FILL_VALUE,
-                    chunksizes=chunksizes,
-                )
+            # Assign metadata
+            nc_var.units = var_units
+            nc_var.description = var_desc
 
-                # Assign metadata
-                nc_var.units = var_units
-                nc_var.description = var_desc
+        # Define a time variable to track simulation steps
+        nc_time = io["nc_file"].createVariable("time", np.float64, ("time",), zlib=True, fill_value=_FILL_VALUE)
+        nc_time.units = time_units
+        nc_time.calendar = time_calendar
+        nc_time.description = "Time at which data is recorded, in days since 1970-01-01 00:00:00"
 
-            # Define a time variable to track simulation steps
-            nc_time = io["nc_file"].createVariable("time", np.float64, ("time",), zlib=True, fill_value=_FILL_VALUE)
-            nc_time.units = time_units
-            nc_time.calendar = time_calendar
-            nc_time.description = "Time at which data is recorded, in days since 1970-01-01 00:00:00"
+    # Write data to NetCDF at the specified frequency (e.g., for average/summed values)
+    if is_output_time_step(t, io):  # TODO: correct?
+        time_index = t // io["freqout"]  # Determine the time slice index
 
-        # Write data to NetCDF at the specified frequency (e.g., for average/summed values)
-        if is_output_time_step(t, io):  # TODO: correct?
-            time_index = t // io["freqout"]  # Determine the time slice index
+        # Calculate time in "days since 1970-01-01"
+        time_days_since_1970 = date2num(time["TCUR"], units=time_units, calendar=time_calendar)
 
-            # Calculate time in "days since 1970-01-01"
-            time_days_since_1970 = date2num(time["TCUR"], units=time_units, calendar=time_calendar)
+        # Write time variable
+        if gather.is_root:
+            io["nc_file"]["time"][time_index] = time_days_since_1970
 
-            # Write time variable
+        # Write variables to NetCDF, gathering one variable at a time to limit the memory needed on the root rank
+        for entry in OUTFILE["varsout"]:
+            varname = entry[0]
+            var_1D = gather.gather(OUTFILE["TEMP"][varname])
             if gather.is_root:
-                io["nc_file"]["time"][time_index] = time_days_since_1970
+                _write_output_variable(io["nc_file"], varname, var_1D, time_index, io["output_grid"], column)
 
-            # Write variables to NetCDF, gathering one variable at a time to limit the memory needed on the root rank
-            for entry in OUTFILE["varsout"]:
-                varname = entry[0]
-                var_1D = gather.gather(OUTFILE["TEMP"][varname])
-                if gather.is_root:
-                    _write_output_variable(io["nc_file"], varname, var_1D, time_index, io["output_grid"], column)
-
-        # Close the NetCDF file at the final time step
-        if is_final_time_step(t, time) and gather.is_root:
-            io["nc_file"].close()
-
-        return True
-
-    # Save output as netCDF file
-    save_netCDF_file()
+    # Close the NetCDF file at the final time step
+    if is_final_time_step(t, time) and gather.is_root:
+        io["nc_file"].close()
 
     return io, OUTFILE
