@@ -475,5 +475,47 @@ class TestReadNetcdfGrid(unittest.TestCase):
                 self.assertEqual(data["z"][1, 1], 500.0)
 
 
+class TestSlopeAzimuth(unittest.TestCase):
+    """
+    slope_gamma for slopes along the grid axes, where one gradient component is exactly zero.
+
+    An exactly east- or west-facing cell used to get the azimuth of the opposite direction.
+    """
+
+    def test_every_sign_combination(self):
+        # (slope_x, slope_y): expected azimuth; a surface faces downhill
+        expected = {
+            (-1.0, -1.0): -3 * np.pi / 4,  # north-east
+            (-1.0, 0.0): -np.pi / 2,  # east
+            (-1.0, 1.0): -np.pi / 4,  # south-east
+            (0.0, -1.0): np.pi,  # north
+            (0.0, 0.0): 0.0,  # flat
+            (0.0, 1.0): 0.0,  # south
+            (1.0, -1.0): 3 * np.pi / 4,  # north-west
+            (1.0, 0.0): np.pi / 2,  # west
+            (1.0, 1.0): np.pi / 4,  # south-west
+        }
+        for (slope_x, slope_y), gamma in expected.items():
+            with self.subTest(slope_x=slope_x, slope_y=slope_y):
+                result = INIT.slope_azimuth(np.array([slope_x]), np.array([slope_y]))
+                np.testing.assert_allclose(result, gamma, rtol=0, atol=1e-15)
+
+    def test_matches_arctan2(self):
+        slope_x = np.array([0.3, -0.3, 0.3, -0.3, 0.3, -0.3, 0.0, 0.0, -0.0, 0.3, -0.3])
+        slope_y = np.array([0.2, 0.2, -0.2, -0.2, 0.0, 0.0, 0.2, -0.2, -0.2, -0.0, -0.0])
+        np.testing.assert_array_equal(INIT.slope_azimuth(slope_x, slope_y), np.arctan2(slope_x, slope_y))
+
+    def test_east_and_west_facing_match_their_limits(self):
+        for slope_x in (0.3, -0.3):
+            with self.subTest(slope_x=slope_x):
+                eps = 1e-12
+                gamma = INIT.slope_azimuth(np.array([slope_x] * 4), np.array([eps, 0.0, -0.0, -eps]))
+                np.testing.assert_allclose(gamma, np.sign(slope_x) * np.pi / 2, rtol=0, atol=1e-10)
+
+    def test_flat_is_zero(self):
+        gamma = INIT.slope_azimuth(np.array([0.0, -0.0, 0.0, -0.0]), np.array([0.0, 0.0, -0.0, -0.0]))
+        np.testing.assert_array_equal(gamma, 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
