@@ -221,7 +221,7 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             )
 
         grid["column_id"] = mesh.cell_ids
-        grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
+        _set_cell_center_coordinates(grid, mesh)
 
         logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
@@ -234,8 +234,6 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             grid["z"] = mesh.z_cells
             min_thickness_glacier = 1.0  # minimum ice thickness to consider grid cell as glacier (m)
             grid["mask"] = (h_cells > min_thickness_glacier).astype(int)
-
-        grid["lat"], grid["lon"] = np.degrees(mesh.lat_cells), np.degrees(mesh.lon_cells)
 
         if "mask" not in grid:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
@@ -254,21 +252,16 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             source_crs_epsg=config.elmer_mesh_crs_epsg,
         )
 
-        # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
-        # see mesh/README.md for the required preprocessing steps.
+        # assuming mesh.nodes contains DEM data in the z component
+        # see README.md for the required preprocessing steps.
         grid["column_id"] = mesh.cell_ids
-        grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells  # use cell centers as location for DoFs
-        grid["z"] = np.random.uniform(0, 100, size=len(grid["x"]))  # test values!
-        grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
-        grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
-        grid["lon"] = np.zeros_like(grid["x"]) + 320  # test values!
-        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
+        _set_cell_center_coordinates(grid, mesh)
+        mesh.z_cells = mesh.z_vertices[mesh.cell_to_vertex].mean(axis=1)
+        grid["z"] = mesh.z_cells
+        grid["slope_x"], grid["slope_y"] = mesh.vertex_surface_gradient()
+        grid["slope_beta"] = np.arctan(np.hypot(grid["slope_x"], grid["slope_y"]))
+        grid["slope_gamma"] = slope_azimuth(grid["slope_x"], grid["slope_y"])
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-
-        # TODO later add slope
-        # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
     elif config.grid_type in (GridInputType.MATLAB, GridInputType.NETCDF):  # Read grid and elevations from a file
         # ---------------------------------------------------------------------
@@ -424,6 +417,12 @@ def slope_azimuth(slope_x: np.ndarray, slope_y: np.ndarray) -> np.ndarray:
     # arctan2(0, -0.0) is pi
     gamma[(slope_x == 0) & (slope_y == 0)] = 0.0
     return gamma
+
+
+def _set_cell_center_coordinates(grid: GridDict, mesh: Mesh) -> None:
+    """Use the cell centers of `mesh` as column locations: x/y in the mesh CRS, lat/lon in degrees (lon -180..180)."""
+    grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
+    grid["lat"], grid["lon"] = np.degrees(mesh.lat_cells), np.degrees(mesh.lon_cells)
 
 
 def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
