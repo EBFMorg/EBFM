@@ -22,6 +22,8 @@ import numpy as np
 
 from .compute_backend import njit, prange
 
+from .LOOP_SNOW_common import _DT_SAFETY_FACTOR
+
 
 @njit(parallel=True, cache=True)
 def _compaction_kernel(
@@ -224,7 +226,7 @@ def _heat_conduction_prep_kernel(
         # denom_bottom = c_eff[-1] * (0.25*subZ[-2] + 0.75*subZ[-1])
         denom_bottom[i] = c_eff[i, nl - 1] * (0.25 * subZ[i, nl - 2] + 0.75 * subZ[i, nl - 1])
 
-        # dt_stab = 0.5 * min(c_eff[1:]) * min(subZ[1:])**2 / max(kk[1:]) / dayseconds
+        # dt_stab = _DT_SAFETY_FACTOR * min(c_eff[1:]) * min(subZ[1:])**2 / max(kk[1:]) / dayseconds
         min_ceff = math.inf
         min_sz = math.inf
         max_kk = 0.0
@@ -235,7 +237,7 @@ def _heat_conduction_prep_kernel(
                 min_sz = subZ[i, k]
             if kk[i, k] > max_kk:
                 max_kk = kk[i, k]
-        dt_stab[i] = 0.5 * min_ceff * (min_sz * min_sz) / max_kk / dayseconds
+        dt_stab[i] = _DT_SAFETY_FACTOR * min_ceff * (min_sz * min_sz) / max_kk / dayseconds
 
 
 @njit(parallel=True, cache=True)

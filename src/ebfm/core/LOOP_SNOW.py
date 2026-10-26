@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 
 from .compute_backend import get_backend, ComputeBackend
 from .constants import SECONDS_PER_HOUR
+from .LOOP_SNOW_common import _DT_SAFETY_FACTOR
 from .LOOP_SNOW_kernels import (
     _compaction_kernel,
     _heat_conduction_kernel,
@@ -546,7 +547,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             # Stability time step (CFL condition)
             # Layer 0: surface ghost layer, excluded from CFL condition
             dt_stab: NDArray[np.float64] = (
-                0.5
+                _DT_SAFETY_FACTOR
                 * np.min(c_eff[:, 1:], axis=1)
                 * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
                 / np.max(kk[:, 1:], axis=1)
