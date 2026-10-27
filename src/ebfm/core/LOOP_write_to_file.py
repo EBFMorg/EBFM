@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import os
+from pathlib import Path
 
 import numpy as np
 from netCDF4 import Dataset, date2num
@@ -254,12 +255,10 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
 
     # Initialize NetCDF file at the first time step
     if is_first_time_step(t) and gather.is_root:
-        if not os.path.exists(io["outdir"]):
-            os.makedirs(io["outdir"])
+        os.makedirs(Path(io["outfile"]).parent, exist_ok=True)
 
         # Create NetCDF file
-        nc_filepath = os.path.join(io["outdir"], "model_output.nc")
-        io["nc_file"] = Dataset(nc_filepath, "w", format="NETCDF4")
+        io["nc_file"] = Dataset(io["outfile"], "w", format="NETCDF4")
         io["nc_file"].createDimension("time", None)  # Unlimited time dimension
 
         if io["output_grid"]["is_unstructured"]:

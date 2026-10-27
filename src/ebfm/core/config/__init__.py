@@ -7,3 +7,4 @@ from ebfm.core.config.coupling import CouplingConfig, ComponentId, FieldValidati
 from ebfm.core.config.grid import GridConfig, GridInputType  # noqa: F401
 from ebfm.core.config.forcing import ForcingConfig, ForcingType  # noqa: F401
 from ebfm.core.config.column import ColumnDiscretizationConfig  # noqa: F401
+from ebfm.core.config.output import OutputConfig  # noqa: F401
