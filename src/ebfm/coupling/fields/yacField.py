@@ -124,7 +124,7 @@ class YACField:
         """
         assert (
             not self.field_handle
-        ), f"Field '{self.name}' for component '{self.name}' has already been created in YAC."
+        ), f"Field '{self.name}' for component '{self.coupled_component.name}' has already been created in YAC."
 
         logger.debug(
             f"Defining YAC field '{self.name}' for component EBFM with collection size {collection_size} and "

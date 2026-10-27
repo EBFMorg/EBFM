@@ -3,13 +3,175 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import os
+
 import numpy as np
 from netCDF4 import Dataset, date2num
 
-from .LOOP_general_functions import is_first_time_step, is_final_time_step
+from .LOOP_general_functions import is_first_time_step, is_output_time_step, is_final_time_step
+from .comm.gather import ColumnGather
+
+_FILL_VALUE = -9999.0
 
 
-def main(OUTFILE, io, OUT, grid, t, time, column):
+def _gather_grid(gather: ColumnGather, grid):
+    """
+    Grid of the columns of all ranks, on the root rank, as far as the output file needs it.
+
+    @returns the grid on the root rank, None on all other ranks
+    """
+    if gather.comm.size == 1:
+        return grid
+
+    assert not grid["is_unstructured"], "Gathering the output of an unstructured grid is not supported."
+
+    # Every rank holds the full 2-D fields. The column ids of a structured grid are the flat indices of the columns
+    # in them, so the sorted ids of all ranks are the positions of all columns.
+    output_grid = {**grid, "ind": gather.column_ids}
+
+    if not gather.is_root:
+        return None
+    return output_grid
+
+
+def _write_unstructured_grid(nc_file, grid):
+    """Write unstructured mesh coordinates and topology to an open NetCDF file."""
+    n_cells = grid["x"].shape[0]
+
+    nc_file.createDimension("cell", n_cells)
+
+    x = nc_file.createVariable("x", np.float64, ("cell",))
+    y = nc_file.createVariable("y", np.float64, ("cell",))
+    z = nc_file.createVariable("z", np.float64, ("cell",))
+    lon = nc_file.createVariable("lon", np.float64, ("cell",))
+    lat = nc_file.createVariable("lat", np.float64, ("cell",))
+
+    x[:] = grid["x"]
+    y[:] = grid["y"]
+    z[:] = grid["z"]
+    lon[:] = grid["lon"]
+    lat[:] = grid["lat"]
+
+    x.units = "m"
+    y.units = "m"
+    z.units = "m"
+    lon.units = "degrees_east"
+    lat.units = "degrees_north"
+
+    x.description = "Cell-center x coordinate"
+    y.description = "Cell-center y coordinate"
+    z.description = "Cell-center surface elevation"
+    lon.description = "Cell-center longitude"
+    lat.description = "Cell-center latitude"
+
+    mesh = grid.get("mesh")
+    if mesh is None:
+        return
+
+    n_vertices = mesh.x_vertices.shape[0]
+    vertices_per_cell = mesh.cell_to_vertex.shape[1]
+
+    nc_file.createDimension("vertex", n_vertices)
+    nc_file.createDimension("nv", vertices_per_cell)
+
+    vx = nc_file.createVariable("x_vertex", np.float64, ("vertex",))
+    vy = nc_file.createVariable("y_vertex", np.float64, ("vertex",))
+    vz = nc_file.createVariable("z_vertex", np.float64, ("vertex",))
+    vlon = nc_file.createVariable("lon_vertex", np.float64, ("vertex",))
+    vlat = nc_file.createVariable("lat_vertex", np.float64, ("vertex",))
+    cell_vertices = nc_file.createVariable("cell_vertices", np.int32, ("cell", "nv"))
+
+    vx[:] = mesh.x_vertices
+    vy[:] = mesh.y_vertices
+    vz[:] = mesh.z_vertices
+    vlon[:] = np.degrees(mesh.lon_vertices)
+    vlat[:] = np.degrees(mesh.lat_vertices)
+    cell_vertices[:, :] = mesh.cell_to_vertex.astype(np.int32)
+
+    vx.units = "m"
+    vy.units = "m"
+    vz.units = "m"
+    vlon.units = "degrees_east"
+    vlat.units = "degrees_north"
+
+    cell_vertices.description = "Zero-based local vertex indices for each unstructured cell"
+
+
+def _write_structured_grid(nc_file, grid):
+    """Write structured grid dimensions and coordinates to an open NetCDF file."""
+    nc_file.createDimension("y", grid["x_2D"].shape[0])
+    nc_file.createDimension("x", grid["x_2D"].shape[1])
+
+    x = nc_file.createVariable("x", np.float64, ("y", "x"))
+    y = nc_file.createVariable("y", np.float64, ("y", "x"))
+
+    x[:, :] = grid["x_2D"]
+    y[:, :] = grid["y_2D"]
+
+    x.units = "m"
+    y.units = "m"
+
+    x.description = "Structured grid x coordinate"
+    y.description = "Structured grid y coordinate"
+
+    if "z_2D" in grid:
+        z = nc_file.createVariable("z", np.float64, ("y", "x"))
+        z[:, :] = grid["z_2D"]
+        z.units = "m"
+        z.description = "Structured grid surface elevation"
+
+    if "lon_2D" in grid and "lat_2D" in grid:
+        lon = nc_file.createVariable("lon", np.float64, ("y", "x"))
+        lat = nc_file.createVariable("lat", np.float64, ("y", "x"))
+        lon[:, :] = grid["lon_2D"]
+        lat[:, :] = grid["lat_2D"]
+        lon.units = "degrees_east"
+        lat.units = "degrees_north"
+        lon.description = "Structured grid longitude"
+        lat.description = "Structured grid latitude"
+
+
+def _output_dimensions(varname, grid, column):
+    """Return NetCDF dimensions/chunking for a model output variable."""
+    if grid["is_unstructured"]:
+        if varname.startswith("sub"):
+            return ("time", "cell", "nl"), (1, grid["x"].shape[0], column.nl)
+        return ("time", "cell"), (1, grid["x"].shape[0])
+
+    if varname.startswith("sub"):
+        return ("time", "y", "x", "nl"), (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1], column.nl)
+    return ("time", "y", "x"), (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1])
+
+
+def _write_output_variable(nc_file, varname, var_1D, time_index, grid, column):
+    """Write one model output variable to an open NetCDF file."""
+    if grid["is_unstructured"]:
+        if varname.startswith("sub"):
+            nc_file[varname][time_index, :, :] = var_1D
+        else:
+            nc_file[varname][time_index, :] = var_1D
+        return
+
+    if varname.startswith("sub"):
+        var_3D = np.full((grid["x_2D"].size, column.nl), _FILL_VALUE)
+        var_3D[grid["ind"], :] = var_1D
+        var_4D = var_3D.reshape(-1, column.nl).reshape(*grid["x_2D"].shape, column.nl)
+        nc_file[varname][time_index, :, :, :] = var_4D
+    else:
+        var_2D = np.full(grid["x_2D"].shape, _FILL_VALUE)
+        var_2D.flat[grid["ind"]] = var_1D
+        nc_file[varname][time_index, :, :] = var_2D
+
+
+def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
+    """
+    Accumulate the output variables of this time step and write them to a NetCDF file every io["freqout"] steps.
+
+    Structured grids are written on dimensions (time, y, x). Unstructured grids are written on dimensions
+    (time, cell), with optional mesh topology if grid["mesh"] is available.
+
+    Collective over gather.comm: each rank accumulates its own columns, the root rank gathers the columns of
+    all ranks and writes them to a single file.
+    """
     # Specify variables to be written
     if is_first_time_step(t):
         OUTFILE["varsout"] = [
@@ -46,17 +208,27 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
             ["subW", "mm w.e.", "sample", "Irreducible water"],
             ["subZ", "m", "sample", "Layer thickness"],
         ]
-
-        io["varsout"] = [
-            {"varname": v[0], "units": v[1], "type": v[2], "description": v[3]} for v in OUTFILE["varsout"]
-        ]
+        if "ebm_diagnostics" in OUT:
+            # Coupled to ICON-Land: Tsurf/melt are taken from ICON-Land, EBFM's own energy
+            # balance is kept as a diagnostic
+            OUTFILE["varsout"] += [
+                ["ebm_Tsurf", "K", "mean", "Surface temperature of EBFM's own energy balance"],
+                ["ebm_melt", "m w.e.", "sum", "Melt of EBFM's own energy balance"],
+                ["ebm_Emelt", "W m^-2", "mean", "Melt energy of EBFM's own energy balance"],
+            ]
 
     # Update OUTFILE.TEMP with variables to be stored
     for entry in OUTFILE["varsout"]:
         varname, var_type = entry[0], entry[2]
-        # "shade" is written as a fraction but sourced from the boolean OUT["is_shaded"]
-        source_key = "is_shaded" if varname == "shade" else varname
-        temp_long = np.float64(OUT[source_key])
+        if varname == "shade":
+            # "shade" is written as a fraction but sourced from the boolean OUT["is_shaded"]
+            source = OUT["is_shaded"]
+        elif varname.startswith("ebm_"):
+            # EBFM's own energy balance, kept as a diagnostic under OUT["ebm_diagnostics"]
+            source = OUT["ebm_diagnostics"][varname.removeprefix("ebm_")]
+        else:
+            source = OUT[varname]
+        temp_long = np.float64(source)
 
         # Initialize TEMP storage
         if t % io["freqout"] == 0:
@@ -72,178 +244,79 @@ def main(OUTFILE, io, OUT, grid, t, time, column):
         elif var_type == "sum":
             OUTFILE["TEMP"][varname] += temp_long
 
-    def save_binary_files():
-        """
-        Write model output to binary files and save run information.
+    # Epoch for time variable
+    time_units = "days since 1970-01-01 00:00:00"
+    time_calendar = "gregorian"
 
-        Parameters:
-        - OUTFILE: Dictionary storing output details and temporary data.
-        - io: Dictionary holding I/O parameters, e.g., freqout, outdir.
-        - OUT: Dictionary with variables to be output.
-        - grid: Grid information.
-        - t: Current time step.
-        - time: Dictionary containing time-related variables.
-        - C: Dictionary of constants.
+    # The root rank defines the file from the grid of all ranks
+    if is_first_time_step(t):
+        io["output_grid"] = _gather_grid(gather, grid)
 
-        Returns:
-        - Updated OUTFILE and io dictionaries.
-        """
+    # Initialize NetCDF file at the first time step
+    if is_first_time_step(t) and gather.is_root:
+        if not os.path.exists(io["outdir"]):
+            os.makedirs(io["outdir"])
 
-        # Save output to binary files at the first time step
-        if is_first_time_step(t):
-            if not os.path.exists(io["outdir"]):
-                os.makedirs(io["outdir"])
+        # Create NetCDF file
+        nc_filepath = os.path.join(io["outdir"], "model_output.nc")
+        io["nc_file"] = Dataset(nc_filepath, "w", format="NETCDF4")
+        io["nc_file"].createDimension("time", None)  # Unlimited time dimension
 
-            io["fid"] = {}
-            for entry in OUTFILE["varsout"]:
-                varname = entry[0]
-                filepath = os.path.join(io["outdir"], f"OUT_{varname}.bin")
-                io["fid"][varname] = open(filepath, "wb")
+        if io["output_grid"]["is_unstructured"]:
+            _write_unstructured_grid(io["nc_file"], io["output_grid"])
+        else:
+            _write_structured_grid(io["nc_file"], io["output_grid"])
 
-        # Write variables to binary files when `freqout` is met
-        if (t + 1) % io["freqout"] == 0:  # TODO: correct?
-            for entry in OUTFILE["varsout"]:
-                varname = entry[0]
-                OUTFILE[varname] = OUTFILE["TEMP"][varname]
-                io["fid"][varname].write(OUTFILE[varname].astype("float32").tobytes())
+        io["nc_file"].createDimension("nl", column.nl)  # Vertical layers for `sub` variables
 
-        # Close all file streams and save run metadata at the final time step
-        if is_final_time_step(t, time):
-            for file in io["fid"].values():
-                file.close()
+        # Define standard output variables
+        for entry in OUTFILE["varsout"]:
+            varname = entry[0]
+            var_units = entry[1]
+            var_desc = entry[3]
 
-            # TODO: WORK IN PROGRESS
-            # Prepare the runinfo dictionary
-            # runinfo = {"grid": grid, "time": time, "IOout": io, "Cout": C}
+            dimensions, chunksizes = _output_dimensions(varname, io["output_grid"], column)
 
-        return True
+            nc_var = io["nc_file"].createVariable(
+                varname=varname,
+                datatype=np.float32,
+                dimensions=dimensions,
+                zlib=True,
+                complevel=4,
+                fill_value=_FILL_VALUE,
+                chunksizes=chunksizes,
+            )
 
-    def save_netCDF_file():
-        """
-        Save model output stored in OUTFILE to a NetCDF file. Converts 1D data to 2D grids.
+            # Assign metadata
+            nc_var.units = var_units
+            nc_var.description = var_desc
 
-        Parameters:
-        - OUTFILE: Dictionary storing output details and temporary data.
-        - io: Dictionary holding I/O parameters, e.g., freqout, outdir.
-        - grid: Grid information (e.g., x_2D size and ind: mapping 1D -> 2D).
-        - t: Current time step.
-        - time: Dictionary containing time-related variables.
-        - freqout: Frequency of output (save interval).
+        # Define a time variable to track simulation steps
+        nc_time = io["nc_file"].createVariable("time", np.float64, ("time",), zlib=True, fill_value=_FILL_VALUE)
+        nc_time.units = time_units
+        nc_time.calendar = time_calendar
+        nc_time.description = "Time at which data is recorded, in days since 1970-01-01 00:00:00"
 
-        Returns:
-        - Updated io dictionary with NetCDF file reference.
-        """
-        # Epoch for time variable
-        time_units = "days since 1970-01-01 00:00:00"
-        time_calendar = "gregorian"
+    # Write data to NetCDF at the specified frequency (e.g., for average/summed values)
+    if is_output_time_step(t, io):  # TODO: correct?
+        time_index = t // io["freqout"]  # Determine the time slice index
 
-        # Initialize NetCDF file at the first time step
-        if is_first_time_step(t):
-            if not os.path.exists(io["outdir"]):
-                os.makedirs(io["outdir"])
+        # Calculate time in "days since 1970-01-01"
+        time_days_since_1970 = date2num(time["TCUR"], units=time_units, calendar=time_calendar)
 
-            # Create NetCDF file
-            nc_filepath = os.path.join(io["outdir"], "model_output.nc")
-            io["nc_file"] = Dataset(nc_filepath, "w", format="NETCDF4")
-            io["nc_file"].createDimension("time", None)  # Unlimited time dimension
-
-            if grid["is_unstructured"]:
-                # Define dimensions
-                io["nc_file"].createDimension("y", grid["lat"].shape[0])  # 2D grid rows
-            else:  # structured grid
-                # Define dimensions
-                io["nc_file"].createDimension("y", grid["x_2D"].shape[0])  # 2D grid rows
-                io["nc_file"].createDimension("x", grid["x_2D"].shape[1])  # 2D grid columns
-
-            io["nc_file"].createDimension("nl", column.nl)  # Vertical layers for `sub` variables
-
-            # Define standard output variables
-            for entry in OUTFILE["varsout"]:
-                varname = entry[0]
-                var_units = entry[1]
-                var_desc = entry[3]
-
-                dimensions: tuple
-                chunksizes: tuple
-
-                if grid["is_unstructured"]:
-                    # Check if variable is a `sub` variable
-                    if varname.startswith("sub"):
-                        # Define variable as 3D: (time, y, nl)
-                        dimensions = ("time", "y", "nl")
-                        chunksizes = (1, grid["lat"].shape[0], column.nl)
-                    else:
-                        # Define variable as 2D: (time, y)
-                        dimensions = ("time", "y")
-                        chunksizes = (1, grid["lat"].shape[0])
-                else:
-                    # Check if variable is a `sub` variable
-                    if varname.startswith("sub"):
-                        # Define variable as 4D: (time, y, x, nl)
-                        dimensions = ("time", "y", "x", "nl")
-                        chunksizes = (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1], column.nl)
-                    else:
-                        # Define variable as 3D: (time, y, x)
-                        dimensions = ("time", "y", "x")
-                        chunksizes = (1, grid["x_2D"].shape[0], grid["x_2D"].shape[1])
-
-                nc_var = io["nc_file"].createVariable(
-                    varname=varname,
-                    datatype=np.float32,
-                    dimensions=dimensions,
-                    zlib=True,
-                    complevel=4,
-                    fill_value=-9999.0,  # Fill missing values
-                    chunksizes=chunksizes,
-                )
-                # Assign metadata
-                nc_var.units = var_units
-                nc_var.description = var_desc
-
-            # Define a time variable to track simulation steps
-            nc_time = io["nc_file"].createVariable("time", np.float64, ("time",), zlib=True, fill_value=-9999.0)
-            nc_time.units = time_units
-            nc_time.calendar = time_calendar
-            nc_time.description = "Time at which data is recorded, in days since 1970-01-01 00:00:00"
-
-        # Write data to NetCDF at the specified frequency (e.g., for average/summed values)
-        if (t + 1) % io["freqout"] == 0:  # TODO: correct?
-            time_index = t // io["freqout"]  # Determine the time slice index
-
-            # Calculate time in "days since 1970-01-01"
-            time_days_since_1970 = date2num(time["TCUR"], units=time_units, calendar=time_calendar)
-
-            # Write time variable
+        # Write time variable
+        if gather.is_root:
             io["nc_file"]["time"][time_index] = time_days_since_1970
 
-            # Write variables to NetCDF
-            for entry in OUTFILE["varsout"]:
-                varname = entry[0]
-                var_1D = OUTFILE["TEMP"][varname]  # 1D data
+        # Write variables to NetCDF, gathering one variable at a time to limit the memory needed on the root rank
+        for entry in OUTFILE["varsout"]:
+            varname = entry[0]
+            var_1D = gather.gather(OUTFILE["TEMP"][varname])
+            if gather.is_root:
+                _write_output_variable(io["nc_file"], varname, var_1D, time_index, io["output_grid"], column)
 
-                # Handle `sub` variables (4D: time, y, x, nl)
-                if varname.startswith("sub"):
-                    var_3D = np.full((grid["x_2D"].size, column.nl), -9999.0)
-                    var_3D[grid["ind"], :] = var_1D
-                    var_4D = var_3D.reshape(-1, column.nl).reshape(*grid["x_2D"].shape, column.nl)
-                    io["nc_file"][varname][time_index, :, :, :] = var_4D
-                else:
-                    var_2D = np.full(grid["x_2D"].shape, -9999.0)
-                    var_2D.flat[grid["ind"]] = var_1D
-                    io["nc_file"][varname][time_index, :, :] = var_2D
-
-        # Close the NetCDF file at the final time step
-        if is_final_time_step(t, time):
-            io["nc_file"].close()
-
-        return True
-
-    # Save output as binary or netCDF files
-    if io["output_type"] == 1:
-        save_binary_files()
-    elif io["output_type"] == 2:
-        save_netCDF_file()
-    else:
-        print("Invalid output type. Please choose 1 for binary files or 2 for NetCDF.")
+    # Close the NetCDF file at the final time step
+    if is_final_time_step(t, time) and gather.is_root:
+        io["nc_file"].close()
 
     return io, OUTFILE

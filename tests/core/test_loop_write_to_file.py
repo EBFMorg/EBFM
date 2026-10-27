@@ -1,0 +1,297 @@
+# SPDX-FileCopyrightText: 2026 EBFM Authors
+#
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# This file was generated with the help of AI tools.
+
+import tempfile
+import unittest
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+from netCDF4 import Dataset
+
+from ebfm.core import LOOP_write_to_file
+from ebfm.core.LOOP_write_to_file import _output_dimensions, main as write_output
+from ebfm.core.comm import defaultComm
+from ebfm.core.comm.gather import ColumnGather
+from ebfm.core.config import ColumnDiscretizationConfig
+
+NL = 4
+NY, NX = 3, 4
+# Flat indices of the glacier points inside the NY x NX structured grid.
+GLACIER_INDICES = (0, 3, 5, 7, 11)
+GPSUM = len(GLACIER_INDICES)
+
+# Element ids of the unstructured grid. Like the ids of an Elmer mesh, they neither start at 0 nor are contiguous.
+ELEMENT_IDS = (3, 5, 12, 27, 40)
+
+
+def _make_column():
+    return ColumnDiscretizationConfig(nl=NL, split=(2,))
+
+
+# Mirrors the varname column of LOOP_write_to_file.main()'s varsout list, with
+# "shade" replaced by "is_shaded": the writer reads shade's data from that key
+# (see the source_key remap in main()), not from "shade" itself.
+# Update this alongside varsout when a variable is added, renamed or removed -
+# a stale entry here surfaces as a KeyError naming the missing key.
+_OUTPUT_VARIABLES = (
+    "smb",
+    "Tsurf",
+    "climT",
+    "climP",
+    "climC",
+    "climRH",
+    "climWS",
+    "climPres",
+    "climrain",
+    "climsnow",
+    "snowmass",
+    "smb_cumulative",
+    "melt",
+    "refr",
+    "runoff",
+    "runoff_surf",
+    "runoff_slush",
+    "SWin",
+    "SWout",
+    "LWin",
+    "LWout",
+    "SHF",
+    "LHF",
+    "GHF",
+    "surfH",
+    "albedo",
+    "is_shaded",
+    "subD",
+    "subT",
+    "subS",
+    "subW",
+    "subZ",
+)
+
+
+def _fake_out(gpsum, nl):
+    """Build an OUT dict with plausible data for every variable the writer declares."""
+    out = {}
+    for key in _OUTPUT_VARIABLES:
+        if key.startswith("sub"):
+            out[key] = np.arange(gpsum * nl, dtype=np.float64).reshape(gpsum, nl)
+        elif key == "is_shaded":
+            out[key] = np.zeros(gpsum, dtype=bool)
+        else:
+            out[key] = np.arange(gpsum, dtype=np.float64)
+    return out
+
+
+def _structured_grid():
+    x_2D, y_2D = np.meshgrid(np.arange(NX, dtype=np.float64), np.arange(NY, dtype=np.float64))
+    return {
+        "is_unstructured": False,
+        "is_partitioned": False,
+        "x_2D": x_2D,
+        "y_2D": y_2D,
+        "z_2D": np.full((NY, NX), 100.0),
+        "lon_2D": np.zeros((NY, NX)),
+        "lat_2D": np.zeros((NY, NX)),
+        "ind": np.array(GLACIER_INDICES),
+        "column_id": np.array(GLACIER_INDICES),
+    }
+
+
+def _unstructured_grid():
+    return {
+        "is_unstructured": True,
+        "is_partitioned": False,
+        "column_id": np.array(ELEMENT_IDS),
+        "x": np.arange(GPSUM, dtype=np.float64),
+        "y": np.arange(GPSUM, dtype=np.float64),
+        "z": np.full(GPSUM, 100.0),
+        "lon": np.zeros(GPSUM),
+        "lat": np.zeros(GPSUM),
+    }
+
+
+def _write_single_step(outdir, grid, extra_out=None):
+    """
+    Run the writer for a one-step simulation and return the closed output file.
+
+    With freqout=1 and tn=1 the single call at t=0 creates the file, defines the
+    variables, writes time index 0 and closes the file again.
+
+    @param[in] outdir directory to write the NetCDF file into
+    @param[in] grid structured or unstructured grid dict (_structured_grid()/_unstructured_grid())
+    @param[in] extra_out optional dict merged into the fabricated OUT before writing, for keys
+                         _fake_out() doesn't declare (e.g. the conditional "ebm_diagnostics")
+
+    @returns (path to the written NetCDF file, the writer's outfile dict, the OUT dict
+             actually written)
+    """
+    column = _make_column()
+    out = _fake_out(GPSUM, NL)
+    if extra_out:
+        out.update(extra_out)
+    io = {"outdir": str(outdir), "freqout": 1}
+    time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
+
+    _, outfile = write_output({}, io, out, grid, 0, time, column, ColumnGather(defaultComm, grid["column_id"]))
+
+    return Path(outdir) / "model_output.nc", outfile, out
+
+
+class TestNetCDFOutputSmoke(unittest.TestCase):
+    """
+    End-to-end checks for the NetCDF output.
+
+    The writer takes the column discretization as a separate argument from the
+    grid. These tests drive the real entry point so that a helper whose
+    signature or arguments drift out of sync fails here instead of at runtime.
+    """
+
+    def test_structured_grid_writes_all_declared_variables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, outfile, _ = _write_single_step(tmp, _structured_grid())
+
+            self.assertTrue(path.is_file())
+            with Dataset(path) as nc:
+                self.assertEqual(len(nc.dimensions["nl"]), NL)
+                self.assertEqual(len(nc.dimensions["y"]), NY)
+                self.assertEqual(len(nc.dimensions["x"]), NX)
+
+                for entry in outfile["varsout"]:
+                    varname = entry[0]
+                    self.assertIn(varname, nc.variables)
+                    if varname.startswith("sub"):
+                        self.assertEqual(nc[varname].dimensions, ("time", "y", "x", "nl"))
+                        self.assertEqual(nc[varname].shape, (1, NY, NX, NL))
+                    else:
+                        self.assertEqual(nc[varname].dimensions, ("time", "y", "x"))
+                        self.assertEqual(nc[varname].shape, (1, NY, NX))
+
+    def test_unstructured_grid_writes_all_declared_variables(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, outfile, _ = _write_single_step(tmp, _unstructured_grid())
+
+            self.assertTrue(path.is_file())
+            with Dataset(path) as nc:
+                self.assertEqual(len(nc.dimensions["nl"]), NL)
+                self.assertEqual(len(nc.dimensions["cell"]), GPSUM)
+
+                for entry in outfile["varsout"]:
+                    varname = entry[0]
+                    self.assertIn(varname, nc.variables)
+                    if varname.startswith("sub"):
+                        self.assertEqual(nc[varname].dimensions, ("time", "cell", "nl"))
+                        self.assertEqual(nc[varname].shape, (1, GPSUM, NL))
+                    else:
+                        self.assertEqual(nc[varname].dimensions, ("time", "cell"))
+                        self.assertEqual(nc[varname].shape, (1, GPSUM))
+
+    def test_structured_grid_scatters_values_onto_glacier_points(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, _, out = _write_single_step(tmp, _structured_grid())
+
+            with Dataset(path) as nc:
+                # A 3D (time, y, x) variable: glacier points carry data, the rest is masked.
+                smb = nc["smb"][0]
+                np.testing.assert_allclose(smb.compressed(), out["smb"])
+                self.assertEqual(smb.count(), GPSUM)
+
+                # A 4D (time, y, x, nl) variable: every layer of every glacier column.
+                sub_t = nc["subT"][0]
+                flat = sub_t.reshape(NY * NX, NL)
+                np.testing.assert_allclose(flat[list(GLACIER_INDICES), :], out["subT"])
+                self.assertEqual(sub_t.count(), GPSUM * NL)
+
+    def test_ebm_diagnostics_written_when_coupled_to_icon_land(self):
+        """
+        When coupled to ICON-Land, OUT["ebm_diagnostics"] (the results of EBFM's own
+        energy balance) is unpacked onto the ebm_Tsurf/ebm_melt/ebm_Emelt output
+        variables instead of being read as flat OUT["ebm_<name>"] keys.
+        """
+        ebm_diagnostics = {
+            "Tsurf": np.arange(GPSUM, dtype=np.float64) + 250.0,
+            "melt": np.arange(GPSUM, dtype=np.float64) * 1e-3,
+            "Emelt": np.arange(GPSUM, dtype=np.float64) * 10.0,
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path, outfile, _ = _write_single_step(
+                tmp, _structured_grid(), extra_out={"ebm_diagnostics": ebm_diagnostics}
+            )
+
+            varnames = [entry[0] for entry in outfile["varsout"]]
+            self.assertIn("ebm_Tsurf", varnames)
+            self.assertIn("ebm_melt", varnames)
+            self.assertIn("ebm_Emelt", varnames)
+
+            with Dataset(path) as nc:
+                for varname, key in (("ebm_Tsurf", "Tsurf"), ("ebm_melt", "melt"), ("ebm_Emelt", "Emelt")):
+                    np.testing.assert_allclose(nc[varname][0].compressed(), ebm_diagnostics[key])
+
+    def test_layer_count_comes_from_the_column_not_the_grid(self):
+        """
+        The number of layers lives in the column discretization; the grid dict
+        carries no "nl" key. Passing a grid without one must still work.
+        """
+        column = _make_column()
+        grid = _structured_grid()
+        self.assertNotIn("nl", grid)
+
+        dimensions, chunksizes = _output_dimensions("subT", grid, column)
+        self.assertEqual(dimensions, ("time", "y", "x", "nl"))
+        self.assertEqual(chunksizes, (1, NY, NX, column.nl))
+
+        unstructured = _unstructured_grid()
+        self.assertNotIn("nl", unstructured)
+
+        dimensions, chunksizes = _output_dimensions("subT", unstructured, column)
+        self.assertEqual(dimensions, ("time", "cell", "nl"))
+        self.assertEqual(chunksizes, (1, GPSUM, column.nl))
+
+    def test_time_variable_records_the_current_step(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path, _, _ = _write_single_step(tmp, _structured_grid())
+
+            with Dataset(path) as nc:
+                self.assertEqual(nc["time"].units, "days since 1970-01-01 00:00:00")
+                # 2020-01-01 is 18262 days after the epoch.
+                self.assertAlmostEqual(float(nc["time"][0]), 18262.0)
+
+    def test_every_module_helper_taking_a_column_is_called_with_one(self):
+        """
+        Guard against the writer's helpers drifting out of sync again: any helper
+        that declares a `column` parameter must receive it at every call site.
+        """
+        import ast
+        import inspect
+
+        source = inspect.getsource(LOOP_write_to_file)
+        tree = ast.parse(source)
+
+        column_helpers = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and "column" in {a.arg for a in node.args.args}
+        }
+        self.assertIn("_output_dimensions", column_helpers)
+        self.assertIn("_write_output_variable", column_helpers)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
+                continue
+            helper = column_helpers.get(node.func.id)
+            if helper is None:
+                continue
+            passed = len(node.args) + len(node.keywords)
+            self.assertEqual(
+                passed,
+                len(helper.args.args),
+                f"{node.func.id}() is called with {passed} arguments on line {node.lineno} "
+                f"but declares {len(helper.args.args)}",
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

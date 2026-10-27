@@ -3,6 +3,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from datetime import datetime, timedelta
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def is_first_time_step(t: int) -> bool:
@@ -16,6 +19,20 @@ def is_first_time_step(t: int) -> bool:
         bool: True if the current time step is the first time step, False otherwise.
     """
     return t == 0
+
+
+def is_output_time_step(t: int, io: dict) -> bool:
+    """
+    Check if the current time step is a time step where output has to be written
+
+    Parameters:
+        t (int): Current time step (0-based index).
+        io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
+
+    Returns:
+        bool: True if the current time step is output time step, False otherwise.
+    """
+    return (t + 1) % io["freqout"] == 0
 
 
 def is_final_time_step(t: int, time: dict) -> bool:
@@ -34,7 +51,7 @@ def is_final_time_step(t: int, time: dict) -> bool:
 
 def print_time(t: int, ts: datetime, dt: float) -> datetime:
     """
-    Sets time parameters and prints the current model time to the screen.
+    Sets time parameters and logs the current model time.
 
     Parameters:
         t (int): Current time step.
@@ -50,8 +67,8 @@ def print_time(t: int, ts: datetime, dt: float) -> datetime:
     # Extract year, month, day, and hour from the current time
     tempdate = t_cur.timetuple()
 
-    # Print the current time parameters
-    print(
+    # Log the current time parameters
+    logger.info(
         f"Year: {tempdate.tm_year:4d}   "
         f"Month: {tempdate.tm_mon:2d}   "
         f"Day: {tempdate.tm_mday:2d}   "

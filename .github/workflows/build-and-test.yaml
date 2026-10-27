@@ -11,6 +11,7 @@ jobs:
   build-and-test:
     name: Build and test (${{ matrix.variant }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
@@ -23,6 +24,8 @@ jobs:
     steps:
       - name: Checkout EBFM repository
         uses: actions/checkout@v6
+        with:
+          lfs: true
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -30,6 +33,15 @@ jobs:
       - name: Setup MPI
         if: ${{ matrix.run_mpi }}
         uses: mpi4py/setup-mpi@v1
+        with:
+          # Not the default (mpich): the MPICH package on Ubuntu 24.04 is broken
+          # (https://bugs.launchpad.net/ubuntu/+source/mpich/+bug/2072338), and one symptom is that
+          # several ranks report the same rank number -- which is exactly what the handshake step
+          # below checks.
+          mpi: openmpi
+      - name: Keep Open MPI's TCP traffic on the loopback interface
+        if: ${{ matrix.run_mpi }}
+        run: echo "btl_tcp_if_include=lo" >> ~/.openmpi/mca-params.conf
       - name: Create virtual environment and install EBFM
         run: |
           python3 -m venv .venv
@@ -39,7 +51,7 @@ jobs:
         run: git --version
       - name: Check EBFM version
         run: .venv/bin/ebfm --version
-      - name: Run example
+      - name: Run MATLAB example
         run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat
       - name: Run example with restart
         run: |
@@ -47,10 +59,17 @@ jobs:
           test -f Reboot/restart_1979-01-02T00:00:00Z.nc
           .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --restart-init --start-time "02-Jan-1979 00:00" --end-time "03-Jan-1979 00:00"
           test -f Reboot/restart_1979-01-03T00:00:00Z.nc
-      - name: Run example with (pseudo) coupling
-        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon --couple-to-elmer --fake-coupling --no-shading
+      - name: Run example with (pseudo) coupling on an Elmer grid
+        run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --elmer-mesh-crs-epsg 3413 --couple-to-icon-atmo --couple-to-icon-land --couple-to-elmer-ice --fake-coupling --no-shading
+      - name: Run example with elevation from Elmer/Ice XIOS output on an Elmer grid
+        run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh-unstructured examples/greenland_mesh_v0/xios_dem.nc --elmer-mesh-crs-epsg 3413 --end-time "1-Jan-1979 03:00"
+      # No --couple-to-elmer-ice here: its surface elevation updates grid["z"], which a MATLAB grid cannot follow with
+      # its slopes and 2-D elevation, so ElmerIce.validate_grid rejects the combination.
+      - name: Run example with (pseudo) coupling on a MATLAB grid
+        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon-atmo --couple-to-icon-land --fake-coupling --no-shading
       - name: Run example with MPI handshake
         if: ${{ matrix.run_mpi }}
+        timeout-minutes: 5
         run: |
           # Run dummy script first; dummy on rank 0, EBFM on rank 1
           mpirun -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py first : \
@@ -58,4 +77,32 @@ jobs:
           # Run dummy script second; EBFM on rank 0, dummy on rank 1
           mpirun -np 1 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00" : \
                  -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py second
+      - name: Run example on several MPI ranks
+        if: ${{ matrix.run_mpi }}
+        timeout-minutes: 5
+        run: mpirun -np 4 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
 
+  # LFS checkout is expensive (downloads all tracked binary files).
+  # Run this stage only after build-and-test has passed to avoid wasting
+  # LFS bandwidth on broken builds.
+  carra2-example:
+    name: CARRA2 example
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    steps:
+      # use cached LFS to avoid downloading all LFS files in the repo (e.g., large example data)
+      - name: Checkout code
+        uses: nschloe/action-cached-lfs-checkout@v1
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Create virtual environment and install EBFM
+        run: |
+          python3 -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install .
+      - name: Run Greenland example (random forcing)
+        run: .venv/bin/ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --start-time 1990-05-01T00:00:00 --end-time 1990-05-02T00:00:00
+      - name: Run Greenland example (CARRA2 forcing)
+        run: .venv/bin/ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-05-01T00:00:00 --end-time 1990-05-02T00:00:00

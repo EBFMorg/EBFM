@@ -12,18 +12,24 @@ from ebfm.core import (
     LOOP_general_functions,
     LOOP_climate_forcing,
     LOOP_EBM,
+    LOOP_EBM_GHF,
     LOOP_SNOW,
     LOOP_mass_balance,
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
-from ebfm.core.grid import GridInputType
-from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig
+from ebfm.core.comm.gather import ColumnGather
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
     extract_active_coupling_features,
     parse_cli_args,
     resolve_numba_threads,
     validate_shading_coupling_compat,
+    validate_grid_parallel_compat,
+    validate_use_part_parallel_compat,
+    validate_forcing_parallel_compat,
+    validate_restart_parallel_compat,
+    validate_shading_parallel_compat,
 )
 
 import ebfm.coupling
@@ -32,6 +38,12 @@ import ebfm.coupling
 logger: Logger
 # dedicated logger for diagnostic output (--print-diagnostics)
 diagnostics_logger = getLogger("ebfm.diagnostics")
+
+
+# Whether EBFM's own surface energy balance is evaluated while ICON-Land provides the one that
+# drives the model, to be compared with it (OUT["ebm_diagnostics"], written to the output as ebm_*).
+# TODO: make this a command line option.
+COMPUTE_EBM_DIAGNOSTICS = True
 
 
 # Arrays saved by --dump-reference
@@ -63,11 +75,16 @@ def _format_stats(arr: np.ndarray) -> str:
     return f"min={arr.min():.4e}  max={arr.max():.4e}  mean={arr.mean():.4e}"
 
 
-def dump_reference(logger, OUT, filepath: str):
-    """Save key output arrays to a .npz file for later comparison."""
-    import numpy as np
+def dump_reference(logger, OUT, filepath: str, gather: ColumnGather):
+    """
+    Save key output arrays to a .npz file for later comparison.
 
-    data = {k: OUT[k] for k in _REFERENCE_KEYS if k in OUT}
+    Collective over gather.comm: the root rank gathers the columns of all ranks and writes them, ordered by column id.
+    """
+    data = {k: gather.gather(OUT[k]) for k in _REFERENCE_KEYS if k in OUT}
+    if not gather.is_root:
+        return
+
     missing = [k for k in _REFERENCE_KEYS if k not in OUT]
     if missing:
         logger.warning(f"[DUMP] Keys not found in OUT and will be skipped: {missing}")
@@ -75,19 +92,44 @@ def dump_reference(logger, OUT, filepath: str):
     logger.info(f"[DUMP] Reference snapshot saved to '{filepath}' (keys: {list(data.keys())})")
 
 
-def print_diagnostics(grid, OUT, t):
-    """Log key diagnostic values each timestep for performance and correctness analysis."""
+def print_diagnostics(grid, OUT, t, gather: ColumnGather):
+    """
+    Log key diagnostic values each timestep for performance and correctness analysis.
 
-    gpsum = grid.get("gpsum", "N/A")
+    Collective over gather.comm: the root rank gathers the columns of all ranks and logs the values of the whole grid.
+    """
+    smb = gather.gather(OUT["smb"]) if "smb" in OUT else None
+    smb_cum = gather.gather(OUT["smb_cumulative"]) if "smb_cumulative" in OUT else None
+    if not gather.is_root:
+        return
+
+    gpsum = len(gather.column_ids)
     has_shading = grid.get("has_shading", False)
-    smb = OUT.get("smb")
-    smb_cum = OUT.get("smb_cumulative")
 
     diagnostics_logger.info(f"[t={t + 1}] gpsum={gpsum}, shading={'on' if has_shading else 'off'}")
     if smb is not None:
         diagnostics_logger.info(f"[t={t + 1}] smb:            {_format_stats(smb)}")
     if smb_cum is not None:
         diagnostics_logger.info(f"[t={t + 1}] smb_cumulative: {_format_stats(smb_cum)}")
+
+
+def set_random_seed(logger, random_seed: int | None, comm):
+    """
+    Seed NumPy's random number generator with the same seed on every rank of comm.
+
+    Collective over comm. Without a given seed, a run on several ranks uses a seed drawn on rank 0, so that all ranks
+    draw the same random numbers, e.g. the wind speed of the random forcing; a run on a single rank stays unseeded.
+
+    @param[in] random_seed seed from --random-seed, or None
+    @param[in] comm EBFM's MPI communicator
+    """
+    if random_seed is None and comm.size > 1:
+        random_seed = int(np.random.SeedSequence().generate_state(1)[0]) if comm.rank == 0 else None
+        random_seed = comm.bcast(random_seed, root=0)
+
+    if random_seed is not None:
+        np.random.seed(random_seed)
+        logger.info(f"NumPy random seed fixed to {random_seed} for reproducibility.")
 
 
 def _main_impl():
@@ -126,12 +168,17 @@ def _main_impl():
         reset_handlers=True,
     )
 
+    logger = getLogger(__name__)
+    logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
+
+    forcing_config = ForcingConfig(coupling_config, args)
+
+    # Ensure --use-part is only used in runs on a single rank.
+    validate_use_part_parallel_compat(args, ebfm_comm)
+
     if not hasattr(args, "use_part"):
         # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
         args.use_part = ebfm_comm.rank + 1
-
-    logger = getLogger(__name__)
-    logger.info(f"Starting EBFM version {ebfm.core.get_version()}...")
 
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
     if args.with_numba:
@@ -157,11 +204,23 @@ def _main_impl():
     logger.debug("Reading configuration and checking for consistency.")
 
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    grid_config = GridConfig(args)
+    grid_config = GridConfig(args, ebfm_comm.size, ebfm_comm.rank)
 
     # Ensure shading routine is only used in uncoupled runs.
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.
     validate_shading_coupling_compat(grid_config, coupling_config)
+
+    # Ensure a run on several ranks uses a partitioned mesh.
+    validate_grid_parallel_compat(grid_config, ebfm_comm)
+
+    # Ensure forcing files are only read in runs on a single rank.
+    validate_forcing_parallel_compat(args, ebfm_comm)
+
+    # Ensure restart files are only read and written in runs on a single rank.
+    validate_restart_parallel_compat(args, ebfm_comm)
+
+    # Ensure shading routine is only used in runs on a single rank.
+    validate_shading_parallel_compat(grid_config, ebfm_comm)
 
     logger.debug("Successfully completed consistency checks.")
 
@@ -169,16 +228,28 @@ def _main_impl():
     time = time_config.to_dict()
     grid, io, phys, column = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
 
-    if args.random_seed is not None:
-        np.random.seed(args.random_seed)
-        logger.info(f"NumPy random seed fixed to {args.random_seed} for reproducibility.")
+    set_random_seed(logger, args.random_seed, ebfm_comm)
 
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, io, grid_config)
+    grid = INIT.init_grid(grid, io, grid_config, ebfm_comm)
+
+    # Rank 0 collects the columns of all ranks, e.g. to write them to the output file or for --dump-reference
+    column_gather = ColumnGather(ebfm_comm, grid["column_id"])
+    if ebfm_comm.size > 1 and not grid["is_partitioned"]:
+        logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 
     coupler.setup(grid, time_config)
+
+    # Warn once up front, rather than every timestep, about output that is written but not covered by tests.
+    is_coupled = not isinstance(coupler, ebfm.coupling.DummyCoupler)
+    if is_coupled or grid["is_unstructured"]:
+        # TODO: see https://github.com/EBFMorg/EBFM/issues/176
+        logger.warning(
+            "Writing output to file is only tested for uncoupled runs on a structured grid; "
+            "check the contents of the output file."
+        )
 
     # Time-loop
     logger.info("Entering time loop...")
@@ -188,15 +259,37 @@ def _main_impl():
 
         logger.info(f'Time step {t + 1} of {time["tn"]} (dt = {time["dt"]} days)')
 
+        # Cache GHF conductance to make it publicly available
+        OUT["ghf_k"], OUT["ghf_cond"], OUT["hcap_sub"] = LOOP_EBM_GHF.conductance(OUT)
+
+        # Send the surface/firn state of the EBFM grid cells to ICON-Land (JSBACH). Receiving the
+        # resulting surface energy balance is deferred until EBFM has prepared its forcing and run
+        # its own energy balance below, so ICON-Land can compute it meanwhile instead of EBFM
+        # blocking on ICON-Land right here.
+        if coupler.has_coupling_to("icon_land"):
+            icon_land = coupler.get_component("icon_land")
+            logger.info("Sending state to ICON-Land")
+            logger.debug("Started...")
+            data_to_icon_land = {
+                "icefract": grid["mask"].astype(float),
+                "albedo": OUT["albedo"],
+                "t_sub": OUT["subT"][:, 1],
+                "ghf_cond": OUT["ghf_cond"],
+                "hcap_sub": OUT["hcap_sub"],
+                "runoff_to_icon_land": OUT["runoff"],
+                "smb_to_icon_land": OUT["smb"],
+                "snowmass": OUT["snowmass"],
+            }
+            icon_land.exchange(data_to_icon_land, target_keys=set())
+            logger.debug("Done.")
+
         # Read and prepare climate input
         if coupler.has_coupling_to("icon_atmo"):
             # Exchange data with ICON
             icon_atmo = coupler.get_component("icon_atmo")
             logger.info("Data exchange with ICON")
             logger.debug("Started...")
-            data_to_icon = {
-                "albedo": OUT["albedo"],
-            }
+            data_to_icon_atmo = {}
 
             fallback_values = {
                 "rlds": IN["LWin"],
@@ -206,27 +299,58 @@ def _main_impl():
                 "sfcpres": IN["T"] * 0.0 + 101500.0,
             }
 
-            data_from_icon = icon_atmo.exchange(data_to_icon, fallback_values)
+            data_from_icon_atmo = icon_atmo.exchange(data_to_icon_atmo, fallback_values)
 
             logger.debug("Done.")
-            logger.debug(f"Received the following data from ICON: {data_from_icon}")
+            logger.debug(f"Received the following data from ICON: {data_from_icon_atmo}")
 
-            IN["P"] = data_from_icon["pr"]
-            IN["snow"] = data_from_icon["pr_snow"]
-            IN["SWin"] = data_from_icon["rsds"]
-            IN["LWin"] = data_from_icon["rlds"]
-            IN["C"] = data_from_icon["clt"]
-            IN["WS"] = data_from_icon["sfcwind"]
-            IN["T"] = data_from_icon["tas"]
+            IN["P"] = data_from_icon_atmo["pr"]
+            IN["snow"] = data_from_icon_atmo["pr_snow"]
+            IN["SWin"] = data_from_icon_atmo["rsds"]
+            IN["LWin"] = data_from_icon_atmo["rlds"]
+            IN["C"] = data_from_icon_atmo["clt"]
+            IN["WS"] = data_from_icon_atmo["sfcwind"]
+            IN["T"] = data_from_icon_atmo["tas"]
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"] = data_from_icon["huss"]
-            IN["Pres"] = data_from_icon["sfcpres"]
+            IN["q"] = data_from_icon_atmo["huss"]
+            IN["Pres"] = data_from_icon_atmo["sfcpres"]
 
         # Read/set meteorological forcing
-        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, coupler)
+        IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config, column_gather)
 
         # Run surface energy balance model
         OUT = LOOP_EBM.main(C, OUT, IN, time, grid, coupler)
+
+        # Receive the surface energy balance ICON-Land computed from the state sent above
+        if coupler.has_coupling_to("icon_land"):
+            icon_land = coupler.get_component("icon_land")
+            logger.info("Receiving surface energy balance from ICON-Land")
+            logger.debug("Started...")
+            data_from_icon_land = icon_land.exchange({}, target_keys={"t_srf", "melt", "evapotrans"})
+            logger.debug("Done.")
+            for name, values in data_from_icon_land.items():
+                logger.debug(
+                    f"Received {name} from ICON-Land: min={np.min(values):.4g} mean={np.mean(values):.4g} "
+                    f"max={np.max(values):.4g}"
+                )
+            icon_land_data = icon_land.map_energy_balance_to_ebfm(data_from_icon_land)
+
+            if COMPUTE_EBM_DIAGNOSTICS:
+                # EBFM's own surface energy balance, evaluated before ICON-Land's results replace
+                # the surface temperature it follows from in OUT
+                ebm_diagnostics = LOOP_EBM.melt_and_moisture_fluxes(C, time, OUT)
+                OUT["ebm_diagnostics"] = ebm_diagnostics
+                logger.debug(
+                    "Surface energy balance ICON-Land vs EBFM (mean over the grid): "
+                    f"Tsurf {np.mean(icon_land_data['Tsurf']):.2f} vs {np.mean(ebm_diagnostics['Tsurf']):.2f} K, "
+                    f"melt {np.mean(icon_land_data['melt']):.3e} vs {np.mean(ebm_diagnostics['melt']):.3e} m w.e."
+                )
+
+            # ICON-Land's surface energy balance drives the firn model and the mass balance
+            OUT.update(icon_land_data)
+        else:
+            # EBFM's own surface energy balance drives the firn model and the mass balance
+            OUT.update(LOOP_EBM.melt_and_moisture_fluxes(C, time, OUT))
 
         # Run snow & firn model
         OUT = LOOP_SNOW.main(C, OUT, IN, time["dt"], grid, phys, column)
@@ -235,7 +359,7 @@ def _main_impl():
         OUT = LOOP_mass_balance.main(OUT, IN, C)
 
         if args.print_diagnostics:
-            print_diagnostics(grid, OUT, t)
+            print_diagnostics(grid, OUT, t, column_gather)
 
         if coupler.has_coupling_to("elmer_ice"):
             elmer_ice = coupler.get_component("elmer_ice")
@@ -244,62 +368,70 @@ def _main_impl():
             logger.debug("Started...")
 
             data_to_elmer = {
-                "smb": OUT["smb"],
+                "smb_to_elmer": OUT["smb"],
                 "T_ice": OUT["T_ice"],
-                "runoff": OUT["runoff"],
+                "runoff_to_elmer": OUT["runoff"],
             }
             data_from_elmer = elmer_ice.exchange(data_to_elmer)
             logger.debug("Done.")
             logger.debug(f"Received the following data from Elmer/Ice: {data_from_elmer}")
 
             IN["surface_elevation"] = data_from_elmer["surface_elevation"]
-            OUT["surface_elevation"] = IN["surface_elevation"]
-            OUT["x"] = grid["x"]
-            OUT["y"] = grid["y"]
-            if coupler.has_coupling_to("icon_atmo"):
-                grid["z"] = IN["surface_elevation"][0].ravel()
+            elmer_ice.update_surface_elevation(grid, IN["surface_elevation"])
+
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
-        else:
-            # Needed by FINAL_create_restart_file.main(OUT, io)
-            OUT["x"] = grid["x"]
-            OUT["y"] = grid["y"]
-            OUT["surface_elevation"] = grid["z"]
 
-        # Write output to files (only in uncoupled run and for unpartitioned grid)
-        # TODO: should be supported for all cases to avoid case distinction here
-        if not grid["is_partitioned"] and isinstance(coupler, ebfm.coupling.DummyCoupler):
-            if grid_config.grid_type is GridInputType.MATLAB:
-                io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
-            else:
-                logger.warning("Skipping writing output to file for Elmer input grids.")
-        elif grid["is_partitioned"] or not isinstance(coupler, ebfm.coupling.DummyCoupler):
-            logger.warning("Skipping writing output to file for coupled or partitioned runs.")
+        # Needed by FINAL_create_restart_file.main(OUT, io). The grid carries the elevation of the current
+        # time step, whether it was read during initialization or received from Elmer/Ice just above.
+        OUT["x"] = grid["x"]
+        OUT["y"] = grid["y"]
+        OUT["surface_elevation"] = grid["z"]
+
+        # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
+        # TODO: partitioned output should be supported in a dedicated parallel-safe writer.
+        if not grid["is_partitioned"]:
+            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
         else:
-            logger.error("Unhandled case in output writing.")
-            raise Exception("Unhandled case in output writing.")
+            logger.warning("Skipping writing output to file for partitioned runs.")
 
     # Write restart file
     # TODO: should be supported for all cases to avoid case distinction here
     if not grid["is_partitioned"]:
         FINAL_create_restart_file.main(OUT, io, args.restart_dir)
     else:
-        logger.warning("Skipping writing of restart file for coupled and/or partitioned runs.")
+        logger.warning("Skipping writing of restart file for partitioned runs.")
 
     logger.info("Time loop completed.")
 
     if args.dump_reference:
-        dump_reference(logger, OUT, args.dump_reference)
+        dump_reference(logger, OUT, args.dump_reference, column_gather)
 
     coupler.finalize()
 
     logger.info("Closing down EBFM.")
 
 
+def _exit_status(exit: SystemExit) -> int:
+    """The exit status the Python interpreter returns for exit."""
+    if exit.code is None:
+        return 0
+    if isinstance(exit.code, int):
+        return exit.code
+    return 1
+
+
 def main():
     try:
         _main_impl()
+    except SystemExit as exit:
+        # E.g. a usage error: on its own, this process would exit and leave the other processes of an MPMD run waiting
+        if _exit_status(exit) != 0 and ebfm.core.comm.mpi_available:
+            from ebfm.core.comm import mpi as comm_mpi
+
+            comm_mpi.abort_if_several_processes(_exit_status(exit))
+        raise
     except Exception as e:
         logger = getLogger(__name__)
         logger.exception("Fatal Error in EBFM")

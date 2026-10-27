@@ -13,14 +13,18 @@ from datetime import datetime, timezone
 
 import numpy as np
 from netCDF4 import Dataset
+from pyproj import Geod, Transformer
 
 from ebfm.core import INIT
 from ebfm.core.INIT import init_config, init_grid, init_initial_conditions
 from ebfm.core.FINAL_create_restart_file import main as write_restart_file
 from ebfm.core.cli import parse_cli_args
+from ebfm.core.comm import defaultComm
 from ebfm.core.config import ColumnDiscretizationConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
+from ebfm.core.restart import PER_COLUMN_VARIABLES, PER_LAYER_VARIABLES, RESTART_VARIABLES
+from ebfm.elmer.mesh import TriangleMesh
 
 GPSUM = 5
 NL = 4
@@ -31,6 +35,15 @@ _MATLAB_MESH = Path(__file__).parents[2] / "examples" / "dem_and_mask.mat"
 def _make_column():
     """A discretization matching the restart files written by these tests."""
     return ColumnDiscretizationConfig(nl=NL, split=(2,))
+
+
+def _make_grid(number_of_columns: int = GPSUM) -> dict:
+    """A minimal grid carrying `number_of_columns` columns.
+
+    `init_initial_conditions` derives the column count from the grid via
+    `ebfm.core.grid.number_of_columns`, so the mask is what sets it.
+    """
+    return {"mask": np.ones(number_of_columns, dtype=int)}
 
 
 def _build_out_dict() -> dict:
@@ -89,7 +102,7 @@ class TestInitFromRestartFile(unittest.TestCase):
 
     def test_restart_arrays_are_not_masked(self):
         C = {"alb_ice": 0.5}
-        grid = {"gpsum": GPSUM}
+        grid = _make_grid()
         io = {"bootfilein": self.bootfile}
         time = {}
 
@@ -102,7 +115,7 @@ class TestInitFromRestartFile(unittest.TestCase):
 
     def test_restart_arrays_keep_their_values(self):
         C = {"alb_ice": 0.5}
-        grid = {"gpsum": GPSUM}
+        grid = _make_grid()
         io = {"bootfilein": self.bootfile}
         time = {}
 
@@ -116,12 +129,211 @@ class TestInitFromRestartFile(unittest.TestCase):
         _write_restart_file(bootfile_with_gap, with_missing_value=True)
 
         C = {"alb_ice": 0.5}
-        grid = {"gpsum": GPSUM}
+        grid = _make_grid()
         io = {"bootfilein": bootfile_with_gap}
         time = {}
 
         with self.assertRaises(AssertionError):
             init_initial_conditions(C, grid, io, time, _make_column(), init_with_restart_file=True)
+
+
+class TestRestartFileShapeValidation(unittest.TestCase):
+    """
+    A restart file must match the configured column discretization.
+
+    The restart branch of `init_initial_conditions` takes its array shapes from the file, while the
+    tail shared with the manual branch allocates `subK`, `subCeff` and `subWvol` at the configured
+    `(gpsum, nl)`. Without this check a mismatched file leaves `OUT` holding two different column or
+    layer counts at once, and nothing downstream reports it usefully: a wrong column count fails on
+    the first timestep with an `IndexError` naming neither the file nor the cause, and a wrong layer
+    count runs the whole simulation before failing in the output writer -- or completes with no error
+    at all when output writing never triggers, writing a fresh restart file as if nothing were wrong.
+
+    The matching case is covered by `TestInitFromRestartFile`, which loads the same files with the
+    same grid and column config; those tests fail if this validation is too strict.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.bootfile = Path(self.tmpdir.name) / "restart_test.nc"
+        _write_restart_file(self.bootfile)
+        self.C = {"alb_ice": 0.5}
+        self.io = {"bootfilein": self.bootfile}
+        self.time = {}
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_restart_file_with_wrong_layer_count_is_rejected(self):
+        for nl in (NL - 1, NL + 1):
+            with self.subTest(nl=nl):
+                column = ColumnDiscretizationConfig(nl=nl, split=(2,))
+                with self.assertRaisesRegex(ValueError, r"'subZ'.*must have shape"):
+                    init_initial_conditions(
+                        self.C, _make_grid(), self.io, self.time, column, init_with_restart_file=True
+                    )
+
+    def test_restart_file_with_wrong_column_count_is_rejected(self):
+        # A single column is included as the extreme case: it is the one where the per-layer arrays
+        # would broadcast against the configured `(gpsum, nl)` rather than fail to align.
+        for number_of_columns in (1, GPSUM - 1, GPSUM + 1):
+            with self.subTest(number_of_columns=number_of_columns):
+                with self.assertRaisesRegex(ValueError, r"'subZ'.*must have shape"):
+                    init_initial_conditions(
+                        self.C,
+                        _make_grid(number_of_columns),
+                        self.io,
+                        self.time,
+                        _make_column(),
+                        init_with_restart_file=True,
+                    )
+
+    def test_restart_file_with_wrong_length_per_column_variable_is_rejected(self):
+        # Every per-layer variable matches here, so only the per-column check can catch this.
+        bootfile_short = Path(self.tmpdir.name) / "restart_test_short.nc"
+        _write_restart_file(bootfile_short)
+        with Dataset(bootfile_short, "r+") as ncfile:
+            ncfile.createDimension("short", GPSUM - 2)
+            ncfile.createVariable("ys_short", "f8", ("short",))[:] = 1.0
+
+        with self.assertRaisesRegex(ValueError, r"'ys_short'.*per-column variable must have shape"):
+            init_initial_conditions(
+                self.C,
+                _make_grid(),
+                {"bootfilein": bootfile_short},
+                self.time,
+                _make_column(),
+                init_with_restart_file=True,
+            )
+
+    def _load(self, bootfile):
+        return init_initial_conditions(
+            self.C, _make_grid(), {"bootfilein": bootfile}, self.time, _make_column(), init_with_restart_file=True
+        )
+
+    def _write_with(self, name: str, **overrides) -> Path:
+        """Write a restart file whose contents differ from a valid one by `overrides`."""
+        bootfile = Path(self.tmpdir.name) / f"restart_test_{name}.nc"
+        out = _build_out_dict()
+        out.update(overrides)
+        write_restart_file(out, {"writebootfile": True, "bootfileout": bootfile}, restartdir=bootfile.parent)
+        return bootfile
+
+    def test_per_layer_variable_stored_per_column_is_rejected(self):
+        # `(GPSUM,)` is a perfectly legal restart shape -- it is what the per-column variables use --
+        # so only knowing that `subZ` belongs to the per-layer group can catch this.
+        bootfile = self._write_with("sub_z_1d", subZ=np.full((GPSUM,), 1.0))
+
+        with self.assertRaisesRegex(ValueError, r"'subZ'.*must have shape"):
+            self._load(bootfile)
+
+    def test_per_column_variable_stored_per_layer_is_rejected(self):
+        # The mirror image: `(GPSUM, NL)` is legal for a per-layer variable, wrong for `Tsurf`.
+        bootfile = self._write_with("tsurf_2d", Tsurf=np.full((GPSUM, NL), 1.0))
+
+        with self.assertRaisesRegex(ValueError, r"'Tsurf'.*must have shape"):
+            self._load(bootfile)
+
+    def test_restart_file_missing_a_required_variable_is_rejected(self):
+        # Copy a valid file, dropping `subZ`. Without the manifest check the model only notices when
+        # the time loop indexes `OUT["subZ"]`, far from the cause.
+        bootfile = Path(self.tmpdir.name) / "restart_test_no_sub_z.nc"
+        with Dataset(self.bootfile) as src, Dataset(bootfile, "w", format="NETCDF4") as dst:
+            for dim_name, dimension in src.dimensions.items():
+                dst.createDimension(dim_name, len(dimension))
+            for var_name, variable in src.variables.items():
+                if var_name == "subZ":
+                    continue
+                dst.createVariable(var_name, variable.dtype, variable.dimensions)[:] = variable[:]
+
+        with self.assertRaisesRegex(ValueError, r"missing the required variable\(s\): subZ"):
+            self._load(bootfile)
+
+    def test_variable_outside_the_manifest_is_accepted_at_a_valid_shape(self):
+        # Auxiliary variables may be added to a restart file without touching the loader, as long as
+        # they carry a recognisable column axis.
+        bootfile = Path(self.tmpdir.name) / "restart_test_extra.nc"
+        _write_restart_file(bootfile)
+        with Dataset(bootfile, "r+") as ncfile:
+            ncfile.createVariable("an_extra_diagnostic", "f8", ("ys_dim0",))[:] = 2.0
+
+        OUT, _, _ = self._load(bootfile)
+
+        np.testing.assert_array_equal(OUT["an_extra_diagnostic"], np.full((GPSUM,), 2.0))
+
+    def test_restart_file_with_too_many_dimensions_is_rejected(self):
+        bootfile_3d = Path(self.tmpdir.name) / "restart_test_3d.nc"
+        _write_restart_file(bootfile_3d)
+        with Dataset(bootfile_3d, "r+") as ncfile:
+            # Correct column and layer count, but one dimension too many.
+            ncfile.createDimension("extra", 2)
+            variable = ncfile.createVariable("subZ_3d", "f8", ("subZ_dim0", "subZ_dim1", "extra"))
+            variable[:] = 1.0
+
+        with self.assertRaisesRegex(ValueError, r"'subZ_3d' .*has 3 dimensions"):
+            init_initial_conditions(
+                self.C,
+                _make_grid(),
+                {"bootfilein": bootfile_3d},
+                self.time,
+                _make_column(),
+                init_with_restart_file=True,
+            )
+
+    def test_restart_file_with_a_scalar_variable_is_accepted(self):
+        # The writer stores scalars as 0-d variables, which carry no column or layer axis to check.
+        bootfile_scalar = Path(self.tmpdir.name) / "restart_test_scalar.nc"
+        _write_restart_file(bootfile_scalar)
+        with Dataset(bootfile_scalar, "r+") as ncfile:
+            ncfile.createVariable("a_scalar", "f8", ()).assignValue(1.0)
+
+        OUT, _, _ = init_initial_conditions(
+            self.C,
+            _make_grid(),
+            {"bootfilein": bootfile_scalar},
+            self.time,
+            _make_column(),
+            init_with_restart_file=True,
+        )
+
+        self.assertEqual(OUT["a_scalar"], 1.0)
+
+
+class TestRestartVariableManifest(unittest.TestCase):
+    """The writer and the loader must agree on what a restart file contains.
+
+    Both derive it from `ebfm.core.restart.RESTART_VARIABLES`; these tests pin that they cannot
+    drift apart, which is the whole point of sharing the manifest.
+    """
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_writer_writes_exactly_the_manifest(self):
+        bootfile = Path(self.tmpdir.name) / "restart_test.nc"
+        _write_restart_file(bootfile)
+
+        with Dataset(bootfile) as ncfile:
+            self.assertEqual(set(ncfile.variables), set(RESTART_VARIABLES))
+
+    def test_writer_writes_each_group_at_its_own_shape(self):
+        bootfile = Path(self.tmpdir.name) / "restart_test.nc"
+        _write_restart_file(bootfile)
+
+        with Dataset(bootfile) as ncfile:
+            for var_name in PER_LAYER_VARIABLES:
+                with self.subTest(var_name=var_name):
+                    self.assertEqual(ncfile.variables[var_name].shape, (GPSUM, NL))
+            for var_name in PER_COLUMN_VARIABLES:
+                with self.subTest(var_name=var_name):
+                    self.assertEqual(ncfile.variables[var_name].shape, (GPSUM,))
+
+    def test_the_two_groups_do_not_overlap(self):
+        self.assertEqual(set(PER_LAYER_VARIABLES) & set(PER_COLUMN_VARIABLES), set())
+        self.assertEqual(len(RESTART_VARIABLES), len(set(RESTART_VARIABLES)))
 
 
 class TestMatlabShadingLookupTable(unittest.TestCase):
@@ -143,7 +355,7 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), shading_flag])
         grid_config = GridConfig(args)
         grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config)
+        return init_grid(grid, io, grid_config, defaultComm)
 
     def test_shading_disabled_skips_the_lookup_table(self):
         grid = self._init_grid("--no-shading")
@@ -160,6 +372,252 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
 
         self.assertTrue(grid["has_shading"])
         precompute.assert_called_once()
+
+    def test_lookup_table_is_rejected_in_a_parallel_run(self):
+        with self.assertRaises(AssertionError):
+            INIT._precompute_shading_matlab({"is_parallel_run": True}, mask_2D=None)
+
+
+class TestMatlabGridSplit(unittest.TestCase):
+    """Split over several MPI ranks, a MATLAB grid gives each rank a contiguous block of the serial columns."""
+
+    N_RANKS = 3
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _init_grid(self, num_ranks, rank):
+        args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--no-shading"])
+        grid_config = GridConfig(args, num_ranks, rank)
+        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        return init_grid(grid, io, grid_config, defaultComm)
+
+    def test_blocks_of_all_ranks_make_up_the_serial_grid(self):
+        serial = self._init_grid(num_ranks=1, rank=0)
+        blocks = [self._init_grid(self.N_RANKS, rank) for rank in range(self.N_RANKS)]
+
+        self.assertEqual(
+            [len(block["mask"]) for block in blocks],
+            [len(b) for b in np.array_split(serial["mask"], self.N_RANKS)],
+        )
+        for key in ("column_id", "x", "y", "z", "lat", "lon", "slope_beta", "slope_gamma"):
+            with self.subTest(key=key):
+                np.testing.assert_array_equal(np.concatenate([block[key] for block in blocks]), serial[key])
+        np.testing.assert_array_equal(np.concatenate([block["ind"][0] for block in blocks]), serial["ind"][0])
+
+
+class TestElmerGridCoordinates(unittest.TestCase):
+    """The columns of a grid built from an Elmer mesh sit at the cell centers of the mesh.
+
+    Without a DEM, a column's elevation is the mean of the z coordinates of its cell's vertices,
+    and its slope is that of the plane through them.
+
+    The synthetic mesh lies on the Antarctic Peninsula (EPSG:3031), far from Greenland,
+    so coordinates that do not follow the mesh cannot pass by accident.
+    """
+
+    _CRS_EPSG = 3031
+    _LON = np.array([-65.0, -64.0, -65.0, -64.0])
+    _LAT = np.array([-66.0, -66.0, -65.0, -65.0])
+    _Z = np.array([100.0, 200.0, 300.0, 400.0])
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.mesh = self._make_mesh(self._Z)
+
+    def _make_mesh(self, z_vertices):
+        to_mesh_crs = Transformer.from_crs("EPSG:4326", f"EPSG:{self._CRS_EPSG}", always_xy=True)
+        x, y = to_mesh_crs.transform(self._LON, self._LAT)
+        return TriangleMesh(
+            x_vertices=np.asarray(x),
+            y_vertices=np.asarray(y),
+            z_vertices=z_vertices,
+            cell_to_vertex=np.array([[0, 1, 2], [1, 3, 2]]),
+            vertex_ids=np.arange(1, 5),
+            cell_ids=np.arange(1, 3),
+            source_crs_epsg=self._CRS_EPSG,
+        )
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _init_grid(self, extra_args=()):
+        args = parse_cli_args(
+            ["--elmer-mesh", self.tmpdir.name, "--elmer-mesh-crs-epsg", str(self._CRS_EPSG), *extra_args]
+        )
+        grid_config = GridConfig(args)
+        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        with mock.patch.object(INIT, "read_elmer_mesh", return_value=self.mesh):
+            return init_grid(grid, io, grid_config, defaultComm)
+
+    def test_lat_lon_are_the_cell_centers_of_the_mesh(self):
+        grid = self._init_grid()
+
+        np.testing.assert_allclose(grid["lat"], np.degrees(self.mesh.lat_cells))
+        np.testing.assert_allclose(grid["lon"], np.degrees(self.mesh.lon_cells))
+        # Centroids of the two triangles, in degrees east from -180 to 180.
+        np.testing.assert_allclose(grid["lat"], [-65.67, -65.33], atol=0.02)
+        np.testing.assert_allclose(grid["lon"], [-64.67, -64.33], atol=0.02)
+
+    def test_z_is_the_mean_of_the_vertex_elevations(self):
+        grid = self._init_grid()
+
+        np.testing.assert_allclose(grid["z"], [200.0, 300.0])
+
+    def _north_distance(self):
+        """Distance (m) of each vertex north of the southernmost ones, along its meridian."""
+        _, _, distance = Geod(ellps="WGS84").inv(self._LON, np.full(4, self._LAT.min()), self._LON, self._LAT)
+        return distance
+
+    def _east_distance(self):
+        """Distance (m) of each vertex east of the westernmost ones, along its parallel."""
+        _, _, distance = Geod(ellps="WGS84").inv(np.full(4, self._LON.min()), self._LAT, self._LON, self._LAT)
+        return distance
+
+    def test_slope_of_a_plane_rising_to_the_north(self):
+        gradient = 0.01
+        self.mesh = self._make_mesh(gradient * self._north_distance())
+        grid = self._init_grid()
+
+        np.testing.assert_allclose(grid["slope_y"], gradient, rtol=0.02)
+        np.testing.assert_allclose(grid["slope_x"], 0.0, atol=0.02 * gradient)
+        np.testing.assert_allclose(grid["slope_beta"], np.arctan(gradient), rtol=0.02)
+        np.testing.assert_allclose(grid["slope_gamma"], 0.0, atol=0.02)
+
+    def test_slope_of_a_plane_rising_to_the_east(self):
+        gradient = 0.01
+        self.mesh = self._make_mesh(gradient * self._east_distance())
+        grid = self._init_grid()
+
+        np.testing.assert_allclose(grid["slope_x"], gradient, rtol=0.02)
+        np.testing.assert_allclose(grid["slope_y"], 0.0, atol=0.02 * gradient)
+
+    def test_flat_mesh_has_exactly_zero_slopes(self):
+        self.mesh = self._make_mesh(np.zeros(4))
+        grid = self._init_grid()
+
+        for slope_field in ("slope_x", "slope_y", "slope_beta", "slope_gamma"):
+            self.assertTrue(np.all(grid[slope_field] == 0.0), slope_field)
+
+    def test_lat_lon_are_the_same_with_a_dem(self):
+        with mock.patch.object(INIT, "read_dem", return_value=np.zeros(2)):
+            grid = self._init_grid(["--netcdf-dem-mesh", str(Path(self.tmpdir.name) / "dem.nc")])
+
+        np.testing.assert_allclose(grid["lat"], np.degrees(self.mesh.lat_cells))
+        np.testing.assert_allclose(grid["lon"], np.degrees(self.mesh.lon_cells))
+
+
+class TestReadNetcdfGrid(unittest.TestCase):
+    """Missing orography is NaN unless the user opts in to filling it with zero elevation.
+
+    Filling must only touch cells without orography data. Inactive cells with valid orography (e.g. ice-free land
+    next to the ice margin) must keep their elevation, otherwise `np.gradient` sees an artificial cliff and
+    over-estimates the slope of the adjacent active cells.
+    """
+
+    _FILL = -9999.0
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+
+        # Row 0: active, active, missing orography (but mask > 0)
+        # Row 1: active, inactive with valid orography, missing orography (mask == 0)
+        self.gridfile = self._write_grid("grid.nc", [[1000.0, 1100.0, self._FILL], [900.0, 500.0, self._FILL]])
+
+    def _write_grid(self, name: str, orog) -> Path:
+        gridfile = Path(self.tmpdir.name) / name
+        mask = np.array([[1.0, 1.0, 1.0], [1.0, 0.0, 0.0]])
+        lon, lat = np.meshgrid([-45.0, -44.9, -44.8], [72.0, 72.1])
+
+        with Dataset(gridfile, "w") as nc:
+            nc.createDimension("y", 2)
+            nc.createDimension("x", 3)
+            nc.createVariable("orog", "f8", ("y", "x"), fill_value=self._FILL)[:] = np.array(orog)
+            nc.createVariable("mask", "f8", ("y", "x"))[:] = mask
+            nc.createVariable("latitude", "f8", ("y", "x"))[:] = lat
+            nc.createVariable("longitude", "f8", ("y", "x"))[:] = lon
+        return gridfile
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_missing_orography_is_inactive(self):
+        for fill in (False, True):
+            with self.subTest(fill_missing_elevation=fill):
+                data = INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=fill)
+                np.testing.assert_array_equal(data["mask"], [[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
+
+    def test_missing_orography_is_nan_by_default(self):
+        data = INIT.read_NETCDF_grid(self.gridfile)
+        self.assertTrue(np.isnan(data["z"][0, 2]))
+        self.assertTrue(np.isnan(data["z"][1, 2]))
+
+    def test_missing_orography_is_filled_with_zero_on_request(self):
+        data = INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=True)
+        self.assertEqual(data["z"][0, 2], 0.0)
+        self.assertEqual(data["z"][1, 2], 0.0)
+        self.assertTrue(np.isfinite(data["z"]).all())
+
+    def test_filling_is_logged(self):
+        with self.assertLogs(INIT.logger, level="WARNING") as logs:
+            INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=True)
+        self.assertIn("Setting 2 missing elevations", logs.output[0])
+
+    def test_nothing_logged_without_missing_orography(self):
+        gridfile = self._write_grid("complete.nc", [[1000.0, 1100.0, 1200.0], [900.0, 500.0, 400.0]])
+        with self.assertNoLogs(INIT.logger, level="WARNING"):
+            INIT.read_NETCDF_grid(gridfile, fill_missing_elevation=True)
+
+    def test_valid_orography_of_inactive_cell_is_kept(self):
+        for fill in (False, True):
+            with self.subTest(fill_missing_elevation=fill):
+                data = INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=fill)
+                self.assertEqual(data["z"][1, 1], 500.0)
+
+
+class TestSlopeAzimuth(unittest.TestCase):
+    """
+    slope_gamma for slopes along the grid axes, where one gradient component is exactly zero.
+
+    An exactly east- or west-facing cell used to get the azimuth of the opposite direction.
+    """
+
+    def test_every_sign_combination(self):
+        # (slope_x, slope_y): expected azimuth; a surface faces downhill
+        expected = {
+            (-1.0, -1.0): -3 * np.pi / 4,  # north-east
+            (-1.0, 0.0): -np.pi / 2,  # east
+            (-1.0, 1.0): -np.pi / 4,  # south-east
+            (0.0, -1.0): np.pi,  # north
+            (0.0, 0.0): 0.0,  # flat
+            (0.0, 1.0): 0.0,  # south
+            (1.0, -1.0): 3 * np.pi / 4,  # north-west
+            (1.0, 0.0): np.pi / 2,  # west
+            (1.0, 1.0): np.pi / 4,  # south-west
+        }
+        for (slope_x, slope_y), gamma in expected.items():
+            with self.subTest(slope_x=slope_x, slope_y=slope_y):
+                result = INIT.slope_azimuth(np.array([slope_x]), np.array([slope_y]))
+                np.testing.assert_allclose(result, gamma, rtol=0, atol=1e-15)
+
+    def test_matches_arctan2(self):
+        slope_x = np.array([0.3, -0.3, 0.3, -0.3, 0.3, -0.3, 0.0, 0.0, -0.0, 0.3, -0.3])
+        slope_y = np.array([0.2, 0.2, -0.2, -0.2, 0.0, 0.0, 0.2, -0.2, -0.2, -0.0, -0.0])
+        np.testing.assert_array_equal(INIT.slope_azimuth(slope_x, slope_y), np.arctan2(slope_x, slope_y))
+
+    def test_east_and_west_facing_match_their_limits(self):
+        for slope_x in (0.3, -0.3):
+            with self.subTest(slope_x=slope_x):
+                eps = 1e-12
+                gamma = INIT.slope_azimuth(np.array([slope_x] * 4), np.array([eps, 0.0, -0.0, -eps]))
+                np.testing.assert_allclose(gamma, np.sign(slope_x) * np.pi / 2, rtol=0, atol=1e-10)
+
+    def test_flat_is_zero(self):
+        gamma = INIT.slope_azimuth(np.array([0.0, -0.0, 0.0, -0.0]), np.array([0.0, 0.0, -0.0, -0.0]))
+        np.testing.assert_array_equal(gamma, 0.0)
 
 
 if __name__ == "__main__":

@@ -68,9 +68,6 @@ class Mesh:
     # longitude/latitude coordinates of cell centers in radians, ordering follows local ids [0,1,...,n_cells-1]
     lon_cells: NDArray[np.float64]
     lat_cells: NDArray[np.float64]
-    # @TODO later add slope
-    # dzdx: NDArray[np.float64]  # z-slope in x-direction
-    # dzdy: NDArray[np.float64]  # z-slope in y-direction
     vertex_ids: NDArray[np.int_]  # IDs of vertices, ordering follows local ids [0,1,...,n_vertices-1]
     cell_to_vertex: NDArray[np.int_]  # Mapping from cells to their local vertex IDs
     cell_ids: NDArray[np.int_]  # IDs of cells (triangles), ordering follows local ids [0,1,...,n_cells-1]
@@ -91,7 +88,8 @@ class Mesh:
         self.vertex_ids = vertex_ids
         self.cell_ids = cell_ids
         self.cell_to_vertex = cell_to_vertex
-        transformer = pyproj.Transformer.from_crs(source_crs_epsg, 4326, always_xy=True)
+        self.source_crs_epsg = source_crs_epsg
+        transformer = pyproj.Transformer.from_crs(self.source_crs_epsg, 4326, always_xy=True)
         self.lon_vertices, self.lat_vertices = transformer.transform(self.x_vertices, self.y_vertices, radians=True)
 
         # Compute cell centers (lon/lat) by averaging vertices on the unit sphere
@@ -99,11 +97,41 @@ class Mesh:
             self.lon_vertices, self.lat_vertices, self.cell_to_vertex
         )
 
-        inverse_transformer = pyproj.Transformer.from_crs(4326, source_crs_epsg, always_xy=True)
+        inverse_transformer = pyproj.Transformer.from_crs(4326, self.source_crs_epsg, always_xy=True)
         self.x_cells, self.y_cells = inverse_transformer.transform(self.lon_cells, self.lat_cells, radians=True)
         # Initialize z_cells to zeros (to be filled/overwritten by DEM)
         n_cells = self.cell_to_vertex.shape[0]
         self.z_cells = np.zeros(n_cells)
+
+    def vertex_surface_gradient(self) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """
+        Gradient of the plane through the vertices of each cell, as derived from `z_vertices`.
+
+        Only defined for triangular cells, which span exactly one plane.
+
+        Returns:
+            dz_deast, dz_dnorth: elevation change per metre towards local east and north
+        """
+        assert self.cell_to_vertex.shape[1] == 3, "A surface gradient per cell needs triangular cells."
+        x = self.x_vertices[self.cell_to_vertex]
+        y = self.y_vertices[self.cell_to_vertex]
+        z = self.z_vertices[self.cell_to_vertex]
+
+        # Normal of each triangle; the plane z = a*x + b*y + c has a = -n_x/n_z and b = -n_y/n_z.
+        edge_1 = np.stack([x[:, 1] - x[:, 0], y[:, 1] - y[:, 0], z[:, 1] - z[:, 0]], axis=1)
+        edge_2 = np.stack([x[:, 2] - x[:, 0], y[:, 2] - y[:, 0], z[:, 2] - z[:, 0]], axis=1)
+        normal = np.cross(edge_1, edge_2)
+        dz_dx = -normal[:, 0] / normal[:, 2]
+        dz_dy = -normal[:, 1] / normal[:, 2]
+
+        # Projected x/y are neither aligned with east/north nor true to scale.
+        factors = pyproj.Proj(f"EPSG:{self.source_crs_epsg}").get_factors(self.lon_cells, self.lat_cells, radians=True)
+        # Angle from grid +y clockwise to true north.
+        north_angle = -np.radians(factors.meridian_convergence)
+        scale = factors.meridional_scale
+        dz_deast = scale * (dz_dx * np.cos(north_angle) - dz_dy * np.sin(north_angle))
+        dz_dnorth = scale * (dz_dx * np.sin(north_angle) + dz_dy * np.cos(north_angle))
+        return dz_deast, dz_dnorth
 
 
 class TriangleMesh(Mesh):

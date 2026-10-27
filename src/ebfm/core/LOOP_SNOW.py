@@ -7,6 +7,7 @@ from numpy.typing import NDArray
 
 from .compute_backend import get_backend, ComputeBackend
 from .constants import SECONDS_PER_HOUR
+from .LOOP_SNOW_common import _DT_SAFETY_FACTOR
 from .LOOP_SNOW_kernels import (
     _compaction_kernel,
     _heat_conduction_kernel,
@@ -25,6 +26,7 @@ except NameError:
     profile = lambda f: f  # noqa: E731
 
 from ebfm.core import logging
+from ebfm.core.constants import WATER_DENSITY
 
 _SUCCESS = True
 
@@ -114,8 +116,11 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
 
             # A "grid shift" moves the layer indices: an overfull top layer becomes
             # layer 1, deeper layers move down, the overflow starts a new top layer.
-            no_grid_shift: NDArray[np.bool_] = subZ_top_old + shift_amount <= max_subZ
-            needs_grid_shift: NDArray[np.bool_] = ~no_grid_shift
+            # Columns without snow in this pass are left untouched.
+            receives_snow: NDArray[np.bool_] = shift_amount > 0
+            fits_top_layer: NDArray[np.bool_] = subZ_top_old + shift_amount <= max_subZ
+            no_grid_shift: NDArray[np.bool_] = receives_snow & fits_top_layer
+            needs_grid_shift: NDArray[np.bool_] = receives_snow & ~fits_top_layer
             # Index into the grid with indices, not with the masks, reason: NumPy
             # re-scans the full mask on every indexing operation, flatnonzero pays that
             # scan once and each later access then costs only the affected rows.
@@ -179,7 +184,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
 
         # Initialize variables
         OUT["sumWinit"] = np.sum(OUT["subW"], axis=1)
-        mass_removed = (OUT["melt"] + OUT["moist_sublimation"]) * 1e3
+        mass_removed = (OUT["melt"] + OUT["moist_sublimation"]) * WATER_DENSITY
         mass_layer = OUT["subD"] * OUT["subZ"]
 
         shift_tot = np.zeros_like(mass_removed)
@@ -550,7 +555,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             # Stability time step (CFL condition)
             # Layer 0: surface ghost layer, excluded from CFL condition
             dt_stab: NDArray[np.float64] = (
-                0.5
+                _DT_SAFETY_FACTOR
                 * np.min(c_eff[:, 1:], axis=1)
                 * np.min(OUT["subZ"][:, 1:], axis=1) ** 2
                 / np.max(kk[:, 1:], axis=1)
@@ -648,7 +653,9 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             if _p_mode < 0:
                 raise ValueError(f"_percolation_kernel: unknown percolation={phys['percolation']!r}")
             _avail_W = np.maximum(
-                OUT["melt"] * 1e3 + IN["rain"] * 1e3 + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * 1e3,
+                OUT["melt"] * WATER_DENSITY
+                + IN["rain"] * WATER_DENSITY
+                + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * WATER_DENSITY,
                 0.0,
             )
             if gpu is not None:
@@ -709,9 +716,9 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             subW_old = OUT["subW"].copy()  # Store the old water content
             # ------ Water Input ------
             avail_W = (
-                OUT["melt"] * 1e3  # Meltwater
-                + IN["rain"] * 1e3  # Rainfall
-                + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * 1e3  # Condensation or evaporation
+                OUT["melt"] * WATER_DENSITY  # Meltwater
+                + IN["rain"] * WATER_DENSITY  # Rainfall
+                + (OUT["moist_condensation"] - OUT["moist_evaporation"]) * WATER_DENSITY  # Condensation or evaporation
             )
             avail_W = np.maximum(avail_W, 0)  # Ensure no negative water availability
 

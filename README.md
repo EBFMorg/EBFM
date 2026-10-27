@@ -72,16 +72,44 @@ If during the installation of EBFM it appears that `yac` is missing, please doub
 
 ## Running EBFM
 
-After installation, a basic, uncoupled simulation can be run with the following command, provided you cloned this repository:
+### Test experiments
+
+After installation, you are able to perform two basic uncoupled simulations, provided you cloned this repository. Every run produces an output file (`/Output/model_output.nc`), which contains daily output and can be viewed with tools like Ncview. The first test runs EBFM for all glaciers in Svalbard for 1-Jan-1979 (unless `--start-time` and `--end-time` are set differently) with a synthetic randomized weather forcing:
 
 ```sh
 ebfm --matlab-mesh examples/dem_and_mask.mat
 ```
 
+Another test applies EBFM to the Greenland Ice Sheet and forces it with Copernicus CARRA2 meteorological data for the month May 1990 on a 10-km resolution grid:
+
+```sh
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-05-01T00:00:00 --end-time 1990-06-01T00:00:00
+```
+
+Two more tests can be done, simulating the Greenland Ice Sheet for a full year (1990) at spatial resolutions of 2.5 km or 10 km. The faster 10-km resolution test requires this [package](https://drive.google.com/file/d/1bZUKxQ7QgQjwwPA8jTHqlJ-mXhwsU_OP/view?usp=sharing), whereas the computationally more expensive high-resolution 2.5-km resolution test requires this downloadable [package](https://drive.google.com/file/d/1fTFMt0QzGTrQFfzOmBC4xk1OonFsH9ZQ/view?usp=sharing). The zip-files need to be extracted so that the `.nc` files are in the `/examples/` folder prior to running the model with the following commands:
+
+```sh
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
+```
+
+for the 10-km resolution experiment, and as:
+
+```sh
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing_fine --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
+```
+
+for the 2.5-km resolution experiment.
+
+Please note that runs become significantly faster (~3 times) when running with performance optimization (see also **Performance and Profiling Runs** below), e.g.:
+
+```sh
+ebfm --netcdf-mesh examples/Greenland_CARRA2/grid_fine.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing_fine --numba-threads 2 --start-time 1990-01-01T00:00:00 --end-time 1991-01-01T00:00:00
+```
+
 ### Mesh data
 
-The arguments `--matlab-mesh` and `--elmer-mesh` allow to provide different kinds of mesh data.
-The arguments `--netcdf-dem-mesh` and `--netcdf-dem-mesh-unstructured` allow to add a Digital Elevation Model (DEM) for meshes that come without elevation information.
+The arguments `--matlab-mesh`, `--elmer-mesh`, and `--netcdf-mesh` allow to provide different kinds of mesh data.
+The arguments `--netcdf-dem-mesh` and `--netcdf-dem-mesh-unstructured` allow to add a Digital Elevation Model (DEM) for `--elmer-mesh` since it comes without elevation information.
 EBFM supports the following formats:
 
 For Elmer-based inputs, the argument `--elmer-mesh-crs-epsg` is needed to define the coordinate reference system (CRS)
@@ -97,6 +125,21 @@ Important: For some larger files we are using Git LFS. Please make sure to [inst
 
   ```sh
   ebfm --matlab-mesh examples/dem_and_mask.mat
+  ```
+
+* NetCDF Mesh: A NetCDF file with `latitude`, `longitude`, elevation (`orog` or
+  `orography`) and `mask` on a 2D grid. Please use the argument
+  `--netcdf-mesh /path/to/your/mesh.nc`.
+
+  Cells with missing elevation are never active. They still enter the slope of
+  neighbouring active cells, so EBFM stops if an active cell borders a missing
+  elevation. The option `--fill-missing-elevation` sets missing elevations to 0 m
+  instead.
+
+  Usage example:
+
+  ```sh
+  ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation
   ```
 
 * Elmer Mesh: An Elmer mesh file with x-y coordinates of mesh points and
@@ -122,6 +165,20 @@ Important: For some larger files we are using Git LFS. Please make sure to [inst
 
   ```sh
   ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --elmer-mesh-crs-epsg 3413
+  ```
+
+* Elmer Mesh with Elevation data from Elmer/Ice XIOS output: The Elmer mesh file
+  provides x-y coordinates. A NetCDF file written by Elmer/Ice through XIOS
+  provides the surface elevation `zs` and the ice thickness `h` at the mesh
+  nodes. Cells with more than 1 m of ice are treated as glacier. Please use the
+  arguments `--elmer-mesh /path/to/your/elmer/mesh` and
+  `--netcdf-dem-mesh-unstructured /path/to/your/xios_output.nc`. See
+  [`examples/README.md`](examples/README.md) for the required contents of the file.
+
+  Usage example:
+
+  ```sh
+  ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh-unstructured examples/greenland_mesh_v0/xios_dem.nc --elmer-mesh-crs-epsg 3413
   ```
 
 Note that an Elmer mesh must be provided in a directory following the structure:
@@ -159,8 +216,16 @@ path/to/your/elmer/mesh
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42
+ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42 --elmer-mesh-crs-epsg 3413
 ```
+
+On several MPI ranks, `--use-part` is not allowed: rank i computes the partition i + 1, e.g. the partitions 1 to 4 with:
+
+```sh
+mpirun -n 4 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --elmer-mesh-crs-epsg 3413
+```
+
+Besides a partitioned mesh, only a MATLAB grid runs on several MPI ranks (see [Running on several MPI ranks](#running-on-several-mpi-ranks)).
 
 Note: The partitioned mesh is not included in this repository.
 
@@ -221,6 +286,21 @@ ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart --re
 
 Note that it is necessary to provide a `--start-time` consistent with the given restart file.
 
+### Running on several MPI ranks
+
+EBFM splits a MATLAB grid over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
+
+```sh
+mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
+```
+
+* Each rank computes a contiguous block of the columns, the first block on rank 0.
+* Rank 0 writes the output file and `--dump-reference` for all ranks. They are
+  identical to those of a run on a single rank.
+* Not supported on several ranks, and rejected with an error: shading,
+  `--forcing-dir`, `--restart-dir`/`--restart-init`, and grids other than a
+  MATLAB grid or a partitioned Elmer mesh.
+
 ### Performance and Profiling Runs
 
 Multi-threaded Numba kernels (`--with-numba`), GPU offloading (`--with-gpu`), timing, output comparison and
@@ -235,8 +315,17 @@ allow to configure the coupling:
 ebfm ...
   --couple-to-elmer-ice
   --couple-to-icon-atmo
+  --couple-to-icon-land
   --coupler-config /path/to/coupling/config.yaml
 ```
+
+With `--couple-to-icon-land`, EBFM sends the ice-covered fraction of its grid cells
+(`icefract`, `albedo`, `t_sub`, `ghf_cond`, `runoff`, `smb`, `snowmass`) to the ICON land model
+(ICON-Land/JSBACH) and receives the surface energy balance results of its glacier tile (`t_srf`,
+`melt`, `evapotrans`, averaged over the EBFM time step), which then drive the firn model instead
+of EBFM's own energy balance (kept as diagnostic `ebm_*`). ICON-Land is coupled as a
+separate YAC component (`icon-land`) independent of the ICON atmosphere coupling.
+Note that the abbreviation `--couple-to-icon` is ambiguous and no longer accepted.
 
 Note that the coupling uses the Python bindings of YAC. Additionally, EBFM must
 be run in a MPMD (multiple process multiple data) run.
@@ -247,7 +336,7 @@ mpirun -np 1 ebfm \
   --elmer-mesh $MESHES/greenland_mesh_v0/MESH/partitioning.128/ \
   --netcdf-dem-mesh $DATA/BedMachineGreenland-v5.nc \
   --is-partitioned-elmer-mesh --use-part 1 \
-  --coupler-config $CPL_CONFIG --couple-to-elmer --couple-to-icon \
+  --coupler-config $CPL_CONFIG --couple-to-elmer-ice --couple-to-icon-atmo \
   : \
   -np 1 $ELMER_ROOT/src/elmer_dummy_f.x $MESHES/greenland_mesh_v0/MESH/partitioning.128 1 $CPL_CONFIG \
   : \

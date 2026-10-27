@@ -17,9 +17,10 @@ from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
-from .grid import GridInputType, GridDict, ShadingMethod
+from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
+from .restart import validate_all_variables_present, validate_variable_shape
 
-from .constants import DAYS_PER_YEAR, SECONDS_PER_DAY
+from .constants import DAYS_PER_YEAR, LATENT_HEAT_OF_FUSION, MELTING_POINT, SECONDS_PER_DAY, WATER_DENSITY
 
 import logging
 
@@ -105,9 +106,7 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
         write_restart_file = False
 
     io["writebootfile"] = write_restart_file
-
     io["freqout"] = 8  # OUTPUT: frequency of storing output (every n-th time-step)
-    io["output_type"] = 2  # Set output file type: 1 = binary files, 2 = netCDF file
 
     # Ensure output and reboot directories exist
     os.makedirs(io["outdir"], exist_ok=True)
@@ -143,7 +142,7 @@ def init_constants():
     C["Cp"] = 1005.7  # Specific heat of dry air (J kg-1 K-1)
     C["Cw"] = 4187.0  # Specific heat of water (J kg-1 K-1)
     C["Ls"] = 2.83e6  # Latent heat of sublimation/riming (J kg-1)
-    C["Lm"] = 0.33e6  # Latent heat of melting/fusion (J kg-1)
+    C["Lm"] = LATENT_HEAT_OF_FUSION  # Latent heat of melting/fusion (J kg-1)
     C["Lv"] = 2.5e6  # Latent heat of evaporation/condensation (J kg-1)
     C["Rv"] = 462.0  # Specific gas constant water vapor (J kg-1 K-1)
     C["Rd"] = 287.0  # Specific gas constant dry air (J kg-1 K-1)
@@ -151,7 +150,7 @@ def init_constants():
     C["dTacc"] = 0.01  # Threshold dT in solving the energy balance equation (K)
     C["Pref"] = 1015e2  # Reference air pressure (Pa)
     C["Pr"] = 5  # Prandtl number in SHF/LHF formulation
-    C["T0"] = 273.15  # Melting temperature of ice (K)
+    C["T0"] = MELTING_POINT  # Melting temperature of ice (K)
     C["g"] = 9.81  # Gravitational acceleration (m s-2)
     C["rd"] = 8.314  # Universal gas constant (J mol-1 K-1)
     C["k_aer"] = 0.974  # Aerosol transmissivity exponent
@@ -166,7 +165,7 @@ def init_constants():
     C["Dfreshsnow"] = 350.0  # Density of fresh snow (kg m-3)
     C["Dice"] = 900.0  # Density of ice (kg m-3)
     C["Dfirn"] = 500.0  # Density of firn (kg m-3)
-    C["Dwater"] = 1000.0  # Density of water (kg m-3)
+    C["Dwater"] = WATER_DENSITY  # Density of water (kg m-3)
     C["Ec"] = 60000  # Gravitational densification factor
     C["Eg"] = 42400  # Gravitational densification factor
     C["Trunoff"] = 0.001  # Slush runoff time-scale (days)
@@ -182,32 +181,22 @@ def init_constants():
     return C
 
 
-def compute_number_of_glacier_cells(grid: GridDict) -> int:
-    """
-    Computes the number of glacier cells in the grid based on the mask.
-
-    Parameters:
-        grid (GridDict): containing grid-related parameters
-
-    Returns:
-        int: Number of glacier cells (gpsum)
-    """
-    return np.sum(grid["mask"] == 1)
-
-
-def init_grid(grid: GridDict, io, config: GridConfig):
+def init_grid(grid: GridDict, io, config: GridConfig, comm):
     """
     Initializes the GridDict based on the given GridConfig.
 
     * Depending on provided grid file in GridConfig parses the grid and stores it in GridDict.
     * Adds elevation to the grid if a DEM file is provided in GridConfig.
     * Calculates grid slopes and aspects for shading when grid type is MATLAB.
+    * Computes the mean latitude of the whole domain. Collective over comm.
 
     Parameters:
         grid (GridDict): Dictionary to store grid-related parameters.
         io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         config (GridConfig): Grid configuration object containing settings for grid initialization.
+        comm: EBFM's MPI communicator, whose ranks hold the columns of the domain.
     """
+    grid["is_parallel_run"] = comm.size > 1
     grid["is_partitioned"] = config.is_partitioned
     grid["is_unstructured"] = config.is_unstructured
     grid["has_shading"] = config.use_shading
@@ -231,8 +220,9 @@ def init_grid(grid: GridDict, io, config: GridConfig):
                 source_crs_epsg=config.elmer_mesh_crs_epsg,
             )
 
-        grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
-        grid["lat"], grid["lon"] = mesh.lat_cells, mesh.lon_cells
+        grid["column_id"] = mesh.cell_ids
+        _set_cell_center_coordinates(grid, mesh)
+
         logger.debug("Reading DEM from file and interpolating to grid...")
         if config.grid_type is GridInputType.CUSTOM:
             logger.debug("... for grid type CUSTOM.")
@@ -248,11 +238,6 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         if "mask" not in grid:
             grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
 
-        if config.grid_type is GridInputType.ELMERXIOS:
-            grid["gpsum"] = grid["z"].shape[0]
-        else:
-            grid["gpsum"] = compute_number_of_glacier_cells(grid)
-
         grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
         grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
@@ -267,81 +252,88 @@ def init_grid(grid: GridDict, io, config: GridConfig):
             source_crs_epsg=config.elmer_mesh_crs_epsg,
         )
 
-        # assuming mesh/MESH/mesh.nodes contains DEM data in the z component
-        # see mesh/README.md for the required preprocessing steps.
-        grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells  # use cell centers as location for DoFs
-        grid["z"] = np.random.uniform(0, 100, size=len(grid["x"]))  # test values!
-        grid["slope_x"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_y"] = np.zeros_like(grid["x"])  # test values!
-        grid["lat"] = np.zeros_like(grid["x"]) + 75  # test values!
-        grid["lon"] = np.zeros_like(grid["x"]) + 320  # test values!
-        grid["slope_beta"] = np.zeros_like(grid["x"])  # test values!
-        grid["slope_gamma"] = np.zeros_like(grid["x"])  # test values!
+        # assuming mesh.nodes contains DEM data in the z component
+        # see README.md for the required preprocessing steps.
+        grid["column_id"] = mesh.cell_ids
+        _set_cell_center_coordinates(grid, mesh)
+        mesh.z_cells = mesh.z_vertices[mesh.cell_to_vertex].mean(axis=1)
+        grid["z"] = mesh.z_cells
+        grid["slope_x"], grid["slope_y"] = mesh.vertex_surface_gradient()
+        grid["slope_beta"] = np.arctan(np.hypot(grid["slope_x"], grid["slope_y"]))
+        grid["slope_gamma"] = slope_azimuth(grid["slope_x"], grid["slope_y"])
         grid["mask"] = np.ones_like(grid["x"])  # treats every grid cell as glacier
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
-
-        # TODO later add slope
-        # grid["slope_x"], grid["slope_y"] = mesh.dzdy, mesh.dzdy
         grid["mesh"] = mesh
-    elif config.grid_type is GridInputType.MATLAB:  # Read grid and elevations from example MATLAB file
+    elif config.grid_type in (GridInputType.MATLAB, GridInputType.NETCDF):  # Read grid and elevations from a file
         # ---------------------------------------------------------------------
         # Read and process grid information
         # ---------------------------------------------------------------------
         # Read grid data
-        input_data = read_MATLAB_grid(config.mesh_file)
-        grid["x_2D"] = input_data["x"][0][0]
-        grid["y_2D"] = input_data["y"][0][0]
-        grid["z_2D"] = input_data["z"][0][0]
-        mask_2D = input_data["mask"][0][0]
+        if config.grid_type is GridInputType.MATLAB:
+            input_data = read_MATLAB_grid(config.mesh_file)
 
-        # Determine domain extent
-        grid["Lx"], grid["Ly"] = grid["x_2D"].shape
+            grid["x_2D"] = input_data["x"][0][0]
+            grid["y_2D"] = input_data["y"][0][0]
+            grid["z_2D"] = input_data["z"][0][0]
+            mask_2D = input_data["mask"][0][0]
 
-        # Flip grid E-W or N-S when needed
-        fy, _ = np.gradient(grid["y_2D"])
+            # Flip grid E-W or N-S when needed
+            fy, _ = np.gradient(grid["y_2D"])
 
-        if fy[0, 0] < 0:
-            grid["x_2D"] = np.flipud(grid["x_2D"])
-            grid["y_2D"] = np.flipud(grid["y_2D"])
-            grid["z_2D"] = np.flipud(grid["z_2D"])
-            mask_2D = np.flipud(mask_2D)
+            if fy[0, 0] < 0:
+                grid["x_2D"] = np.flipud(grid["x_2D"])
+                grid["y_2D"] = np.flipud(grid["y_2D"])
+                grid["z_2D"] = np.flipud(grid["z_2D"])
+                mask_2D = np.flipud(mask_2D)
 
-        _, fx = np.gradient(grid["x_2D"])
-        if fx[0, 0] < 0:
-            grid["x_2D"] = np.fliplr(grid["x_2D"])
-            grid["y_2D"] = np.fliplr(grid["y_2D"])
-            grid["z_2D"] = np.fliplr(grid["z_2D"])
-            mask_2D = np.fliplr(mask_2D)
+            _, fx = np.gradient(grid["x_2D"])
+            if fx[0, 0] < 0:
+                grid["x_2D"] = np.fliplr(grid["x_2D"])
+                grid["y_2D"] = np.fliplr(grid["y_2D"])
+                grid["z_2D"] = np.fliplr(grid["z_2D"])
+                mask_2D = np.fliplr(mask_2D)
 
-        # Calculate grid spacing
-        grid["dx"] = grid["x_2D"][0][1] - grid["x_2D"][0][0]
+            # Calculate latitude & longitude fields (from the original UTM coordinates)
+            utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
+            x_coords = grid["x_2D"].ravel()
+            y_coords = grid["y_2D"].ravel()
+            lon, lat = utm_to_latlon.transform(x_coords, y_coords)
 
-        # Create 1-D mask
-        grid["mask"] = mask_2D[mask_2D == 1]
-        grid["gpsum"] = compute_number_of_glacier_cells(grid)
+            # Reshape to 2D arrays matching the input's shape
+            grid["lon_2D"] = lon.reshape(grid["x_2D"].shape)
+            grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
 
-        # Calculate latitude & longitude fields (from the original UTM coordinates)
-        utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
-        x_coords = grid["x_2D"].ravel()
-        y_coords = grid["y_2D"].ravel()
-        lon, lat = utm_to_latlon.transform(x_coords, y_coords)
+        else:
+            input_data = read_NETCDF_grid(config.mesh_file, config.fill_missing_elevation)
 
-        # Reshape to 2D arrays matching the input's shape
-        grid["lon_2D"] = lon.reshape(grid["x_2D"].shape)
-        grid["lat_2D"] = lat.reshape(grid["y_2D"].shape)
+            grid["x_2D"] = input_data["x"]
+            grid["y_2D"] = input_data["y"]
+            grid["z_2D"] = input_data["z"]
+            mask_2D = input_data["mask"]
+            grid["lon_2D"] = input_data["lon"]
+            grid["lat_2D"] = input_data["lat"]
+
+        # Columns as flat indices into the 2-D fields; in a run on several MPI ranks a contiguous block of them,
+        # the first block on rank 0. The 2-D fields stay whole: the output writer places all columns into them.
+        ind = np.flatnonzero(mask_2D == 1)
+        if config.num_partitions > 1:
+            assert 1 <= config.partition_id <= config.num_partitions, f"Invalid partition id {config.partition_id}."
+            ind = np.array_split(ind, config.num_partitions)[config.partition_id - 1]
+        grid["ind"] = (ind,)
+        grid["column_id"] = ind
 
         # Store 1-D (vectorized) grid information
-        mask_flat = mask_2D.flatten()
-        grid["x"] = grid["x_2D"].flatten()[mask_flat == 1]
-        grid["y"] = grid["y_2D"].flatten()[mask_flat == 1]
-        grid["z"] = grid["z_2D"].flatten()[mask_flat == 1]
-        grid["ind"] = np.where(mask_flat == 1)
-        grid["xind"], grid["yind"] = np.where(mask_2D == 1)
+        grid["mask"] = mask_2D.flat[ind]
+        grid["x"] = grid["x_2D"].flat[ind]
+        grid["y"] = grid["y_2D"].flat[ind]
+        grid["z"] = grid["z_2D"].flat[ind]
 
         # ---------------------------------------------------------------------
         # Grid slope and aspect
         # ---------------------------------------------------------------------
         # Calculate slope and aspect
+        # NOTE: Assumes x varies only along columns and y only along rows (true for the MATLAB grid). NetCDF grids
+        # are reprojected to UTM zone 24N (see read_NETCDF_grid) and are not aligned with x and y, so slope and
+        # aspect are only approximate for them.
         gradN, gradE = np.gradient(grid["z_2D"], grid["y_2D"][:, 0], grid["x_2D"][0, :])
         slope_rad = np.arctan(np.sqrt(gradN**2 + gradE**2))
         slope_deg = np.degrees(slope_rad)
@@ -355,41 +347,82 @@ def init_grid(grid: GridDict, io, config: GridConfig):
         grid["slope_beta_2D"] = np.arctan(grid["slope"])
 
         # Convert 2-D fields to 1-D vectors
-        grid["slope"] = grid["slope"].flatten()[mask_flat == 1]
-        grid["slope_x"] = grid["slope_x"].flatten()[mask_flat == 1]
-        grid["slope_y"] = grid["slope_y"].flatten()[mask_flat == 1]
-        grid["aspect"] = grid["aspect"].flatten()[mask_flat == 1]
-        grid["lat"] = grid["lat_2D"].flatten()[mask_flat == 1]
-        grid["lon"] = grid["lon_2D"].flatten()[mask_flat == 1]
+        grid["slope"] = grid["slope"].flat[ind]
+        grid["slope_x"] = grid["slope_x"].flat[ind]
+        grid["slope_y"] = grid["slope_y"].flat[ind]
+        grid["aspect"] = grid["aspect"].flat[ind]
+        grid["lat"] = grid["lat_2D"].flat[ind]
+        grid["lon"] = grid["lon_2D"].flat[ind]
+
+        # four individual asserts to avoid overhead when turning on optimization
+        assert np.isfinite(grid["slope"]).all(), (
+            f"{int((~np.isfinite(grid['slope'])).sum())} of {grid['slope'].size} active grid cells have a "
+            "non-finite `slope`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask. For --netcdf-mesh, --fill-missing-elevation sets "
+            "missing elevations to 0 m."
+        )
+        assert np.isfinite(grid["slope_x"]).all(), (
+            f"{int((~np.isfinite(grid['slope_x'])).sum())} of {grid['slope_x'].size} active grid cells have a "
+            "non-finite `slope_x`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["slope_y"]).all(), (
+            f"{int((~np.isfinite(grid['slope_y'])).sum())} of {grid['slope_y'].size} active grid cells have a "
+            "non-finite `slope_y`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
+        assert np.isfinite(grid["aspect"]).all(), (
+            f"{int((~np.isfinite(grid['aspect'])).sum())} of {grid['aspect'].size} active grid cells have a "
+            "non-finite `aspect`. Most likely the DEM has missing elevations adjacent to active cells, "
+            "which `np.gradient` spreads one cell into the mask."
+        )
 
         # Calculate slope_beta and slope_gamma (defining the tilt and orientation of a sloping surface)
         grid["slope_beta"] = np.arctan(grid["slope"])
-        grid["slope_gamma"] = np.zeros_like(grid["slope"])
-        grid["slope_gamma"][grid["slope_y"] > 0] = np.arctan(
-            -grid["slope_x"][grid["slope_y"] > 0] / grid["slope_y"][grid["slope_y"] > 0]
-        )
-        cond = np.logical_and(grid["slope_y"] < 0, grid["slope_x"] > 0)
-        grid["slope_gamma"][cond] = -np.pi + np.arctan(-grid["slope_x"][cond] / grid["slope_y"][cond])
-        cond = np.logical_and(grid["slope_y"] < 0, grid["slope_x"] < 0)
-        grid["slope_gamma"][cond] = np.pi + np.arctan(-grid["slope_x"][cond] / grid["slope_y"][cond])
-        grid["slope_gamma"][(grid["slope_x"] == 0) & (grid["slope_y"] < 0)] = np.pi
-        grid["slope_gamma"][(grid["slope_x"] == 0) & (grid["slope_y"] == 0)] = 0
-        grid["slope_gamma"][(grid["slope_x"] > 0) & (grid["slope_y"] == 0)] = np.pi / 2
-        grid["slope_gamma"][(grid["slope_x"] < 0) & (grid["slope_y"] == 0)] = -np.pi / 2
-        grid["slope_gamma"] = -grid["slope_gamma"]
+        grid["slope_gamma"] = slope_azimuth(grid["slope_x"], grid["slope_y"])
 
         # -----------------------------------------------------------------------------------------------------
         # Pre-compute maximum grid elevation angle for various azimuth angles (needed for shading calculation)
+        # NOTE: Only works for grids with E-W and N-S aligned grid cells (e.g. MATLAB grid) and not for
+        # unstructured grids (e.g. Elmer mesh) or grids with rotated grid cells (e.g. NetCDF Greenland grid).
         # -----------------------------------------------------------------------------------------------------
         # Skip the (expensive) look-up table when shading is disabled.
-        if grid["has_shading"]:
+        if config.grid_type is GridInputType.MATLAB and grid["has_shading"]:
             _precompute_shading_matlab(grid, mask_2D)
 
         # TODO introduce object for MATLAB grid similar to the Mesh object for Elmer grids and store in grid["mesh"].
     else:
         raise ValueError(f"Unsupported grid input type {config.grid_type} specified in configuration.")
 
+    # Mean latitude of the whole domain, i.e. over the columns of all MPI ranks, not only those of this rank; the same
+    # on every rank. The water vapour transmissivity in LOOP_EBM_SWin depends on it.
+    grid["lat_mean_whole_domain"] = domain_mean(grid["lat"], comm)
+
+    validate_grid(grid)
+
     return grid
+
+
+def slope_azimuth(slope_x: np.ndarray, slope_y: np.ndarray) -> np.ndarray:
+    """
+    Azimuth of the direction a sloping surface faces, as used for the incidence angle in LOOP_EBM_SWin.
+
+    0 is south-facing, -pi/2 east-facing, pi/2 west-facing and +-pi north-facing. Flat cells get 0.
+
+    Parameters:
+        slope_x (np.ndarray): Surface gradient towards east (dz/dx).
+        slope_y (np.ndarray): Surface gradient towards north (dz/dy).
+    """
+    gamma = np.arctan2(slope_x, slope_y)
+    # arctan2(0, -0.0) is pi
+    gamma[(slope_x == 0) & (slope_y == 0)] = 0.0
+    return gamma
+
+
+def _set_cell_center_coordinates(grid: GridDict, mesh: Mesh) -> None:
+    """Use the cell centers of `mesh` as column locations: x/y in the mesh CRS, lat/lon in degrees (lon -180..180)."""
+    grid["x"], grid["y"] = mesh.x_cells, mesh.y_cells
+    grid["lat"], grid["lon"] = np.degrees(mesh.lat_cells), np.degrees(mesh.lon_cells)
 
 
 def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
@@ -405,6 +438,11 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
                         `az_array` and `maxgridangle`.
     @param[in] mask_2D 2-D glacier mask, 1 for glacier cells.
     """
+    # The walk starts from every glacier cell of the 2-D grid, not only from the columns of this rank.
+    assert not grid["is_parallel_run"], "The shading look-up table cannot be computed in a run on several MPI ranks."
+
+    logger.warning("Using EBFM's internal shading method. Should only be used on regular grids!")
+
     grid["shading_method"] = ShadingMethod.LUT  # shading based on look-up table (lut)
     grid["nr_az_steps"] = 24  # number of azimuth angles (e.g. 24 = 1 per hour)
 
@@ -412,11 +450,13 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
     grid["az_array"] = np.arange(-np.pi, np.pi, 2 * np.pi / grid["nr_az_steps"])[::-1]
 
     xl, yl = grid["x_2D"].shape
+    dx = grid["x_2D"][0][1] - grid["x_2D"][0][0]  # grid spacing
 
     # loop over the azimuth angles to determine gridded maximum grid angles per angle
-    grid["maxgridangle"] = np.zeros((grid["gpsum"], grid["nr_az_steps"]), dtype=np.float64)
+    gpsum = number_of_columns(grid)
+    grid["maxgridangle"] = np.zeros((gpsum, grid["nr_az_steps"]), dtype=np.float64)
     for n in range(grid["nr_az_steps"]):
-        az = np.full(int(grid["gpsum"]), grid["az_array"][n], dtype=float)
+        az = np.full(gpsum, grid["az_array"][n], dtype=float)
 
         # calculate step sizes (ddx, ddy) in x- and y-directions for all azimuth angles
         ddx, ddy = calculate_step_sizes(az)
@@ -424,10 +464,11 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
         # from every grid cell step in the direction of the azimuth until the grid end is reached
         # and detect maximum grid angle along the path
         i0, j0 = np.where(mask_2D == 1)
-        max_angle = np.full(grid["gpsum"], -np.inf, dtype=np.float64)
+        max_angle = np.full(gpsum, -np.inf, dtype=np.float64)
         count = 1
-        active = np.ones(grid["gpsum"], dtype=bool)
-        while active.any():
+        active = np.ones(gpsum, dtype=bool)
+        max_walk_distance = 5e4  # maximum walk distance in meters along the azimuth
+        while active.any() and count * dx < max_walk_distance:
             j = np.round(j0 + ddx * count).astype(np.int64)  # column indices of target cells
             i = np.round(i0 + ddy * count).astype(np.int64)  # row indices of target cells
 
@@ -534,6 +575,101 @@ def read_MATLAB_grid(gridfile: Path):
     return input_data
 
 
+def read_NETCDF_grid(gridfile: Path, fill_missing_elevation: bool = False):
+    """
+    Read grid information from an NetCDF (.nc) file with DEM.
+
+    Cells with missing orography are always inactive. Their elevation is NaN, or 0 m if `fill_missing_elevation`.
+
+    Parameters:
+        gridfile: Path to NetCDF file (.nc).
+        fill_missing_elevation: Set missing elevations to 0 m instead of NaN.
+
+    Returns:
+        dict: A dictionary named `input_data` containing:
+            - 'x': 2D NumPy array of UTM zone 24N easting coordinates (m).
+            - 'y': 2D NumPy array of UTM zone 24N northing coordinates (m).
+            - 'z': 2D NumPy array of orography/elevation.
+            - 'mask': 2D NumPy array of fractional glacier mask values.
+            - 'lon': 2D NumPy array of longitude coordinates in degrees East.
+            - 'lat': 2D NumPy array of latitude coordinates.
+    """
+
+    logger.info("EBFM: Reading grid data from NetCDF file...")
+    input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
+
+    try:
+        with Dataset(gridfile, "r") as ncfile:
+            if "orography" in ncfile.variables:
+                raw_orography = ncfile.variables["orography"][:]
+            elif "orog" in ncfile.variables:
+                raw_orography = ncfile.variables["orog"][:]
+            else:
+                raise KeyError(f"Neither `orography` nor `orog` found in NetCDF grid file {gridfile}.")
+
+            if "mask" not in ncfile.variables:
+                raise KeyError(f"Missing `mask` in in NetCDF grid file {gridfile}.")
+
+            raw_mask = ncfile.variables["mask"][:]
+            latitude = np.asarray(ncfile.variables["latitude"][:])
+            longitude = np.asarray(ncfile.variables["longitude"][:])
+
+            orography = np.asarray(raw_orography)
+            mask = np.asarray(raw_mask, dtype=np.float32)
+
+            orography = np.squeeze(orography)
+            mask = np.squeeze(mask)
+            latitude = np.squeeze(latitude)
+            longitude = np.squeeze(longitude)
+
+            if np.ma.isMaskedArray(raw_orography):
+                valid_orography = ~np.squeeze(np.ma.getmaskarray(raw_orography))
+            else:
+                valid_orography = np.isfinite(orography)
+
+            if latitude.ndim == 1 and longitude.ndim == 1:
+                longitude, latitude = np.meshgrid(longitude, latitude)
+
+            if orography.shape != mask.shape or orography.shape != latitude.shape or orography.shape != longitude.shape:
+                raise ValueError(
+                    "`orography`/`orog`, `mask`, `latitude`, and `longitude` must have matching 2D shapes. "
+                    f"Got orography={orography.shape}, mask={mask.shape}, "
+                    f"latitude={latitude.shape}, longitude={longitude.shape}."
+                )
+
+            mask = np.where(valid_orography & (mask > 0.0), 1.0, 0.0).astype(np.float32)
+            if fill_missing_elevation:
+                n_missing = int((~valid_orography).sum())
+                if n_missing > 0:
+                    logger.warning(f"Setting {n_missing} missing elevations in {gridfile} to 0 m.")
+                orography = np.where(valid_orography, orography, 0.0)
+            else:
+                orography = np.where(valid_orography, orography, np.nan)
+            longitude = np.mod(longitude, 360.0)
+
+            if not np.any(mask > 0.0):
+                raise ValueError(f"Mask of {gridfile} contains no active cells with `mask > 0`.")
+
+            lonlat_to_utm24n = Transformer.from_crs("EPSG:4326", "EPSG:32624", always_xy=True)
+            x, y = lonlat_to_utm24n.transform(longitude, latitude)
+
+            input_data["x"] = x
+            input_data["y"] = y
+            input_data["z"] = orography
+            input_data["lat"] = latitude
+            input_data["lon"] = longitude
+            input_data["mask"] = mask
+
+    except FileNotFoundError:
+        logger.info(f"File not found: {gridfile}")
+        raise
+    except KeyError as e:
+        logger.info(f"Missing field in NetCDF file {gridfile}: {e}")
+        raise
+
+    return input_data
+
+
 def init_initial_conditions(
     C, grid: GridDict, io, time, column: ColumnDiscretizationConfig, init_with_restart_file: bool
 ):
@@ -542,7 +678,7 @@ def init_initial_conditions(
 
     Parameters:
         C (dict): Dictionary with constants such as `Dice` and `alb_fresh`.
-        grid (dict): Dictionary representing the grid, including fields like `gpsum`, `nl`, `max_subZ`, `split`, etc.
+        grid (dict): Dictionary representing the grid.
         io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         time (dict): Dictionary with time-related parameters (e.g. ts).
         column (ColumnDiscretizationConfig): How each column is divided into layers.
@@ -552,13 +688,17 @@ def init_initial_conditions(
         OUT (dict): Dictionary containing model outputs initialized with default or restart file values.
         IN (dict): Dictionary containing model inputs initialized with default values.
         OUTFILE (dict): Placeholder dictionary for output file management.
+
+    Raises:
+        ValueError: if a restart file holds an array that does not match the configured `(gpsum, nl)`.
     """
 
     OUT = {}  # Dictionary to hold model output variables
     IN = {}  # Dictionary to hold model input variables
 
-    gpsum = grid["gpsum"]
+    gpsum = number_of_columns(grid)
     nl = column.nl
+    logger.info(f"Column discretization: {gpsum} columns of {nl} layers each.")
 
     ##########################################################
     # Initialize conditions from restart file or set manually
@@ -568,6 +708,7 @@ def init_initial_conditions(
 
         # Open the NetCDF file
         with Dataset(io["bootfilein"], "r") as ncfile:
+            validate_all_variables_present(ncfile.variables, io["bootfilein"])
             # Iterate through all variables in the file
             for var_name in ncfile.variables:
                 # Read the variable data. netCDF4 returns a numpy.ma.MaskedArray
@@ -586,6 +727,10 @@ def init_initial_conditions(
                 )
                 if isinstance(var_data, np.ma.MaskedArray):
                     var_data = var_data.data
+
+                # Perform consistency checks
+                validate_variable_shape(var_name, var_data.shape, gpsum, nl, io["bootfilein"])
+
                 # If a variable has no dimensions (scalar), convert it to a Python scalar
                 if var_data.shape == ():  # Scalar variable
                     var_data = var_data.item()
@@ -628,6 +773,7 @@ def init_initial_conditions(
     ######################################################
     OUT["smb_cumulative"] = np.zeros((gpsum,))  # Cumulative climatic mass balance (m w.e.)
     OUT["smb"] = np.zeros((gpsum,))  # Climatic mass balance (m w.e.)
+    OUT["runoff"] = np.zeros((gpsum,))  # Runoff from the firn column (m w.e. per timestep)
     OUT["subK"] = np.zeros((gpsum, nl))  # Vertical conductivity (m2 s-1)
     OUT["subCeff"] = np.zeros((gpsum, nl))  # Vertical effective heat capacity (J m-3 K)
     OUT["subWvol"] = np.zeros((gpsum, nl))  # Vertical volumetric water content (fraction)

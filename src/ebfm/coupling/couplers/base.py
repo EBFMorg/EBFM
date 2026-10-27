@@ -49,6 +49,11 @@ class CouplerExitCode(Enum):
     NO_DATA_RECEIVED = "no_data_received"
     """No data was received from the other component at this point in time."""
 
+    UNREGISTERED_FIELD = "unregistered_field"
+    """No field with this name is registered for this component (e.g. a stale name, or its Field
+    definition was commented out in get_field_definitions() while data for it is still being passed
+    in). put()/get() log a warning and skip the operation rather than fail."""
+
 
 class Coupler(ABC, Generic[CouplerExchangeType]):
     """
@@ -79,7 +84,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         logger.debug(f"Active coupled components: {list(self._coupled_components.keys())}")
 
         self._fields: FieldSet = FieldSet()
-        self._time: TimeConfig | None = None  # will be set in setup()
+        self._ebfm_time: TimeConfig | None = None  # will be set in setup()
 
     @staticmethod
     @abstractmethod
@@ -123,12 +128,14 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         @param[in] grid Grid used by EBFM where coupling happens
         @param[in] time TimeConfig with time parameters
         """
-        self._time = time
+        self._ebfm_time = time
 
         field_definitions = FieldSet()
 
         for component in self._coupled_components.values():
-            field_definitions |= component.get_field_definitions(self._time)
+            component.set_ebfm_time(time)
+            component.prepare_grid(grid)
+            field_definitions |= component.get_field_definitions()
 
         self._setup(grid, field_definitions)
 
@@ -143,17 +150,6 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         @param[in] field_definitions set of field definitions collected from all coupled components
         """
         raise NotImplementedError("_setup method must be implemented in subclasses.")
-
-    def get_time_step_in_days(self) -> float:
-        """
-        Get the current time step size of the model in days.
-
-        @note This method assumes that self._time has been set (i.e. self.setup() has been called).
-
-        @returns time step size in days
-        """
-        assert self._time is not None, "self._time must be set before calling get_time_step."
-        return self._time.time_step_in_days()
 
     def _add_grid(self, grid_name: str, grid: Grid):
         """
@@ -174,7 +170,22 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         """
         raise NotImplementedError("_map_exchange_type must be implemented in subclasses.")
 
-    @abstractmethod
+    def _registered_field_names(self, component_name: str) -> set[str]:
+        """
+        Names of all fields registered for a coupled component, regardless of exchange type.
+
+        Used by put()/get() to reject a field name that was never declared by the component (e.g. after a
+        rename in the coupling layer), instead of a backend silently discarding or defaulting it.
+
+        @param[in] component_name name of the component
+
+        @returns registered field names, empty if the component is not coupled
+        """
+        if not self.has_coupling_to(component_name):
+            return set()
+        component = self._coupled_components[component_name]
+        return {f.name for f in self._fields.filter(lambda f: f.coupled_component == component)}
+
     def put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
         """
         Put data to another component
@@ -185,9 +196,22 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         @returns exit code, or None if put successfully completed.
         """
-        raise NotImplementedError("put method must be implemented in subclasses.")
+        if field_name not in self._registered_field_names(component_name):
+            logger.warning(
+                f"Cannot put data for field '{field_name}': component '{component_name}' has no field with "
+                f"that name (skipping this put). Registered fields: "
+                f"{sorted(self._registered_field_names(component_name))}."
+            )
+            return CouplerExitCode.UNREGISTERED_FIELD
+        return self._put(component_name, field_name, data)
 
     @abstractmethod
+    def _put(self, component_name: str, field_name: str, data: np.ndarray) -> CouplerExitCode | None:
+        """
+        Backend-specific implementation of put(), only called once field_name is known to be registered.
+        """
+        raise NotImplementedError("_put method must be implemented in subclasses.")
+
     def get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
         """
         Get data from another component
@@ -197,7 +221,42 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         @returns tuple of (field data, exit code). Exit code is None if get successfully received data.
         """
-        raise NotImplementedError("get method must be implemented in subclasses.")
+        if field_name not in self._registered_field_names(component_name):
+            logger.warning(
+                f"Cannot get data for field '{field_name}': component '{component_name}' has no field with "
+                f"that name (skipping this get). Registered fields: "
+                f"{sorted(self._registered_field_names(component_name))}."
+            )
+            return None, CouplerExitCode.UNREGISTERED_FIELD
+        return self._get(component_name, field_name)
+
+    @abstractmethod
+    def _get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
+        """
+        Backend-specific implementation of get(), only called once field_name is known to be registered.
+        """
+        raise NotImplementedError("_get method must be implemented in subclasses.")
+
+    def get_field_names(self, component_name: str, exchange_type: GenericExchangeType) -> set[str]:
+        """
+        Get the names of all coupled fields of a component with the given exchange type.
+
+        @note Fields are only known after setup() has been called.
+
+        @param[in] component_name name of the component
+        @param[in] exchange_type exchange type to filter for
+
+        @returns names of the coupled fields with that exchange type, empty if the component is not coupled
+        """
+        if not self.has_coupling_to(component_name):
+            return set()
+
+        expected_exchange_type = self._map_exchange_type(exchange_type)
+        component = self._coupled_components[component_name]
+        fields = self._fields.filter(
+            lambda f: f.coupled_component == component and f.exchange_type == expected_exchange_type
+        )
+        return {f.name for f in fields}
 
     def has_field(self, component_name: str, field_name: str, exchange_type: GenericExchangeType) -> bool:
         """
@@ -209,17 +268,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         @returns True if such a field exists, otherwise False
         """
-        if not self.has_coupling_to(component_name):
-            return False
-
-        expected_exchange_type = self._map_exchange_type(exchange_type)
-        component = self._coupled_components[component_name]
-        fields = self._fields.filter(
-            lambda f: f.coupled_component == component
-            and f.name == field_name
-            and f.exchange_type == expected_exchange_type
-        )
-        return not fields.is_empty()
+        return field_name in self.get_field_names(component_name, exchange_type)
 
     @abstractmethod
     def finalize(self):

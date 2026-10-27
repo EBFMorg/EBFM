@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
     - uses: actions/checkout@v6
@@ -64,6 +64,15 @@ jobs:
 
     - name: Setup MPI
       uses: mpi4py/setup-mpi@v1
+      with:
+        # Not the default (mpich): the MPICH package on Ubuntu 24.04 is broken
+        # (https://bugs.launchpad.net/ubuntu/+source/mpich/+bug/2072338) and setup-mpi only patches
+        # around it by copying newer libmpich12/libucx0 over the apt install. The tests are
+        # implementation-agnostic, so use the one that works out of the box.
+        mpi: openmpi
+
+    - name: Keep Open MPI's TCP traffic on the loopback interface
+      run: echo "btl_tcp_if_include=lo" >> ~/.openmpi/mca-params.conf
 
     - name: Install tox
       run: |
@@ -105,7 +114,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
     - uses: actions/checkout@v6
@@ -127,3 +136,8 @@ jobs:
 
     - name: Run example tests with tox
       run: tox -e examples
+
+    # Skip examples-extra because of costly LFS download.
+    # Run in .github/workflows/build-and-test.yaml; stage carra2-example
+    # - name: Run extra example tests with tox
+    #   run: tox -e examples-extra

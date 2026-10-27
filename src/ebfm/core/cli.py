@@ -12,6 +12,7 @@ to enforce internal invariants independently of the CLI layer.
 """
 
 import argparse
+import os
 from argparse import ArgumentParser, Namespace
 from datetime import datetime
 from enum import Enum
@@ -20,6 +21,7 @@ from pathlib import Path
 import isodate
 
 import ebfm.core
+import ebfm.core.comm
 from ebfm.core import INIT
 from ebfm.core.comm import mpi_available
 from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ, iso8601
@@ -36,6 +38,19 @@ def _cli_error(msg: str) -> None:
     """Call parser.error() on the module-level parser. Must be called after parse_cli_args()."""
     assert _parser is not None, "_cli_error() called before parse_cli_args()"
     _parser.error(msg)
+
+
+def mpi_launcher_size() -> int:
+    """Number of processes an MPI launcher started, read from the environment it sets; 1 if none is found.
+
+    Covers Open MPI's mpirun (OMPI_COMM_WORLD_SIZE) and PMI-based launchers such as MPICH's mpiexec, Intel MPI and
+    srun --mpi=pmi2 (PMI_SIZE). Works without mpi4py.
+    """
+    for variable in ("OMPI_COMM_WORLD_SIZE", "PMI_SIZE"):
+        value = os.environ.get(variable, "")
+        if value.isdigit():
+            return int(value)
+    return 1
 
 
 class CliDefaults(Enum):
@@ -71,7 +86,13 @@ def add_coupling_arguments(parser: ArgumentParser) -> None:
     coupling_group.add_argument(
         "--couple-to-icon-atmo",
         action="store_true",
-        help="Enable coupling with ICON via YAC",
+        help="Enable coupling with the ICON atmosphere via YAC",
+    )
+
+    coupling_group.add_argument(
+        "--couple-to-icon-land",
+        action="store_true",
+        help="Enable coupling with ICON-Land (JSBACH) via YAC",
     )
 
     coupling_group.add_argument(
@@ -122,6 +143,9 @@ def extract_active_coupling_features(args: Namespace) -> list[str]:
     if args.couple_to_icon_atmo:
         active_coupling_args.append("--couple-to-icon-atmo")
 
+    if args.couple_to_icon_land:
+        active_coupling_args.append("--couple-to-icon-land")
+
     if args.coupler_config:
         active_coupling_args.append("--coupler-config")
 
@@ -163,6 +187,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     }
     partitioned_elmer_mesh_opt = "--is-partitioned-elmer-mesh"
     netcdf_dem_mesh_opt = "--netcdf-dem-mesh"
+    fill_missing_elevation_opt = "--fill-missing-elevation"
 
     parser.add_argument(
         "--version",
@@ -181,9 +206,23 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     )
 
     primary_grid_group.add_argument(
+        mesh_opts[GridInputType.NETCDF],
+        type=Path,
+        help="Path to the mesh file and climate data for a test on Greenland. ",
+    )
+
+    primary_grid_group.add_argument(
         mesh_opts[GridInputType.ELMER],
         type=Path,
         help="Path to the Elmer mesh file.",
+    )
+
+    input_group.add_argument(
+        fill_missing_elevation_opt,
+        action="store_true",
+        help=f"Set missing elevations in the {mesh_opts[GridInputType.NETCDF]} file to 0 m. Cells with missing "
+        "elevation are never active, but their elevation enters the slope of neighbouring active cells. "
+        f"Requires {mesh_opts[GridInputType.NETCDF]}.",
     )
 
     input_group.add_argument(
@@ -196,9 +235,9 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     input_group.add_argument(
         "--netcdf-dem-mesh-unstructured",
         type=Path,
-        help="Path to the unstructured NetCDF mesh file. "
-        f"Optional if using {mesh_opts[GridInputType.ELMER]}. "
-        f"If --netcdf-dem-mesh is provided elevations will be read from the given NetCDF mesh file.",
+        help="Path to an Elmer/Ice XIOS output file with surface elevation (zs) and ice thickness (h) at the nodes "
+        f"of the {mesh_opts[GridInputType.ELMER]}, in the order of its mesh.nodes. "
+        f"Optional if using {mesh_opts[GridInputType.ELMER]}.",
     )
 
     grid_types_without_shading = set(GridConfig.mesh_arg_dests.keys()) - GridConfig.grid_types_supporting_shading
@@ -211,7 +250,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "--shading",
         default=argparse.SUPPRESS,
         action=argparse.BooleanOptionalAction,
-        help="Enable/disable shading. " + shading_default_info,
+        help="Enable/disable shading. " + shading_default_info + " Not supported for runs on several MPI ranks.",
     )
 
     example_restart_file_name = INIT.create_restart_file_name(CliDefaults.START_TIME.value)
@@ -239,6 +278,12 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         help="EPSG code of the input Elmer mesh coordinate reference system."
         " Used to convert mesh x/y coordinates to lon/lat."
         " Required when using --elmer-mesh.",
+    )
+
+    input_group.add_argument(
+        "--forcing-dir",
+        type=Path,
+        help="Path to the folder containing NetCDF forcing files with meteorological data.",
     )
 
     time_group = parser.add_argument_group("time configuration")
@@ -301,7 +346,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         type=int,
         default=argparse.SUPPRESS,  # To not print (default: ...) in --help
         help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. "
-        "If not provided, the MPI rank + 1 will be used as partition ID.",
+        "If not provided, the MPI rank + 1 will be used as partition ID. Only allowed in runs on a single MPI rank.",
     )
 
     logger_group = parser.add_argument_group("logging configuration")
@@ -311,7 +356,8 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         type=str,
         choices=list(log_levels_map.keys()),
         default=CliDefaults.LOG_LEVEL_CONSOLE.value,
-        help="Log level for console output for all MPI ranks (unless overridden by custom settings in utils.py).",
+        help="Log level for console output. In runs on several MPI ranks, it applies to rank 0; the other ranks "
+        "only log warnings and errors to the console.",
     )
 
     logger_group.add_argument(
@@ -411,11 +457,20 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     if args.is_partitioned_elmer_mesh and args.netcdf_dem_mesh is None:
         parser.error(f"{partitioned_elmer_mesh_opt} requires {netcdf_dem_mesh_opt}")
 
+    if args.fill_missing_elevation and getattr(args, GridConfig.mesh_arg_dests[GridInputType.NETCDF], None) is None:
+        parser.error(f"{fill_missing_elevation_opt} requires {mesh_opts[GridInputType.NETCDF]}")
+
     if args.elmer_mesh and args.elmer_mesh_crs_epsg is None:
         parser.error("--elmer-mesh-crs-epsg is required when using --elmer-mesh")
 
     if args.with_numba and args.with_gpu:
         parser.error("--with-numba and --with-gpu are mutually exclusive.")
+
+    if args.with_numba:
+        from ebfm.core.compute_backend import is_numba_available
+
+        if not is_numba_available():
+            parser.error("--with-numba: numba is not installed. Run: pip install 'ebfm[performance]'")
 
     if args.gpu_vendor != "auto" and not args.with_gpu:
         parser.error("--gpu-vendor requires --with-gpu.")
@@ -432,53 +487,34 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     if active_mpi_opts and not mpi_available:
         parser.error(f"{', '.join(active_mpi_opts)} require MPI. Install via: pip install 'ebfm[mpi]'")
 
+    n_launched = mpi_launcher_size()
+    if n_launched > 1 and not mpi_available:
+        parser.error(
+            f"EBFM was started on {n_launched} MPI processes, but mpi4py cannot be imported "
+            f"({getattr(ebfm.core.comm, 'mpi_import_error', 'not installed')}), so every process would run the whole "
+            "model on its own. Install via: pip install 'ebfm[mpi]'"
+        )
+
     return args
 
 
 def resolve_numba_threads(args: Namespace, comm, logger) -> int:
-    """Validate numba availability and thread configuration, then return the thread count to use.
+    """Return the Numba thread count to use, see compute_backend.resolve_numba_threads().
 
-    Must be called only when args.with_numba is True. Emits parser.error() for user-input problems
-    (missing package, out-of-range thread count) and logs the resolved setting.
+    Must be called only when args.with_numba is True, on every rank of comm. Emits parser.error() if
+    the thread count is outside the range Numba accepts.
 
     @param[in] args   parsed CLI arguments
-    @param[in] comm   MPI communicator (used to determine suggested thread limit)
+    @param[in] comm   MPI communicator (used to find the ranks sharing this node)
     @param[in] logger logger for informational messages
     @returns number of Numba threads to initialise
     """
-    import multiprocessing as _mp
-    from ebfm.core.compute_backend import is_numba_available
+    from ebfm.core import compute_backend
 
-    if not is_numba_available():
-        _cli_error("--with-numba: numba is not installed. Run: pip install 'ebfm[performance]'")
-
-    cpu_count = _mp.cpu_count()
-    mpi_size = comm.size
-    suggested_max_threads = max(1, cpu_count // mpi_size)
-
-    n_threads = args.numba_threads if args.numba_threads is not None else 1
-
-    if args.numba_threads is None:
-        logger.info(
-            f"[NUMBA] --with-numba enabled. Using default threads per rank: {n_threads}. "
-            f"To increase, pass --numba-threads N (suggested max: {suggested_max_threads}; "
-            f"cpu_count={cpu_count}, MPI world size={mpi_size})."
-        )
-    else:
-        if n_threads < 1:
-            _cli_error("--numba-threads must be >= 1")
-        if n_threads > suggested_max_threads:
-            _cli_error(
-                f"[NUMBA] --numba-threads={n_threads} exceeds suggested max {suggested_max_threads} "
-                f"(cpu_count={cpu_count}, MPI world size={mpi_size}). "
-                f"--numba-threads must be between 1 and {suggested_max_threads} on this system. "
-            )
-        logger.info(
-            f"[NUMBA] --with-numba enabled. Threads per rank: {n_threads} "
-            f"(suggested max {suggested_max_threads}; cpu_count={cpu_count}, MPI world size={mpi_size})."
-        )
-
-    return n_threads
+    try:
+        return compute_backend.resolve_numba_threads(args.numba_threads, comm, logger)
+    except ValueError as e:
+        _cli_error(str(e))
 
 
 def validate_shading_coupling_compat(grid_config, coupling_config) -> None:
@@ -491,4 +527,102 @@ def validate_shading_coupling_compat(grid_config, coupling_config) -> None:
         _cli_error(
             "Shading routine not implemented for coupled runs. "
             "Please deactivate shading via --no-shading or deactivate coupling."
+        )
+
+
+def validate_shading_parallel_compat(grid_config, comm) -> None:
+    """Check that shading is not enabled in a run on several MPI ranks.
+
+    Must be called on every rank of comm.
+
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
+    """
+    if comm.size == 1:
+        # Shading works on a single rank
+        return
+
+    if grid_config.use_shading:
+        # The shading look-up table is computed for the columns of the whole grid, not for those of a single rank
+        _cli_error(
+            f"Shading routine not implemented for runs on several MPI ranks ({comm.size} ranks). "
+            "Please deactivate shading via --no-shading or run on a single rank. "
+            "See https://github.com/EBFMorg/EBFM/issues/183"
+        )
+
+
+def validate_grid_parallel_compat(grid_config, comm) -> None:
+    """Check that a run on several MPI ranks uses a grid that runs there.
+
+    EBFM splits a MATLAB grid over the ranks; of a partitioned Elmer mesh, each rank computes one partition.
+
+    Must be called on every rank of comm.
+
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
+    """
+    if comm.size == 1:
+        # Every grid runs on a single rank
+        return
+
+    if grid_config.grid_type is GridInputType.MATLAB:
+        # EBFM splits the columns over the ranks
+        return
+
+    if grid_config.grid_type is GridInputType.NETCDF:
+        rejected_grid = "--netcdf-mesh"
+    elif not grid_config.is_partitioned:
+        rejected_grid = "--elmer-mesh without --is-partitioned-elmer-mesh"
+    else:
+        return
+
+    _cli_error(
+        f"{rejected_grid} is not supported for runs on several MPI ranks ({comm.size} ranks). "
+        "Only --matlab-mesh and a partitioned Elmer mesh (--is-partitioned-elmer-mesh) run on several ranks. "
+        "Please run on a single rank."
+    )
+
+
+def validate_use_part_parallel_compat(args: Namespace, comm) -> None:
+    """Check that --use-part is not given in a run on several MPI ranks, where every rank would compute it.
+
+    Must be called on every rank of comm, before args.use_part defaults to the rank's partition.
+
+    @param[in] args parsed CLI arguments
+    @param[in] comm EBFM's MPI communicator
+    """
+    if hasattr(args, "use_part") and comm.size > 1:
+        _cli_error(
+            f"--use-part is not supported for runs on several MPI ranks ({comm.size} ranks), since every rank would "
+            f"compute partition {args.use_part}. Please leave out --use-part: rank i then computes partition i + 1."
+        )
+
+
+def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
+    """Check that no forcing files are read in a run on several MPI ranks.
+
+    Must be called on every rank of comm.
+
+    @param[in] args parsed CLI arguments
+    @param[in] comm EBFM's MPI communicator
+    """
+    if args.forcing_dir is not None and comm.size > 1:
+        _cli_error(
+            f"Forcing files (--forcing-dir) are not supported for runs on several MPI ranks ({comm.size} ranks). "
+            "Please run on a single rank."
+        )
+
+
+def validate_restart_parallel_compat(args: Namespace, comm) -> None:
+    """Check that no restart files are read or written in a run on several MPI ranks.
+
+    Must be called on every rank of comm.
+
+    @param[in] args parsed CLI arguments
+    @param[in] comm EBFM's MPI communicator
+    """
+    if (args.restart_dir is not None or args.restart_init) and comm.size > 1:
+        _cli_error(
+            f"Restart files (--restart-dir, --restart-init) are not supported for runs on several MPI ranks "
+            f"({comm.size} ranks). Please run on a single rank."
         )

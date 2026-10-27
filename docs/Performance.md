@@ -56,6 +56,11 @@ ebfm --matlab-mesh examples/dem_and_mask.mat --with-numba --numba-threads 2
 Note: If you use more than one thread, you must specify `--numba-threads`. In practice, 2 threads have shown the
 best performance so far, but optimal settings depend on your hardware and problem size. Feel free to experiment.
 
+`--numba-threads` is per MPI rank and cannot exceed the number of CPUs the rank may run on. Under MPI and Slurm this
+is usually less than the number of CPUs of the node: `mpirun` or `srun` may bind each rank to a few cores, and Slurm
+only grants the CPUs of the allocation. EBFM logs Numba's limit and the usable CPUs at startup, and stops with an error
+if `--numba-threads` exceeds them (see [Troubleshooting](#troubleshooting)).
+
 ### GPU offloading: `--with-gpu`
 
 You can use the option `--with-gpu` when the node you run on has a GPU: it offloads the same kernels to the device as for the option `--with-numba`. How much that
@@ -146,3 +151,37 @@ Afterwards the check above should succeed:
 python -c "from numba import cuda; print(cuda.is_available())"
 # expected output: True
 ```
+
+### `--numba-threads=N exceeds Numba's thread limit`
+
+*Problem:* EBFM stops at startup with
+
+```
+error: --numba-threads=8 exceeds Numba's thread limit of 2: this process may only run on 2 CPUs. ...
+```
+
+Numba can run at most as many threads as the CPUs the process is allowed to run on (its CPU affinity), or as many as
+the environment variable `NUMBA_NUM_THREADS` allows if it is set. Under MPI the affinity is often much smaller than the
+node: OpenMPI binds each rank to a single core by default when it starts 2 or fewer processes, e.g. one EBFM rank plus
+one coupled component. With `srun`, each task may only run on the CPUs it requested with `--cpus-per-task`. On Levante
+a core has 2 hardware threads and Slurm allocates whole cores, hence a limit of 2 for a single core or
+`--cpus-per-task=1`.
+
+To check the limit Numba sees, launch Python exactly like EBFM, e.g. with `mpirun` or `srun`:
+
+```sh
+mpirun -n 1 python -c "import os, numba; print(len(os.sched_getaffinity(0)), numba.config.NUMBA_NUM_THREADS)"
+srun -n 1 python -c "import os, numba; print(len(os.sched_getaffinity(0)), numba.config.NUMBA_NUM_THREADS)"
+```
+
+*Solution:* Use one of
+
+- `mpirun --bind-to none ...`: each rank may run on all CPUs of the Slurm allocation. Simple, and suitable for
+  interactive runs with few ranks per node; ranks on the same node then share these CPUs.
+- `mpirun --map-by slot:PE=N ...` with an allocation that has enough CPUs per task (e.g. `salloc -c ...`): each rank
+  is bound to its own N cores. Preferable for production runs with many ranks per node.
+- with `srun`: `--cpus-per-task=N` for the job and for `srun` itself, e.g.
+  `srun --cpus-per-task="$SLURM_CPUS_PER_TASK" ...` in a batch script. On Levante N counts hardware threads.
+- a lower `--numba-threads`.
+
+If the error names `NUMBA_NUM_THREADS`, that environment variable is set below `--numba-threads`: raise or unset it.

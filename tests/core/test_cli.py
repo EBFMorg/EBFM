@@ -6,23 +6,33 @@
 
 import unittest
 import io
-from contextlib import redirect_stdout
+import os
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from ebfm.core.cli import (
     CliDefaults,
     extract_active_coupling_features,
+    mpi_launcher_size,
     parse_cli_args,
+    validate_forcing_parallel_compat,
+    validate_grid_parallel_compat,
+    validate_restart_parallel_compat,
+    validate_shading_parallel_compat,
     validate_shading_coupling_compat,
+    validate_use_part_parallel_compat,
 )
 
 from ebfm.core.comm import mpi_available
+from ebfm.core.grid import GridInputType
 from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 
 # Minimal valid args for each primary grid type.
 _MATLAB = ["--matlab-mesh", "mesh.mat"]
 _ELMER = ["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413"]
+_CARRA2 = ["--netcdf-mesh", "mesh.nc"]
+_PARTITIONED_ELMER = _ELMER + ["--netcdf-dem-mesh", "mesh.nc", "--is-partitioned-elmer-mesh"]
 
 
 def _parse(*extra: str, base: list[str] = _MATLAB):
@@ -41,6 +51,10 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
         args = parse_cli_args(_ELMER)
         self.assertEqual(args.elmer_mesh, Path("mesh/"))
 
+    def test_carra2_mesh_accepted(self):
+        args = parse_cli_args(_CARRA2)
+        self.assertEqual(args.netcdf_mesh, Path("mesh.nc"))
+
     def test_no_grid_option_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args([])
@@ -50,6 +64,30 @@ class TestPrimaryGridMutualExclusion(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(_MATLAB + _ELMER)
         self.assertEqual(ctx.exception.code, 2)
+
+    def test_two_grid_options_rejected_matlab_carra(self):
+        with self.assertRaises(SystemExit) as ctx:
+            parse_cli_args(_MATLAB + _CARRA2)
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class TestFillMissingElevation(unittest.TestCase):
+    """--fill-missing-elevation is opt-in and only valid with --netcdf-mesh."""
+
+    def test_off_by_default(self):
+        args = parse_cli_args(_CARRA2)
+        self.assertFalse(args.fill_missing_elevation)
+
+    def test_accepted_with_netcdf_mesh(self):
+        args = parse_cli_args(_CARRA2 + ["--fill-missing-elevation"])
+        self.assertTrue(args.fill_missing_elevation)
+
+    def test_rejected_without_netcdf_mesh(self):
+        for base in (_MATLAB, _ELMER):
+            with self.subTest(base=base[0]):
+                with self.assertRaises(SystemExit) as ctx:
+                    parse_cli_args(base + ["--fill-missing-elevation"])
+                self.assertEqual(ctx.exception.code, 2)
 
 
 class TestElmerMeshConstraints(unittest.TestCase):
@@ -148,6 +186,7 @@ class TestDefaults(unittest.TestCase):
     def test_no_coupling_by_default(self):
         self.assertFalse(self.args.couple_to_elmer_ice)
         self.assertFalse(self.args.couple_to_icon_atmo)
+        self.assertFalse(self.args.couple_to_icon_land)
 
     def test_netcdf_dem_mesh_default_none(self):
         self.assertIsNone(self.args.netcdf_dem_mesh)
@@ -181,6 +220,32 @@ class TestGpuOptions(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             _parse("--gpu-vendor", "nvidia")
         self.assertEqual(ctx.exception.code, 2)
+
+
+class TestMpiLauncherWithoutMpi4py(unittest.TestCase):
+    """Started by an MPI launcher on several processes, EBFM needs mpi4py; otherwise every process runs serially."""
+
+    def _parse(self, environment: dict, mpi_available: bool):
+        with patch.dict(os.environ), patch("ebfm.core.cli.mpi_available", mpi_available):
+            for variable in ("OMPI_COMM_WORLD_SIZE", "PMI_SIZE"):
+                os.environ.pop(variable, None)
+            os.environ.update(environment)
+            self.assertEqual(mpi_launcher_size(), int(next(iter(environment.values()), 1)))
+            return parse_cli_args(_MATLAB)
+
+    def test_several_processes_without_mpi4py_rejected(self):
+        for environment in ({"OMPI_COMM_WORLD_SIZE": "4"}, {"PMI_SIZE": "2"}):
+            with self.subTest(environment=environment), self.assertRaises(SystemExit) as ctx:
+                self._parse(environment, mpi_available=False)
+            self.assertEqual(ctx.exception.code, 2)
+
+    def test_single_process_without_mpi4py_ok(self):
+        for environment in ({}, {"OMPI_COMM_WORLD_SIZE": "1"}):
+            with self.subTest(environment=environment):
+                self._parse(environment, mpi_available=False)  # must not raise
+
+    def test_several_processes_with_mpi4py_ok(self):
+        self._parse({"OMPI_COMM_WORLD_SIZE": "4"}, mpi_available=True)  # must not raise
 
 
 class TestLocalGroupLabel(unittest.TestCase):
@@ -222,6 +287,19 @@ class TestCouplingOptions(unittest.TestCase):
     def test_couple_to_icon_atmo(self):
         args = _parse("--couple-to-icon-atmo")
         self.assertTrue(args.couple_to_icon_atmo)
+        self.assertFalse(args.couple_to_icon_land)
+
+    def test_couple_to_icon_land(self):
+        args = _parse("--couple-to-icon-land")
+        self.assertTrue(args.couple_to_icon_land)
+        self.assertFalse(args.couple_to_icon_atmo)
+
+    def test_couple_to_icon_prefix_is_ambiguous(self):
+        # '--couple-to-icon' used to be accepted as an abbreviation of '--couple-to-icon-atmo';
+        # with '--couple-to-icon-land' it is ambiguous and must be rejected.
+        with self.assertRaises(SystemExit) as ctx:
+            _parse("--couple-to-icon")
+        self.assertEqual(ctx.exception.code, 2)
 
     def test_fake_coupling(self):
         args = _parse("--fake-coupling")
@@ -256,15 +334,20 @@ class TestExtractActiveCouplingFeatures(unittest.TestCase):
         args = _parse("--couple-to-icon-atmo")
         self.assertIn("--couple-to-icon-atmo", extract_active_coupling_features(args))
 
+    def test_couple_to_icon_land(self):
+        args = _parse("--couple-to-icon-land")
+        self.assertIn("--couple-to-icon-land", extract_active_coupling_features(args))
+
     def test_coupler_config(self):
         args = _parse("--coupler-config", "coupler.yaml")
         self.assertIn("--coupler-config", extract_active_coupling_features(args))
 
     def test_multiple_coupling_flags(self):
-        args = _parse("--couple-to-elmer-ice", "--couple-to-icon-atmo")
+        args = _parse("--couple-to-elmer-ice", "--couple-to-icon-atmo", "--couple-to-icon-land")
         features = extract_active_coupling_features(args)
         self.assertIn("--couple-to-elmer-ice", features)
         self.assertIn("--couple-to-icon-atmo", features)
+        self.assertIn("--couple-to-icon-land", features)
 
 
 class TestValidateShadingCouplingCompat(unittest.TestCase):
@@ -300,6 +383,155 @@ class TestValidateShadingCouplingCompat(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
 
 
+class TestValidateShadingParallelCompat(unittest.TestCase):
+    """validate_shading_parallel_compat raises a CLI error when shading is on in a run on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, use_shading: bool, comm_size: int):
+        validate_shading_parallel_compat(MagicMock(use_shading=use_shading), MagicMock(size=comm_size))
+
+    def test_shading_on_single_rank_ok(self):
+        self._validate(use_shading=True, comm_size=1)  # must not raise
+
+    def test_no_shading_on_several_ranks_ok(self):
+        self._validate(use_shading=False, comm_size=4)  # must not raise
+
+    def test_shading_on_several_ranks_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(use_shading=True, comm_size=4)
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class TestValidateGridParallelCompat(unittest.TestCase):
+    """validate_grid_parallel_compat rejects every grid but MATLAB and a partitioned Elmer mesh on several ranks."""
+
+    # name: (grid_type, is_partitioned, grid option named by the error on several ranks, or None if accepted)
+    _CASES = {
+        "--matlab-mesh": (GridInputType.MATLAB, False, None),
+        "--netcdf-mesh": (GridInputType.NETCDF, False, "--netcdf-mesh"),
+        "--elmer-mesh": (GridInputType.ELMER, False, "--elmer-mesh"),
+        "--elmer-mesh --netcdf-dem-mesh": (GridInputType.CUSTOM, False, "--elmer-mesh"),
+        "--elmer-mesh --netcdf-dem-mesh-unstructured": (GridInputType.ELMERXIOS, False, "--elmer-mesh"),
+        "--elmer-mesh --netcdf-dem-mesh --is-partitioned-elmer-mesh": (GridInputType.CUSTOM, True, None),
+    }
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, grid_type, is_partitioned: bool, comm_size: int):
+        grid_config = MagicMock(grid_type=grid_type, is_partitioned=is_partitioned)
+        validate_grid_parallel_compat(grid_config, MagicMock(size=comm_size))
+
+    def test_single_rank_ok(self):
+        for name, (grid_type, is_partitioned, _) in self._CASES.items():
+            with self.subTest(name):
+                self._validate(grid_type, is_partitioned, comm_size=1)  # must not raise
+
+    def test_several_ranks(self):
+        for name, (grid_type, is_partitioned, rejected_grid) in self._CASES.items():
+            with self.subTest(name):
+                if rejected_grid is None:
+                    self._validate(grid_type, is_partitioned, comm_size=4)  # must not raise
+                else:
+                    stderr = io.StringIO()
+                    with redirect_stderr(stderr), self.assertRaises(SystemExit) as ctx:
+                        self._validate(grid_type, is_partitioned, comm_size=4)
+                    self.assertEqual(ctx.exception.code, 2)
+                    error = stderr.getvalue().splitlines()[-1]
+                    self.assertIn(f"error: {rejected_grid} ", error)
+                    self.assertIn("Only --matlab-mesh and a partitioned Elmer mesh", error)
+
+
+@unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
+class TestValidateUsePartParallelCompat(unittest.TestCase):
+    """validate_use_part_parallel_compat raises a CLI error for --use-part in a run on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, use_part, comm_size: int):
+        args = _parse(*(["--use-part", use_part] if use_part else []), base=_PARTITIONED_ELMER)
+        validate_use_part_parallel_compat(args, MagicMock(size=comm_size))
+
+    def test_use_part_on_single_rank_ok(self):
+        self._validate(use_part="42", comm_size=1)  # must not raise
+
+    def test_no_use_part_on_several_ranks_ok(self):
+        self._validate(use_part=None, comm_size=4)  # must not raise
+
+    def test_use_part_on_several_ranks_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(use_part="42", comm_size=4)
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class TestValidateForcingParallelCompat(unittest.TestCase):
+    """validate_forcing_parallel_compat raises a CLI error when forcing files are read in a run on several ranks."""
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, forcing_dir, comm_size: int):
+        args = _parse(*(["--forcing-dir", forcing_dir] if forcing_dir else []))
+        validate_forcing_parallel_compat(args, MagicMock(size=comm_size))
+
+    def test_forcing_on_single_rank_ok(self):
+        self._validate(forcing_dir="forcing/", comm_size=1)  # must not raise
+
+    def test_no_forcing_on_several_ranks_ok(self):
+        self._validate(forcing_dir=None, comm_size=4)  # must not raise
+
+    def test_forcing_on_several_ranks_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(forcing_dir="forcing/", comm_size=4)
+        self.assertEqual(ctx.exception.code, 2)
+
+
+class TestValidateRestartParallelCompat(unittest.TestCase):
+    """validate_restart_parallel_compat raises a CLI error when restart files are used in a run on several ranks."""
+
+    _RESTART_ARGS = {
+        "--restart-dir": ["--restart-dir", "restart/"],
+        "--restart-init": ["--restart-init"],
+        "--restart-dir --restart-init": ["--restart-dir", "restart/", "--restart-init"],
+    }
+
+    def setUp(self):
+        # Ensure _parser is set by running a valid parse first.
+        parse_cli_args(_MATLAB)
+
+    def _validate(self, restart_args, comm_size: int, base: list[str] = _MATLAB):
+        validate_restart_parallel_compat(_parse(*restart_args, base=base), MagicMock(size=comm_size))
+
+    def test_restart_on_single_rank_ok(self):
+        for name, restart_args in self._RESTART_ARGS.items():
+            with self.subTest(name):
+                self._validate(restart_args, comm_size=1)  # must not raise
+
+    def test_no_restart_on_several_ranks_ok(self):
+        self._validate([], comm_size=4)  # must not raise
+
+    def test_restart_on_several_ranks_rejected(self):
+        for name, restart_args in self._RESTART_ARGS.items():
+            with self.subTest(name), self.assertRaises(SystemExit) as ctx:
+                self._validate(restart_args, comm_size=4)
+            self.assertEqual(ctx.exception.code, 2)
+
+    @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
+    def test_restart_on_several_ranks_rejected_for_partitioned_mesh(self):
+        """A partitioned mesh runs on several ranks, but without restart files."""
+        for name, restart_args in self._RESTART_ARGS.items():
+            with self.subTest(name), self.assertRaises(SystemExit) as ctx:
+                self._validate(restart_args, comm_size=4, base=_PARTITIONED_ELMER)
+            self.assertEqual(ctx.exception.code, 2)
+
+
 class TestCliCalendarArgument(unittest.TestCase):
     def test_calendar_default(self):
         args = parse_cli_args(_MATLAB)
@@ -326,6 +558,7 @@ class TestCliHelpOutput(unittest.TestCase):
         help_text = buf.getvalue()
         self.assertIn("--matlab-mesh", help_text)
         self.assertIn("--elmer-mesh", help_text)
+        self.assertIn("--netcdf-mesh", help_text)
         self.assertIn("--calendar", help_text)
 
 

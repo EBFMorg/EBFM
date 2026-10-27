@@ -4,3 +4,4 @@
 
 Ward van Pelt <ward.van.pelt@geo.uu.se>
 Benjamin Rodenberg <rodenberg@dkrz.de>
+Clemens Schannwell <clemens.schannwell@mpimet.mpg.de>
