@@ -173,12 +173,17 @@ class Component(ABC):
         data, err = self._coupler.get(self.name, field_name)
 
         if err:
-            logger.warning(f"Get for {field_name=} returned exit code ({err=}).")
+            logger.info(f"Get for {field_name=} returned exit code ({err=}).")
             if field_name in fallback_values:
-                logger.warning(
+                logger.info(
                     f"Using fallback value for '{field_name}' as no data was received for this field from {self.name}."
                 )
                 return fallback_values[field_name]
+
+            logger.warning(
+                f"Get for {field_name=} returned exit code ({err=}) and no fallback value has been provided. "
+                "This will likely lead to an error later."
+            )
             return None
 
         assert data is not None, f"Received data for field '{field_name}' is None. {err}"
