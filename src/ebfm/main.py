@@ -295,8 +295,12 @@ def _main_impl():
                 "rlds": IN["LWin"],
                 "clt": IN["C"],
                 "sfcwind": IN["WS"],
-                "huss": IN["T"] * 0.0,
-                "sfcpres": IN["T"] * 0.0 + 101500.0,
+                "huss": IN["q"],
+                "sfcpres": IN["Pres"],
+                "tas": IN["T"],
+                "rsds": IN["SWin"],
+                "pr": IN["P"],
+                "pr_snow": IN["snow"],
             }
 
             data_from_icon_atmo = icon_atmo.exchange(data_to_icon_atmo, fallback_values)
