@@ -14,7 +14,7 @@ to enforce internal invariants independently of the CLI layer.
 import argparse
 import os
 from argparse import ArgumentParser, Namespace
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 
@@ -61,6 +61,8 @@ class CliDefaults(Enum):
     TIME_STEP_SIZE = "PT3H"  # = 3 hours
     LOG_LEVEL_CONSOLE = "INFO"
     COMPONENT_NAME = "ebfm"
+    OUTPUT_FILE = Path("Output") / "model_output.nc"
+    OUTPUT_FREQUENCY = "P1D"  # = daily
 
     @classmethod
     def default_time_step_size_in_hours(cls) -> float:
@@ -284,6 +286,36 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "--forcing-dir",
         type=Path,
         help="Path to the folder containing NetCDF forcing files with meteorological data.",
+    )
+
+    output_group = parser.add_argument_group("output file")
+
+    output_group.add_argument(
+        "--output-file",
+        type=Path,
+        default=CliDefaults.OUTPUT_FILE.value,
+        help="Path of the NetCDF output file. Relative paths are relative to the working directory. Missing "
+        "directories are created and an existing file is overwritten.",
+    )
+
+    def parse_output_frequency(value: str) -> timedelta:
+        try:
+            interval = isodate.parse_duration(value)
+        except isodate.ISO8601Error:
+            raise argparse.ArgumentTypeError(f"must be an ISO 8601 duration such as P1D, got '{value}'")
+        if not isinstance(interval, timedelta):
+            raise argparse.ArgumentTypeError(f"must not contain years or months, which vary in length, got '{value}'")
+        if interval <= timedelta(0):
+            raise argparse.ArgumentTypeError(f"must be positive, got '{value}'")
+        return interval
+
+    output_group.add_argument(
+        "--output-frequency",
+        type=parse_output_frequency,
+        default=CliDefaults.OUTPUT_FREQUENCY.value,
+        help="Interval between two output records in ISO 8601 format, e.g. P1D for daily or PT6H for six-hourly "
+        "output. Must be a multiple of --time-step. Each record holds the mean, sum, or a sample over this "
+        "interval, depending on the variable.",
     )
 
     time_group = parser.add_argument_group("time configuration")
@@ -610,6 +642,19 @@ def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
         _cli_error(
             f"Forcing files (--forcing-dir) are not supported for runs on several MPI ranks ({comm.size} ranks). "
             "Please run on a single rank."
+        )
+
+
+def validate_output_frequency_time_step_compat(args: Namespace, time_config) -> None:
+    """Check that --output-frequency is a multiple of the time step.
+
+    @param[in] args        parsed CLI arguments
+    @param[in] time_config resolved TimeConfig
+    """
+    if args.output_frequency % time_config.time_step:
+        _cli_error(
+            f"--output-frequency {isodate.duration_isoformat(args.output_frequency)} is not a multiple of the time "
+            f"step {isodate.duration_isoformat(time_config.time_step)} (--time-step)."
         )
 
 

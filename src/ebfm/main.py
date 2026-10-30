@@ -18,7 +18,7 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.comm.gather import ColumnGather
-from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig
+from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig, OutputConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
     extract_active_coupling_features,
@@ -30,6 +30,7 @@ from ebfm.core.cli import (
     validate_forcing_parallel_compat,
     validate_restart_parallel_compat,
     validate_shading_parallel_compat,
+    validate_output_frequency_time_step_compat,
 )
 
 import ebfm.coupling
@@ -222,11 +223,16 @@ def _main_impl():
     # Ensure shading routine is only used in runs on a single rank.
     validate_shading_parallel_compat(grid_config, ebfm_comm)
 
+    # Ensure every output record covers a whole number of time steps.
+    validate_output_frequency_time_step_compat(args, time_config)
+
     logger.debug("Successfully completed consistency checks.")
 
     # Model setup & initialization
     time = time_config.to_dict()
-    grid, io, phys, column = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
+    grid, io, phys, column = INIT.init_config(
+        time_config, grid_config, OutputConfig(args), args.restart_dir, args.restart_init
+    )
 
     set_random_seed(logger, args.random_seed, ebfm_comm)
 
