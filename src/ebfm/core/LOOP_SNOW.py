@@ -170,8 +170,8 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 OUT["subW"][idx_shift, 1] = subW_old[:, 0]
                 OUT["subW"][idx_shift, 0] = 0.0
 
-                # The layer that just fell out of the domain, index nl-1 before the
-                # shift, takes its irreducible water with it.
+                # The irreducible water in the previously deepest layer (now removed) is added to runoff_irr_deep for
+                # mass conservation.
                 OUT["runoff_irr_deep"][idx_shift] += subW_old[:, nl - 1]
 
         return _SUCCESS
@@ -254,13 +254,11 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 OUT["subD"][idx_shift, 0] = subD_old[:, 1]
                 # Liquid water scales with the remaining fraction of the former layer 1
                 OUT["subW"][idx_shift, 0] = subW_old[:, 1] * (subZ_top_new / subZ_old[:, 1])
-                # Index nl-1 becomes a fresh layer at the base (vectorized over the
-                # shift rows): it inherits the temperature and density of the pre-shift
-                # deepest layer, starts dry, and gets the full deep-layer thickness.
+
+                # Index nl-1 becomes a fresh layer at the base: it inherits the temperature and density of the
+                # pre-shift deepest layer, starts dry, and gets the full deep-layer thickness.
                 OUT["subT"][idx_shift, nl - 1] = subT_old[:, nl - 1]
                 OUT["subW"][idx_shift, nl - 1] = 0.0
-
-                # Update the deepest layer properties (vectorized over shift rows)
                 if column.doubledepth:
                     OUT["subZ"][idx_shift, nl - 1] = 2.0 ** len(column.split) * column.max_subZ
                 else:
