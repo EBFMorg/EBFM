@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Fixed off-by-one error in grid shifts that can lead to inaccuracies for long-running simulations. https://github.com/EBFMorg/EBFM/pull/164
 * Add a 10-km test case for Greenland forced with CARRA2 meteorological data for May 1990 (`examples/Greenland_CARRA2`). https://github.com/EBFMorg/EBFM/pull/128
     * Add feature to use NetCDF meshes with DEM as input (`--netcdf-mesh`)
     * Add option to set missing elevations of NetCDF meshes to 0 m (`--fill-missing-elevation`)
