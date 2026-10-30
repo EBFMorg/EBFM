@@ -786,7 +786,7 @@ def init_initial_conditions(
     ######################################################
     # Initialize `IN` (model input variables)
     ######################################################
-    IN["T"] = np.zeros((gpsum,))  # Air temperature (K)
+    IN["T"] = np.zeros((gpsum,)) + 270.0  # Air temperature (K)
     IN["P"] = np.zeros((gpsum,))  # Precipitation (m w.e.)
     IN["snow"] = np.zeros((gpsum,))  # Snow precipitation (m w.e.)
     IN["rain"] = np.zeros((gpsum,))  # Rain precipitation (m w.e.)
@@ -798,7 +798,7 @@ def init_initial_conditions(
     IN["q"] = np.zeros((gpsum,))  # Specific humidity (g kg-1)
     IN["VP"] = np.zeros((gpsum,))  # Vapor pressure (Pa)
     IN["Dair"] = np.zeros((gpsum,))  # Air density (kg m-3)
-    IN["Pres"] = np.zeros((gpsum,))  # Air pressure (Pa)
+    IN["Pres"] = np.zeros((gpsum,)) + 101500.0  # Air pressure (Pa)
     IN["SWin"] = np.zeros((gpsum,))  # Incoming SW radiation (W m-2)
     IN["LWin"] = np.zeros((gpsum,))  # Incoming LW radiation (W m-2)
 
