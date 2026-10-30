@@ -20,10 +20,11 @@ from ebfm.core.INIT import init_config, init_grid, init_initial_conditions
 from ebfm.core.FINAL_create_restart_file import main as write_restart_file
 from ebfm.core.cli import parse_cli_args
 from ebfm.core.comm import defaultComm
+from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.config import ColumnDiscretizationConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
-from ebfm.core.restart import PER_COLUMN_VARIABLES, PER_LAYER_VARIABLES, RESTART_VARIABLES
+from ebfm.core.restart import COLUMN_ID_VARIABLE, PER_COLUMN_VARIABLES, PER_LAYER_VARIABLES, RESTART_VARIABLES
 from ebfm.elmer.mesh import TriangleMesh
 
 GPSUM = 5
@@ -43,7 +44,7 @@ def _make_grid(number_of_columns: int = GPSUM) -> dict:
     `init_initial_conditions` derives the column count from the grid via
     `ebfm.core.grid.number_of_columns`, so the mask is what sets it.
     """
-    return {"mask": np.ones(number_of_columns, dtype=int)}
+    return {"mask": np.ones(number_of_columns, dtype=int), "column_id": np.arange(number_of_columns)}
 
 
 def _build_out_dict() -> dict:
@@ -65,9 +66,14 @@ def _build_out_dict() -> dict:
     }
 
 
+def _single_rank_gather() -> ColumnGather:
+    """The columns of _make_grid() on a single rank."""
+    return ColumnGather(defaultComm, np.arange(GPSUM))
+
+
 def _write_restart_file(path: Path, with_missing_value: bool = False) -> None:
     io = {"writebootfile": True, "bootfileout": path}
-    write_restart_file(_build_out_dict(), io, restartdir=path.parent)
+    write_restart_file(_build_out_dict(), io, restartdir=path.parent, gather=_single_rank_gather())
 
     if with_missing_value:
         # Restart files produced by EBFM are always fully populated. To
@@ -216,7 +222,12 @@ class TestRestartFileShapeValidation(unittest.TestCase):
         bootfile = Path(self.tmpdir.name) / f"restart_test_{name}.nc"
         out = _build_out_dict()
         out.update(overrides)
-        write_restart_file(out, {"writebootfile": True, "bootfileout": bootfile}, restartdir=bootfile.parent)
+        write_restart_file(
+            out,
+            {"writebootfile": True, "bootfileout": bootfile},
+            restartdir=bootfile.parent,
+            gather=_single_rank_gather(),
+        )
         return bootfile
 
     def test_per_layer_variable_stored_per_column_is_rejected(self):
@@ -299,6 +310,61 @@ class TestRestartFileShapeValidation(unittest.TestCase):
         self.assertEqual(OUT["a_scalar"], 1.0)
 
 
+def copy_without_column_ids(path: Path, copy: Path) -> None:
+    """Copy a restart file without its column ids, as written before they existed."""
+    with Dataset(path) as source, Dataset(copy, "w") as target:
+        for name, dimension in source.dimensions.items():
+            if not name.startswith(COLUMN_ID_VARIABLE):
+                target.createDimension(name, len(dimension))
+        for name, variable in source.variables.items():
+            if name != COLUMN_ID_VARIABLE:
+                target.createVariable(name, variable.dtype, variable.dimensions)[:] = variable[:]
+
+
+class TestRestartColumnIds(unittest.TestCase):
+    """The rows of a restart file are matched to the columns of the grid by their ids."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.bootfile = Path(self.tmpdir.name) / "restart_test.nc"
+        out = _build_out_dict()
+        out["Tsurf"] = 250.0 + np.arange(GPSUM)
+        write_restart_file(
+            out,
+            {"writebootfile": True, "bootfileout": self.bootfile},
+            restartdir=self.bootfile.parent,
+            gather=_single_rank_gather(),
+        )
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _load(self, bootfile, column_ids):
+        grid = {**_make_grid(), "column_id": column_ids}
+        OUT, _, _ = init_initial_conditions(
+            {"alb_ice": 0.5}, grid, {"bootfilein": bootfile}, {}, _make_column(), init_with_restart_file=True
+        )
+        return OUT
+
+    def test_rows_follow_the_column_ids_of_the_grid(self):
+        OUT = self._load(self.bootfile, np.arange(GPSUM)[::-1])
+
+        np.testing.assert_array_equal(OUT["Tsurf"], 250.0 + np.arange(GPSUM)[::-1])
+        self.assertNotIn(COLUMN_ID_VARIABLE, OUT)
+
+    def test_unknown_column_id_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, r"holds no row for 1 of the 5 columns, e.g. for column id 99"):
+            self._load(self.bootfile, np.array([0, 1, 2, 3, 99]))
+
+    def test_file_without_column_ids_is_read_in_file_order(self):
+        bootfile = self.bootfile.with_name("without_column_ids.nc")
+        copy_without_column_ids(self.bootfile, bootfile)
+
+        OUT = self._load(bootfile, np.arange(GPSUM)[::-1])
+
+        np.testing.assert_array_equal(OUT["Tsurf"], 250.0 + np.arange(GPSUM))
+
+
 class TestRestartVariableManifest(unittest.TestCase):
     """The writer and the loader must agree on what a restart file contains.
 
@@ -312,12 +378,12 @@ class TestRestartVariableManifest(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def test_writer_writes_exactly_the_manifest(self):
+    def test_writer_writes_exactly_the_manifest_and_the_column_ids(self):
         bootfile = Path(self.tmpdir.name) / "restart_test.nc"
         _write_restart_file(bootfile)
 
         with Dataset(bootfile) as ncfile:
-            self.assertEqual(set(ncfile.variables), set(RESTART_VARIABLES))
+            self.assertEqual(set(ncfile.variables), {*RESTART_VARIABLES, COLUMN_ID_VARIABLE})
 
     def test_writer_writes_each_group_at_its_own_shape(self):
         bootfile = Path(self.tmpdir.name) / "restart_test.nc"
@@ -354,8 +420,8 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
     def _init_grid(self, shading_flag):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), shading_flag])
         grid_config = GridConfig(args)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config, defaultComm)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        return init_grid(grid, grid_config, defaultComm)
 
     def test_shading_disabled_skips_the_lookup_table(self):
         grid = self._init_grid("--no-shading")
@@ -392,8 +458,8 @@ class TestMatlabGridSplit(unittest.TestCase):
     def _init_grid(self, num_ranks, rank):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--no-shading"])
         grid_config = GridConfig(args, num_ranks, rank)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config, defaultComm)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        return init_grid(grid, grid_config, defaultComm)
 
     def test_blocks_of_all_ranks_make_up_the_serial_grid(self):
         serial = self._init_grid(num_ranks=1, rank=0)
@@ -449,9 +515,9 @@ class TestElmerGridCoordinates(unittest.TestCase):
             ["--elmer-mesh", self.tmpdir.name, "--elmer-mesh-crs-epsg", str(self._CRS_EPSG), *extra_args]
         )
         grid_config = GridConfig(args)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
         with mock.patch.object(INIT, "read_elmer_mesh", return_value=self.mesh):
-            return init_grid(grid, io, grid_config, defaultComm)
+            return init_grid(grid, grid_config, defaultComm)
 
     def test_lat_lon_are_the_cell_centers_of_the_mesh(self):
         grid = self._init_grid()

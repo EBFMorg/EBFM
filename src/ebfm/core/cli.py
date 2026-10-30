@@ -236,7 +236,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "--netcdf-dem-mesh-unstructured",
         type=Path,
         help="Path to an Elmer/Ice XIOS output file with surface elevation (zs) and ice thickness (h) at the nodes "
-        f"of the {mesh_opts[GridInputType.ELMER]}, in the order of its mesh.nodes. "
+        f"of the {mesh_opts[GridInputType.ELMER]}, stored by node id (node id i at position i - 1). "
         f"Optional if using {mesh_opts[GridInputType.ELMER]}.",
     )
 
@@ -347,6 +347,21 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         default=argparse.SUPPRESS,  # To not print (default: ...) in --help
         help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. "
         "If not provided, the MPI rank + 1 will be used as partition ID. Only allowed in runs on a single MPI rank.",
+    )
+
+    parallel_group.add_argument(
+        "--check-grid-distribution",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Check before the time loop that every column is held by exactly one MPI rank. The check "
+        "communicates the ids of all columns; skip it once a setup is known to distribute its grid correctly.",
+    )
+
+    parallel_group.add_argument(
+        "--allow-partition-mismatch",
+        action="store_true",
+        help="Allow a number of MPI ranks that differs from the number of partitions of a partitioned Elmer mesh, "
+        "e.g. to compute only some partitions. Each rank still computes one partition.",
     )
 
     logger_group = parser.add_argument_group("logging configuration")
@@ -551,38 +566,6 @@ def validate_shading_parallel_compat(grid_config, comm) -> None:
         )
 
 
-def validate_grid_parallel_compat(grid_config, comm) -> None:
-    """Check that a run on several MPI ranks uses a grid that runs there.
-
-    EBFM splits a MATLAB grid over the ranks; of a partitioned Elmer mesh, each rank computes one partition.
-
-    Must be called on every rank of comm.
-
-    @param[in] grid_config resolved GridConfig
-    @param[in] comm        EBFM's MPI communicator
-    """
-    if comm.size == 1:
-        # Every grid runs on a single rank
-        return
-
-    if grid_config.grid_type is GridInputType.MATLAB:
-        # EBFM splits the columns over the ranks
-        return
-
-    if grid_config.grid_type is GridInputType.NETCDF:
-        rejected_grid = "--netcdf-mesh"
-    elif not grid_config.is_partitioned:
-        rejected_grid = "--elmer-mesh without --is-partitioned-elmer-mesh"
-    else:
-        return
-
-    _cli_error(
-        f"{rejected_grid} is not supported for runs on several MPI ranks ({comm.size} ranks). "
-        "Only --matlab-mesh and a partitioned Elmer mesh (--is-partitioned-elmer-mesh) run on several ranks. "
-        "Please run on a single rank."
-    )
-
-
 def validate_use_part_parallel_compat(args: Namespace, comm) -> None:
     """Check that --use-part is not given in a run on several MPI ranks, where every rank would compute it.
 
@@ -613,16 +596,45 @@ def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
         )
 
 
-def validate_restart_parallel_compat(args: Namespace, comm) -> None:
-    """Check that no restart files are read or written in a run on several MPI ranks.
+def validate_partition_count(args: Namespace, grid_config, comm, logger) -> None:
+    """Check that a partitioned Elmer mesh has exactly one partition per MPI rank.
 
-    Must be called on every rank of comm.
+    Must be called on every rank of comm. With --allow-partition-mismatch a mismatch is only a warning.
 
-    @param[in] args parsed CLI arguments
-    @param[in] comm EBFM's MPI communicator
+    @param[in] args        parsed CLI arguments
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
+    @param[in] logger      logger for the warning
     """
-    if (args.restart_dir is not None or args.restart_init) and comm.size > 1:
-        _cli_error(
-            f"Restart files (--restart-dir, --restart-init) are not supported for runs on several MPI ranks "
-            f"({comm.size} ranks). Please run on a single rank."
-        )
+    if not grid_config.is_partitioned or grid_config.num_partitions == comm.size:
+        return
+
+    message = (
+        f"The partitioned mesh has {grid_config.num_partitions} partitions, but EBFM runs on {comm.size} MPI "
+        "ranks. Each rank computes exactly one partition, so a run on "
+        f"{grid_config.num_partitions} ranks is needed to compute all of them."
+    )
+    if not args.allow_partition_mismatch:
+        _cli_error(f"{message} Pass --allow-partition-mismatch to run anyway.")
+    if comm.rank == 0:
+        logger.warning(message)
+
+
+def warn_non_partitioned_mesh_parallel(grid_config, comm, logger) -> None:
+    """Warn that every MPI rank reads the whole mesh when a non-partitioned Elmer mesh is split over several ranks.
+
+    Must be called on every rank of comm. Warns on rank 0 only.
+
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
+    @param[in] logger      logger for the warning
+    """
+    is_elmer_mesh = grid_config.grid_type in (GridInputType.ELMER, GridInputType.CUSTOM, GridInputType.ELMERXIOS)
+    if not is_elmer_mesh or grid_config.is_partitioned or comm.size == 1 or comm.rank != 0:
+        return
+
+    logger.warning(
+        f"EBFM runs on {comm.size} MPI ranks with a non-partitioned Elmer mesh, so every rank reads the whole mesh. "
+        "For large meshes, use a mesh with one partition per rank (--is-partitioned-elmer-mesh, which requires "
+        "--netcdf-dem-mesh)."
+    )

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import os
+from types import SimpleNamespace
 
 import numpy as np
 from netCDF4 import Dataset, date2num
@@ -11,6 +12,32 @@ from .LOOP_general_functions import is_first_time_step, is_output_time_step, is_
 from .comm.gather import ColumnGather
 
 _FILL_VALUE = -9999.0
+
+
+def _gather_mesh(gather: ColumnGather, mesh) -> SimpleNamespace | None:
+    """
+    Combine the meshes of all ranks into the mesh of all their cells, on the root rank.
+
+    Vertices shared by the meshes of several ranks appear once, in the order of their global id.
+
+    @returns an object with the vertex coordinates and the cell-to-vertex mapping that _write_unstructured_grid
+             reads on the root rank, None on all other ranks
+    """
+    vertex_ids = gather.gather_unordered(mesh.vertex_ids)
+    vertex_coordinates = {
+        name: gather.gather_unordered(getattr(mesh, name))
+        for name in ("x_vertices", "y_vertices", "z_vertices", "lon_vertices", "lat_vertices")
+    }
+    cell_vertex_ids = gather.gather(mesh.vertex_ids[mesh.cell_to_vertex])
+
+    if not gather.is_root:
+        return None
+
+    unique_vertex_ids, first_occurrence = np.unique(vertex_ids, return_index=True)
+    return SimpleNamespace(
+        **{name: values[first_occurrence] for name, values in vertex_coordinates.items()},
+        cell_to_vertex=np.searchsorted(unique_vertex_ids, cell_vertex_ids),
+    )
 
 
 def _gather_grid(gather: ColumnGather, grid):
@@ -22,11 +49,16 @@ def _gather_grid(gather: ColumnGather, grid):
     if gather.comm.size == 1:
         return grid
 
-    assert not grid["is_unstructured"], "Gathering the output of an unstructured grid is not supported."
-
-    # Every rank holds the full 2-D fields. The column ids of a structured grid are the flat indices of the columns
-    # in them, so the sorted ids of all ranks are the positions of all columns.
-    output_grid = {**grid, "ind": gather.column_ids}
+    if grid["is_unstructured"]:
+        output_grid = {"is_unstructured": True}
+        for key in ("x", "y", "z", "lon", "lat"):
+            output_grid[key] = gather.gather(grid[key])
+        if grid.get("mesh") is not None:
+            output_grid["mesh"] = _gather_mesh(gather, grid["mesh"])
+    else:
+        # Every rank holds the full 2-D fields. The column ids of a structured grid are the flat indices of the
+        # columns in them, so the sorted ids of all ranks are the positions of all columns.
+        output_grid = {**grid, "ind": gather.column_ids}
 
     if not gather.is_root:
         return None

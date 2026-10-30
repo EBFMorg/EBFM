@@ -7,7 +7,7 @@
 import unittest
 import io
 import os
-from contextlib import redirect_stderr, redirect_stdout
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -17,11 +17,11 @@ from ebfm.core.cli import (
     mpi_launcher_size,
     parse_cli_args,
     validate_forcing_parallel_compat,
-    validate_grid_parallel_compat,
-    validate_restart_parallel_compat,
-    validate_shading_parallel_compat,
+    validate_partition_count,
     validate_shading_coupling_compat,
+    validate_shading_parallel_compat,
     validate_use_part_parallel_compat,
+    warn_non_partitioned_mesh_parallel,
 )
 
 from ebfm.core.comm import mpi_available
@@ -248,6 +248,14 @@ class TestMpiLauncherWithoutMpi4py(unittest.TestCase):
         self._parse({"OMPI_COMM_WORLD_SIZE": "4"}, mpi_available=True)  # must not raise
 
 
+class TestCheckGridDistribution(unittest.TestCase):
+    def test_enabled_by_default(self):
+        self.assertTrue(_parse().check_grid_distribution)
+
+    def test_disabled_when_negated(self):
+        self.assertFalse(_parse("--no-check-grid-distribution").check_grid_distribution)
+
+
 class TestLocalGroupLabel(unittest.TestCase):
     """--local-group-label overrides the default derived from --component-name."""
 
@@ -405,47 +413,6 @@ class TestValidateShadingParallelCompat(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
 
 
-class TestValidateGridParallelCompat(unittest.TestCase):
-    """validate_grid_parallel_compat rejects every grid but MATLAB and a partitioned Elmer mesh on several ranks."""
-
-    # name: (grid_type, is_partitioned, grid option named by the error on several ranks, or None if accepted)
-    _CASES = {
-        "--matlab-mesh": (GridInputType.MATLAB, False, None),
-        "--netcdf-mesh": (GridInputType.NETCDF, False, "--netcdf-mesh"),
-        "--elmer-mesh": (GridInputType.ELMER, False, "--elmer-mesh"),
-        "--elmer-mesh --netcdf-dem-mesh": (GridInputType.CUSTOM, False, "--elmer-mesh"),
-        "--elmer-mesh --netcdf-dem-mesh-unstructured": (GridInputType.ELMERXIOS, False, "--elmer-mesh"),
-        "--elmer-mesh --netcdf-dem-mesh --is-partitioned-elmer-mesh": (GridInputType.CUSTOM, True, None),
-    }
-
-    def setUp(self):
-        # Ensure _parser is set by running a valid parse first.
-        parse_cli_args(_MATLAB)
-
-    def _validate(self, grid_type, is_partitioned: bool, comm_size: int):
-        grid_config = MagicMock(grid_type=grid_type, is_partitioned=is_partitioned)
-        validate_grid_parallel_compat(grid_config, MagicMock(size=comm_size))
-
-    def test_single_rank_ok(self):
-        for name, (grid_type, is_partitioned, _) in self._CASES.items():
-            with self.subTest(name):
-                self._validate(grid_type, is_partitioned, comm_size=1)  # must not raise
-
-    def test_several_ranks(self):
-        for name, (grid_type, is_partitioned, rejected_grid) in self._CASES.items():
-            with self.subTest(name):
-                if rejected_grid is None:
-                    self._validate(grid_type, is_partitioned, comm_size=4)  # must not raise
-                else:
-                    stderr = io.StringIO()
-                    with redirect_stderr(stderr), self.assertRaises(SystemExit) as ctx:
-                        self._validate(grid_type, is_partitioned, comm_size=4)
-                    self.assertEqual(ctx.exception.code, 2)
-                    error = stderr.getvalue().splitlines()[-1]
-                    self.assertIn(f"error: {rejected_grid} ", error)
-                    self.assertIn("Only --matlab-mesh and a partitioned Elmer mesh", error)
-
-
 @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
 class TestValidateUsePartParallelCompat(unittest.TestCase):
     """validate_use_part_parallel_compat raises a CLI error for --use-part in a run on several ranks."""
@@ -493,43 +460,70 @@ class TestValidateForcingParallelCompat(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
 
 
-class TestValidateRestartParallelCompat(unittest.TestCase):
-    """validate_restart_parallel_compat raises a CLI error when restart files are used in a run on several ranks."""
-
-    _RESTART_ARGS = {
-        "--restart-dir": ["--restart-dir", "restart/"],
-        "--restart-init": ["--restart-init"],
-        "--restart-dir --restart-init": ["--restart-dir", "restart/", "--restart-init"],
-    }
+class TestValidatePartitionCount(unittest.TestCase):
+    """A partitioned mesh needs one MPI rank per partition, unless --allow-partition-mismatch is passed."""
 
     def setUp(self):
         # Ensure _parser is set by running a valid parse first.
         parse_cli_args(_MATLAB)
+        self.logger = MagicMock()
 
-    def _validate(self, restart_args, comm_size: int, base: list[str] = _MATLAB):
-        validate_restart_parallel_compat(_parse(*restart_args, base=base), MagicMock(size=comm_size))
+    def _validate(self, is_partitioned=True, num_partitions=4, comm_size=4, rank=0, allow=False):
+        args = _parse(*(["--allow-partition-mismatch"] if allow else []))
+        grid_config = MagicMock(is_partitioned=is_partitioned, num_partitions=num_partitions)
+        comm = MagicMock(size=comm_size, rank=rank)
+        validate_partition_count(args, grid_config, comm, self.logger)
 
-    def test_restart_on_single_rank_ok(self):
-        for name, restart_args in self._RESTART_ARGS.items():
+    def test_one_rank_per_partition_ok(self):
+        self._validate()  # must not raise
+        self.logger.warning.assert_not_called()
+
+    def test_non_partitioned_mesh_ok(self):
+        self._validate(is_partitioned=False, num_partitions=1)  # must not raise
+
+    def test_mismatch_rejected(self):
+        with self.assertRaises(SystemExit) as ctx:
+            self._validate(num_partitions=128)
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_mismatch_allowed_warns_on_rank_0_only(self):
+        self._validate(num_partitions=128, allow=True)
+        self.logger.warning.assert_called_once()
+
+        self.logger.reset_mock()
+        self._validate(num_partitions=128, rank=1, allow=True)
+        self.logger.warning.assert_not_called()
+
+
+class TestWarnNonPartitionedMeshParallel(unittest.TestCase):
+    """Splitting a non-partitioned Elmer mesh over several MPI ranks warns once, on rank 0."""
+
+    def setUp(self):
+        self.logger = MagicMock()
+
+    def _warn(self, grid_type=GridInputType.CUSTOM, is_partitioned=False, comm_size=4, rank=0):
+        grid_config = MagicMock(grid_type=grid_type, is_partitioned=is_partitioned)
+        warn_non_partitioned_mesh_parallel(grid_config, MagicMock(size=comm_size, rank=rank), self.logger)
+
+    def test_non_partitioned_elmer_mesh_on_several_ranks_warns_on_rank_0(self):
+        for grid_type in (GridInputType.ELMER, GridInputType.CUSTOM, GridInputType.ELMERXIOS):
+            with self.subTest(grid_type=grid_type):
+                self.logger.reset_mock()
+                self._warn(grid_type=grid_type)
+                self.logger.warning.assert_called_once()
+
+    def test_no_warning(self):
+        cases = {
+            "rank 1": dict(rank=1),
+            "single rank": dict(comm_size=1),
+            "partitioned mesh": dict(is_partitioned=True),
+            "MATLAB grid": dict(grid_type=GridInputType.MATLAB),
+        }
+        for name, kwargs in cases.items():
             with self.subTest(name):
-                self._validate(restart_args, comm_size=1)  # must not raise
-
-    def test_no_restart_on_several_ranks_ok(self):
-        self._validate([], comm_size=4)  # must not raise
-
-    def test_restart_on_several_ranks_rejected(self):
-        for name, restart_args in self._RESTART_ARGS.items():
-            with self.subTest(name), self.assertRaises(SystemExit) as ctx:
-                self._validate(restart_args, comm_size=4)
-            self.assertEqual(ctx.exception.code, 2)
-
-    @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
-    def test_restart_on_several_ranks_rejected_for_partitioned_mesh(self):
-        """A partitioned mesh runs on several ranks, but without restart files."""
-        for name, restart_args in self._RESTART_ARGS.items():
-            with self.subTest(name), self.assertRaises(SystemExit) as ctx:
-                self._validate(restart_args, comm_size=4, base=_PARTITIONED_ELMER)
-            self.assertEqual(ctx.exception.code, 2)
+                self.logger.reset_mock()
+                self._warn(**kwargs)
+                self.logger.warning.assert_not_called()
 
 
 class TestCliCalendarArgument(unittest.TestCase):
