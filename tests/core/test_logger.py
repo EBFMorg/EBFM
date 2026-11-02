@@ -21,7 +21,9 @@ class _FakeComm:
 
 
 class TestSetupLoggingConsoleLevel(unittest.TestCase):
-    def _console_levels(self, rank: int, size: int, **kwargs) -> tuple[set[int], set[int]]:
+    def _console_levels(
+        self, rank: int, size: int, logger_name: str = "ebfm.test_logger", **kwargs
+    ) -> tuple[set[int], set[int]]:
         """Set up logging on the given rank, log one message per level and return the levels on stdout and stderr."""
         root = logging.getLogger()
         saved_handlers, saved_level = list(root.handlers), root.level
@@ -31,7 +33,7 @@ class TestSetupLoggingConsoleLevel(unittest.TestCase):
             with redirect_stdout(stdout), redirect_stderr(stderr):
                 setup_logging(comm=_FakeComm(rank, size), **kwargs)
                 for level in (logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR):
-                    logging.getLogger("ebfm.test_logger").log(level, "message")
+                    logging.getLogger(logger_name).log(level, "message")
         finally:
             for handler in list(root.handlers):
                 root.removeHandler(handler)
@@ -40,7 +42,12 @@ class TestSetupLoggingConsoleLevel(unittest.TestCase):
             root.setLevel(saved_level)
 
         def levels(text: str) -> set[int]:
-            return {logging.getLevelName(name) for name in ("DEBUG", "INFO", "WARNING", "ERROR") if f" {name} " in text}
+            lines = [line for line in text.splitlines() if line.endswith(": message")]
+            return {
+                logging.getLevelName(name)
+                for name in ("DEBUG", "INFO", "WARNING", "ERROR")
+                if any(f" {name} " in line for line in lines)
+            }
 
         return levels(stdout.getvalue()), levels(stderr.getvalue())
 
@@ -86,6 +93,19 @@ class TestSetupLoggingConsoleLevel(unittest.TestCase):
                     stdout_levels,
                     {level for level in (logging.DEBUG, logging.INFO, logging.WARNING) if level >= expected},
                 )
+                self.assertEqual(stderr_levels, {logging.ERROR})
+
+    def test_numba_capped_at_warning(self):
+        for logger_name in ("numba.core.ssa", "numba.cuda.cudadrv.driver"):
+            with self.subTest(logger_name):
+                stdout_levels, stderr_levels = self._console_levels(
+                    rank=0,
+                    size=1,
+                    logger_name=logger_name,
+                    stdout_log_level=logging.DEBUG,
+                    stdout_individual_log_levels={},
+                )
+                self.assertEqual(stdout_levels, {logging.WARNING})
                 self.assertEqual(stderr_levels, {logging.ERROR})
 
 
