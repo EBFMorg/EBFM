@@ -10,7 +10,7 @@ on:
 jobs:
   build-and-test:
     name: Build and test (${{ matrix.variant }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       matrix:
