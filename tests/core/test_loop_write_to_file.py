@@ -133,12 +133,13 @@ def _write_single_step(outdir, grid, extra_out=None):
     out = _fake_out(GPSUM, NL)
     if extra_out:
         out.update(extra_out)
-    io = {"outdir": str(outdir), "freqout": 1}
+    outfile_path = Path(outdir) / "model_output.nc"
+    io = {"outfile": outfile_path, "freqout": 1}
     time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
 
     _, outfile = write_output({}, io, out, grid, 0, time, column, ColumnGather(defaultComm, grid["column_id"]))
 
-    return Path(outdir) / "model_output.nc", outfile, out
+    return outfile_path, outfile, out
 
 
 class TestNetCDFOutputSmoke(unittest.TestCase):
