@@ -216,16 +216,21 @@ path/to/your/elmer/mesh
 Usage example for partitioned mesh:
 
 ```sh
-ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42 --elmer-mesh-crs-epsg 3413
+ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42 --elmer-mesh-crs-epsg 3413 --allow-partition-mismatch
 ```
 
 On several MPI ranks, `--use-part` is not allowed: rank i computes the partition i + 1, e.g. the partitions 1 to 4 with:
 
 ```sh
-mpirun -n 4 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --elmer-mesh-crs-epsg 3413
+mpirun -n 4 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --elmer-mesh-crs-epsg 3413 --allow-partition-mismatch
 ```
 
-Besides a partitioned mesh, only a MATLAB grid runs on several MPI ranks (see [Running on several MPI ranks](#running-on-several-mpi-ranks)).
+Rank 0 writes the output of all ranks to a single file, with the cells ordered by their Elmer element id.
+
+Besides a partitioned mesh, MATLAB and NetCDF grids and a non-partitioned Elmer mesh run on several MPI ranks (see [Running on several MPI ranks](#running-on-several-mpi-ranks)).
+
+A run needs one MPI rank per partition. To compute only some partitions, e.g. a
+single one with `--use-part` as above, pass `--allow-partition-mismatch`.
 
 Note: The partitioned mesh is not included in this repository.
 
@@ -286,20 +291,32 @@ ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart --re
 
 Note that it is necessary to provide a `--start-time` consistent with the given restart file.
 
+A restart file holds the columns of the whole grid together with their ids
+(`column_id`), so a run may continue from it on any number of MPI ranks and on
+a partitioned mesh. A restart file without `column_id`, written by an older
+version of EBFM, holds the columns in the order of a run on a single rank.
+
 ### Running on several MPI ranks
 
-EBFM splits a MATLAB grid over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
+EBFM splits the grid over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
 
 ```sh
 mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
 ```
 
-* Each rank computes a contiguous block of the columns, the first block on rank 0.
-* Rank 0 writes the output file and `--dump-reference` for all ranks. They are
-  identical to those of a run on a single rank.
-* Not supported on several ranks, and rejected with an error: shading,
-  `--forcing-dir`, `--restart-dir`/`--restart-init`, and grids other than a
-  MATLAB grid or a partitioned Elmer mesh.
+* MATLAB and NetCDF grids and Elmer meshes are split into contiguous blocks of
+  columns, the first block on rank 0. A partitioned Elmer mesh gives one
+  partition to each rank (see above).
+* With a non-partitioned Elmer mesh, every rank reads the whole mesh, and EBFM
+  warns about it. For large meshes, use a partitioned mesh (requires
+  `--netcdf-dem-mesh`).
+* Rank 0 writes the output file, the restart file and `--dump-reference` for
+  all ranks, and reads the restart file. They are identical to those of a run
+  on a single rank.
+* Not supported on several ranks, and rejected with an error: shading and
+  `--forcing-dir`.
+* `--no-check-grid-distribution` skips the start-up check that every column is
+  held by exactly one rank.
 
 ### Performance and Profiling Runs
 
@@ -335,7 +352,7 @@ Follow the install instructions from above and run the example command for a cou
 mpirun -np 1 ebfm \
   --elmer-mesh $MESHES/greenland_mesh_v0/MESH/partitioning.128/ \
   --netcdf-dem-mesh $DATA/BedMachineGreenland-v5.nc \
-  --is-partitioned-elmer-mesh --use-part 1 \
+  --is-partitioned-elmer-mesh --use-part 1 --allow-partition-mismatch \
   --coupler-config $CPL_CONFIG --couple-to-elmer-ice --couple-to-icon-atmo \
   : \
   -np 1 $ELMER_ROOT/src/elmer_dummy_f.x $MESHES/greenland_mesh_v0/MESH/partitioning.128 1 $CPL_CONFIG \
