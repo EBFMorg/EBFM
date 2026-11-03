@@ -633,8 +633,13 @@ def warn_non_partitioned_mesh_parallel(grid_config, comm, logger) -> None:
     if not is_elmer_mesh or grid_config.is_partitioned or comm.size == 1 or comm.rank != 0:
         return
 
-    logger.warning(
-        f"EBFM runs on {comm.size} MPI ranks with a non-partitioned Elmer mesh, so every rank reads the whole mesh. "
-        "For large meshes, use a mesh with one partition per rank (--is-partitioned-elmer-mesh, which requires "
-        "--netcdf-dem-mesh)."
+    message = (
+        f"EBFM runs on {comm.size} MPI ranks with a non-partitioned Elmer mesh, so every rank reads the whole mesh."
     )
+    # A partitioned mesh only takes its DEM from --netcdf-dem-mesh, so it is no alternative for an XIOS DEM
+    if grid_config.grid_type is not GridInputType.ELMERXIOS:
+        message += (
+            " For large meshes, use a mesh with one partition per rank (--is-partitioned-elmer-mesh, which requires "
+            "--netcdf-dem-mesh)."
+        )
+    logger.warning(message)

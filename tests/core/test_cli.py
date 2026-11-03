@@ -512,6 +512,15 @@ class TestWarnNonPartitionedMeshParallel(unittest.TestCase):
                 self._warn(grid_type=grid_type)
                 self.logger.warning.assert_called_once()
 
+    def test_partitioned_mesh_is_suggested_unless_the_dem_is_from_xios(self):
+        cases = {GridInputType.ELMER: True, GridInputType.CUSTOM: True, GridInputType.ELMERXIOS: False}
+        for grid_type, is_suggested in cases.items():
+            with self.subTest(grid_type=grid_type):
+                self.logger.reset_mock()
+                self._warn(grid_type=grid_type)
+                message = self.logger.warning.call_args.args[0]
+                self.assertEqual("--is-partitioned-elmer-mesh" in message, is_suggested)
+
     def test_no_warning(self):
         cases = {
             "rank 1": dict(rank=1),
