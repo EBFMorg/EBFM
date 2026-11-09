@@ -258,8 +258,7 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
             os.makedirs(io["outdir"])
 
         # Create NetCDF file
-        nc_filepath = os.path.join(io["outdir"], "model_output.nc")
-        io["nc_file"] = Dataset(nc_filepath, "w", format="NETCDF4")
+        io["nc_file"] = Dataset(io["outputfileout"], "w", format="NETCDF4")
         io["nc_file"].createDimension("time", None)  # Unlimited time dimension
 
         if io["output_grid"]["is_unstructured"]:

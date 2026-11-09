@@ -269,6 +269,13 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     )
 
     input_group.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path(os.getcwd()) / "Output",
+        help="Path to the folder where output files are written.",
+    )
+
+    input_group.add_argument(
         "--elmer-mesh-crs-epsg",
         type=int,
         choices={

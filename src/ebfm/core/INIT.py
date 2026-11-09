@@ -41,7 +41,23 @@ def create_restart_file_name(time: datetime) -> str:
     return restart_file_prefix + iso8601(time) + ".nc"
 
 
-def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initialize_from_restart_file: bool):
+def create_output_file_name(time: datetime) -> str:
+    """
+    Creates an output file name based on the given time.
+
+    Parameters:
+        time (datetime): The time to include in the output file name.
+
+    Returns:
+        str: The generated output file name.
+    """
+    output_file_prefix = "output_"
+    return output_file_prefix + iso8601(time) + ".nc"
+
+
+def init_config(
+    time_config: TimeConfig, grid_config, restartdir: Path, initialize_from_restart_file: bool, outputdir: Path
+):
     """
     Set model parameters, specify grid parameters, I/O, and physics settings.
 
@@ -84,7 +100,7 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     io = {}
 
     io["homedir"] = Path(os.getcwd())  # Home directory
-    io["outdir"] = io["homedir"] / "Output"  # Output directory
+    io["outdir"] = outputdir  # Output directory
 
     write_restart_file: bool
 
@@ -110,6 +126,12 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
 
     # Ensure output and reboot directories exist
     os.makedirs(io["outdir"], exist_ok=True)
+
+    io["outputfileout"] = io["outdir"] / create_output_file_name(time_config.end_time)
+    assert not io["outputfileout"].exists(), (
+        f"Output file {io['outputfileout']} already exists! Please choose a different output directory or end "
+        f"time to avoid overwriting existing output files."
+    )
 
     # Return the initialized parameters
     return grid, io, phys, column_config
@@ -182,8 +204,7 @@ def init_constants():
 
 
 def init_grid(grid: GridDict, io, config: GridConfig, comm):
-    """
-    Initializes the GridDict based on the given GridConfig.
+    """Initializes the GridDict based on the given GridConfig.
 
     * Depending on provided grid file in GridConfig parses the grid and stores it in GridDict.
     * Adds elevation to the grid if a DEM file is provided in GridConfig.

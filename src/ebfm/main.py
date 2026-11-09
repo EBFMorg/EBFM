@@ -226,7 +226,9 @@ def _main_impl():
 
     # Model setup & initialization
     time = time_config.to_dict()
-    grid, io, phys, column = INIT.init_config(time_config, grid_config, args.restart_dir, args.restart_init)
+    grid, io, phys, column = INIT.init_config(
+        time_config, grid_config, args.restart_dir, args.restart_init, args.output_dir
+    )
 
     set_random_seed(logger, args.random_seed, ebfm_comm)
 
