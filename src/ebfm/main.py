@@ -291,16 +291,18 @@ def _main_impl():
             logger.debug("Started...")
             data_to_icon_atmo = {}
 
+            # Before the first exchange IN is still NaN: fall back to a plausible initial value. Afterwards, keep the
+            # value received last.
             fallback_values = {
-                "rlds": IN["LWin"],
-                "clt": IN["C"],
-                "sfcwind": IN["WS"],
-                "huss": IN["q"],
-                "sfcpres": IN["Pres"],
-                "tas": IN["T"],
-                "rsds": IN["SWin"],
-                "pr": IN["P"],
-                "pr_snow": IN["snow"],
+                "rlds": np.where(np.isnan(IN["LWin"]), 0.0, IN["LWin"]),  # TODO: 0 W m-2 is not plausible
+                "clt": np.where(np.isnan(IN["C"]), 0.0, IN["C"]),
+                "sfcwind": np.where(np.isnan(IN["WS"]), 0.0, IN["WS"]),
+                "huss": np.where(np.isnan(IN["q"]), 0.0, IN["q"]),  # TODO: 0 g kg-1 is not plausible
+                "sfcpres": np.where(np.isnan(IN["Pres"]), 101500.0, IN["Pres"]),
+                "tas": np.where(np.isnan(IN["T"]), 270.0, IN["T"]),
+                "rsds": np.where(np.isnan(IN["SWin"]), 0.0, IN["SWin"]),
+                "pr": np.where(np.isnan(IN["P"]), 0.0, IN["P"]),
+                "pr_snow": np.where(np.isnan(IN["snow"]), 0.0, IN["snow"]),
             }
 
             data_from_icon_atmo = icon_atmo.exchange(data_to_icon_atmo, fallback_values)
@@ -318,6 +320,8 @@ def _main_impl():
             IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
             IN["q"] = data_from_icon_atmo["huss"]
             IN["Pres"] = data_from_icon_atmo["sfcpres"]
+            assert not np.isnan(IN["SWin"]).any(), "SWin: NaN received from ICON"
+            assert not np.isnan(IN["LWin"]).any(), "LWin: NaN received from ICON"
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config, column_gather)
