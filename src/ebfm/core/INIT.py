@@ -454,7 +454,7 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
 
     # loop over the azimuth angles to determine gridded maximum grid angles per angle
     gpsum = number_of_columns(grid)
-    grid["maxgridangle"] = np.zeros((gpsum, grid["nr_az_steps"]), dtype=np.float64)
+    grid["maxgridangle"] = np.full((gpsum, grid["nr_az_steps"]), np.nan)
     for n in range(grid["nr_az_steps"]):
         az = np.full(gpsum, grid["az_array"][n], dtype=float)
 
@@ -486,6 +486,7 @@ def _precompute_shading_matlab(grid: GridDict, mask_2D) -> None:
 
         # fill lookup table with maximum grid angles for all cells (dim 1) and azimuth angle (dim 2)
         grid["maxgridangle"][:, n] = max_angle
+    assert not np.isnan(grid["maxgridangle"]).any(), "maxgridangle: some entries were never set"
 
 
 def compute_grid_angle(grid: GridDict, i, j, inbound) -> float:
