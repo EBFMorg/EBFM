@@ -19,33 +19,25 @@ def compute_cell_centers_spherical(lon_vertices, lat_vertices, cell_to_vertex):
         lat_vertices: array of vertex latitudes (radians)
         cell_to_vertex: array mapping spherical triangles (cells) to their local vertex indices
     Returns:
-        lon_centers, lat_centers, x_centers, y_centers: arrays of cell center coordinates
+        lon_centers, lat_centers: arrays of cell center coordinates (radians)
     """
-    # Convert lon/lat vertices to 3D unit sphere coordinates (Cartesian)
+    # Convert lon/lat vertices to 3D unit sphere coordinates (Cartesian), shape (n_vertices, 3)
     assert len(lon_vertices) == len(lat_vertices), f"({len(lon_vertices)=} {len(lat_vertices)=})"
-    cart_x = np.cos(lat_vertices) * np.cos(lon_vertices)
-    cart_y = np.cos(lat_vertices) * np.sin(lon_vertices)
-    cart_z = np.sin(lat_vertices)
-    assert len(cart_x) == len(cart_y) == len(cart_z), f"({len(cart_x)=} {len(cart_y)=} {len(cart_z)=})"
+    cart = np.stack(
+        [
+            np.cos(lat_vertices) * np.cos(lon_vertices),
+            np.cos(lat_vertices) * np.sin(lon_vertices),
+            np.sin(lat_vertices),
+        ],
+        axis=1,
+    )
 
-    n_cells = cell_to_vertex.shape[0]
-    cart_x_centers = np.zeros(n_cells)
-    cart_y_centers = np.zeros(n_cells)
-    cart_z_centers = np.zeros(n_cells)
+    # Sum the vertices of each cell and project back onto the unit sphere
+    cart_centers = cart[cell_to_vertex].sum(axis=1)
+    cart_centers /= np.linalg.norm(cart_centers, axis=1, keepdims=True)
 
-    for i in range(n_cells):
-        vertex_indices = cell_to_vertex[i]
-        cart_x_centers[i] = np.sum(cart_x[vertex_indices])
-        cart_y_centers[i] = np.sum(cart_y[vertex_indices])
-        cart_z_centers[i] = np.sum(cart_z[vertex_indices])
-
-    norm = np.sqrt(cart_x_centers**2 + cart_y_centers**2 + cart_z_centers**2)
-    cart_x_centers /= norm
-    cart_y_centers /= norm
-    cart_z_centers /= norm
-
-    lon_centers = np.arctan2(cart_y_centers, cart_x_centers)
-    lat_centers = np.arcsin(cart_z_centers)
+    lon_centers = np.arctan2(cart_centers[:, 1], cart_centers[:, 0])
+    lat_centers = np.arcsin(cart_centers[:, 2])
 
     return lon_centers, lat_centers
 
