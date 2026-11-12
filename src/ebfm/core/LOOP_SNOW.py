@@ -1045,6 +1045,8 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         compaction()
         heat_conduction()
         percolation_refreezing_and_storage()
+    assert not np.isnan(OUT["subK"]).any(), "subK: some entries were never set"
+    assert not np.isnan(OUT["subCeff"]).any(), "subCeff: some entries were never set"
     layer_merging_and_splitting()
     runoff()
     OUT["T_ice"] = OUT["subT"][:, -1]
