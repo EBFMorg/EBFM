@@ -35,6 +35,7 @@ SPDX-License-Identifier: CC-BY-4.0
 * Grids built from `--elmer-mesh` alone (no `--netcdf-dem-mesh`) now take each column's surface slope and orientation from the plane through the vertices of its mesh cell, instead of treating every column as flat. This changes the shortwave radiation on sloping columns. A mesh without elevation data still gives flat columns. When coupled to Elmer/Ice (`--couple-to-elmer-ice`), the columns stay flat and a warning is logged, since the slopes do not follow the surface elevation received from Elmer/Ice yet. https://github.com/EBFMorg/EBFM/pull/193
 * At `--log-level-console DEBUG`, Numba no longer floods the console and log files (`--log-file`) with its internal debug output, about 76,000 lines whenever Numba compiles the kernels, i.e. after a fresh install, a Numba upgrade or a change to a kernel. Numba messages below WARNING are now dropped. https://github.com/EBFMorg/EBFM/pull/215
 * Provide more realistic initial values for temperature and pressure. This fixes a bug if (initial) temperature and pressure are used as fallback values in a coupled run. https://github.com/EBFMorg/EBFM/pull/212
+* EBFM now stops with an error if the meteorological forcing contains NaN, whether read from forcing files (`--forcing-dir`) or received from ICON. NaN values previously spread through the model without warning. https://github.com/EBFMorg/EBFM/pull/XXX
 
 # v0.8.0
 
