@@ -197,16 +197,17 @@ class TestDefaults(unittest.TestCase):
         self.assertIsNone(self.args.random_seed)
 
     def test_output_defaults(self):
-        self.assertEqual(self.args.output_file, Path("Output") / "model_output.nc")
+        self.assertEqual(self.args.output_dir, Path("Output"))
+        self.assertFalse(self.args.allow_output_overwrite)
         self.assertEqual(self.args.output_frequency, timedelta(days=1))
 
 
 class TestOutputOptions(unittest.TestCase):
-    """--output-file / --output-frequency parsing and checks."""
+    """--output-dir / --output-frequency parsing and checks."""
 
     def test_custom_values_accepted(self):
-        args = _parse("--output-file", "/scratch/run1.nc", "--output-frequency", "PT6H")
-        self.assertEqual(args.output_file, Path("/scratch/run1.nc"))
+        args = _parse("--output-dir", "/scratch/run1", "--output-frequency", "PT6H")
+        self.assertEqual(args.output_dir, Path("/scratch/run1"))
         self.assertEqual(args.output_frequency, timedelta(hours=6))
 
     def test_frequency_other_than_positive_fixed_duration_rejected(self):

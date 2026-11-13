@@ -21,6 +21,7 @@ class OutputConfig:
         @param[in] args command line arguments
         """
         # Relative paths are relative to the working directory
-        self.output_file: Path = Path.cwd() / args.output_file
+        self.output_dir: Path = Path.cwd() / args.output_dir
+        self.allow_overwrite: bool = args.allow_output_overwrite
         # Interval between two output records
         self.output_frequency: timedelta = args.output_frequency

@@ -52,35 +52,37 @@ jobs:
       - name: Check EBFM version
         run: .venv/bin/ebfm --version
       - name: Run MATLAB example
-        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat
+        run: |
+          .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat
+          test -f Output/output_1979-01-01T00:00:00Z.nc
       - name: Run example with restart
         run: |
-          .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot
+          .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --output-dir Output/restart
           test -f Reboot/restart_1979-01-02T00:00:00Z.nc
-          .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --restart-init --start-time "02-Jan-1979 00:00" --end-time "03-Jan-1979 00:00"
+          .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir Reboot --output-dir Output/restart --restart-init --start-time "02-Jan-1979 00:00" --end-time "03-Jan-1979 00:00"
           test -f Reboot/restart_1979-01-03T00:00:00Z.nc
       - name: Run example with (pseudo) coupling on an Elmer grid
-        run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --elmer-mesh-crs-epsg 3413 --couple-to-icon-atmo --couple-to-icon-land --couple-to-elmer-ice --fake-coupling --no-shading
+        run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --elmer-mesh-crs-epsg 3413 --couple-to-icon-atmo --couple-to-icon-land --couple-to-elmer-ice --fake-coupling --no-shading --output-dir Output/elmer-coupling
       - name: Run example with elevation from Elmer/Ice XIOS output on an Elmer grid
-        run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh-unstructured examples/greenland_mesh_v0/xios_dem.nc --elmer-mesh-crs-epsg 3413 --end-time "1-Jan-1979 03:00"
+        run: .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --netcdf-dem-mesh-unstructured examples/greenland_mesh_v0/xios_dem.nc --elmer-mesh-crs-epsg 3413 --end-time "1-Jan-1979 03:00" --output-dir Output/elmer-xios
       # No --couple-to-elmer-ice here: its surface elevation updates grid["z"], which a MATLAB grid cannot follow with
       # its slopes and 2-D elevation, so ElmerIce.validate_grid rejects the combination.
       - name: Run example with (pseudo) coupling on a MATLAB grid
-        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon-atmo --couple-to-icon-land --fake-coupling --no-shading
+        run: .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --couple-to-icon-atmo --couple-to-icon-land --fake-coupling --no-shading --output-dir Output/matlab-coupling
       - name: Run example with MPI handshake
         if: ${{ matrix.run_mpi }}
         timeout-minutes: 5
         run: |
           # Run dummy script first; dummy on rank 0, EBFM on rank 1
           mpirun -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py first : \
-                 -np 1 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00"
+                 -np 1 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00" --output-dir Output/handshake-first
           # Run dummy script second; EBFM on rank 0, dummy on rank 1
-          mpirun -np 1 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00" : \
+          mpirun -np 1 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --end-time "1-Jan-1979 03:00" --output-dir Output/handshake-second : \
                  -np 1 .venv/bin/python tests/core/comm/mpi_handshake_dummy.py second
       - name: Run example on several MPI ranks
         if: ${{ matrix.run_mpi }}
         timeout-minutes: 5
-        run: mpirun -np 4 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
+        run: mpirun -np 4 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading --output-dir Output/mpi
 
   # LFS checkout is expensive (downloads all tracked binary files).
   # Run this stage only after build-and-test has passed to avoid wasting
@@ -103,6 +105,6 @@ jobs:
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install .
       - name: Run Greenland example (random forcing)
-        run: .venv/bin/ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --start-time 1990-05-01T00:00:00 --end-time 1990-05-02T00:00:00
+        run: .venv/bin/ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --start-time 1990-05-01T00:00:00 --end-time 1990-05-02T00:00:00 --output-dir Output/random
       - name: Run Greenland example (CARRA2 forcing)
-        run: .venv/bin/ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-05-01T00:00:00 --end-time 1990-05-02T00:00:00
+        run: .venv/bin/ebfm --netcdf-mesh examples/Greenland_CARRA2/grid.nc --fill-missing-elevation --forcing-dir examples/Greenland_CARRA2/forcing --start-time 1990-05-01T00:00:00 --end-time 1990-05-02T00:00:00 --output-dir Output/carra2

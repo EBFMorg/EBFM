@@ -346,27 +346,43 @@ class TestOutputConfig(unittest.TestCase):
         self.tmpdir.cleanup()
 
     def _init_io(self, *extra_args):
-        """Run init_config with the output file in the temporary directory and return its io dict."""
-        outfile = Path(self.tmpdir.name) / "runs" / "a" / "run1.nc"
-        args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--output-file", str(outfile), *extra_args])
+        """Run init_config with the output directory in the temporary directory and return its io dict."""
+        args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--output-dir", self._outdir(), *extra_args])
         _, io, _, _ = init_config(TimeConfig(args), GridConfig(args), OutputConfig(args), None, False)
         return io
 
-    def test_default_output_file_is_model_output_nc_in_output_of_working_directory(self):
+    def _outdir(self) -> str:
+        return str(Path(self.tmpdir.name) / "runs" / "a")
+
+    def test_default_output_dir_is_output_in_working_directory(self):
         output_config = OutputConfig(parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH)]))
 
-        self.assertEqual(output_config.output_file, Path.cwd() / "Output" / "model_output.nc")
+        self.assertEqual(output_config.output_dir, Path.cwd() / "Output")
 
-    def test_relative_output_file_is_relative_to_working_directory(self):
-        output_config = OutputConfig(parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--output-file", "a.nc"]))
+    def test_relative_output_dir_is_relative_to_working_directory(self):
+        output_config = OutputConfig(parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--output-dir", "runs/a"]))
 
-        self.assertEqual(output_config.output_file, Path.cwd() / "a.nc")
+        self.assertEqual(output_config.output_dir, Path.cwd() / "runs" / "a")
 
-    def test_output_file_ends_up_in_io_and_its_directory_is_created(self):
-        io = self._init_io()
+    def test_output_file_is_named_after_start_time_and_its_directory_is_created(self):
+        io = self._init_io("--start-time", "1990-05-01T00:00:00Z", "--end-time", "1990-05-02T00:00:00Z")
 
-        self.assertEqual(io["outfile"], Path(self.tmpdir.name) / "runs" / "a" / "run1.nc")
+        self.assertEqual(io["outfile"], Path(self._outdir()) / "output_1990-05-01T00:00:00Z.nc")
         self.assertTrue(io["outfile"].parent.is_dir())
+
+    def test_existing_output_file_is_not_overwritten(self):
+        outfile = self._init_io()["outfile"]
+        outfile.write_text("earlier output")
+
+        with self.assertRaises(AssertionError):
+            self._init_io()
+        self.assertEqual(outfile.read_text(), "earlier output")
+
+    def test_existing_output_file_is_accepted_with_allow_output_overwrite(self):
+        outfile = self._init_io()["outfile"]
+        outfile.write_text("earlier output")
+
+        self.assertEqual(self._init_io("--allow-output-overwrite")["outfile"], outfile)
 
     def test_default_output_frequency_is_daily(self):
         io = self._init_io()

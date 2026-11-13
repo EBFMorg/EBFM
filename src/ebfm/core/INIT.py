@@ -41,6 +41,20 @@ def create_restart_file_name(time: datetime) -> str:
     return restart_file_prefix + iso8601(time) + ".nc"
 
 
+def create_output_file_name(time: datetime) -> str:
+    """
+    Creates an output file name based on the given time.
+
+    Parameters:
+        time (datetime): The time to include in the output file name.
+
+    Returns:
+        str: The generated output file name.
+    """
+    output_file_prefix = "output_"
+    return output_file_prefix + iso8601(time) + ".nc"
+
+
 def init_config(
     time_config: TimeConfig,
     grid_config,
@@ -91,7 +105,11 @@ def init_config(
     io = {}
 
     io["homedir"] = Path(os.getcwd())  # Home directory
-    io["outfile"] = output_config.output_file  # Output file
+    io["outfile"] = output_config.output_dir / create_output_file_name(time_config.start_time)  # Output file
+    assert output_config.allow_overwrite or not io["outfile"].exists(), (
+        f"Output file {io['outfile']} already exists! Please choose a different output directory or start "
+        f"time, or pass --allow-output-overwrite to overwrite it."
+    )
 
     write_restart_file: bool
 
@@ -119,7 +137,7 @@ def init_config(
     ), "Output frequency must be a multiple of the time step."
 
     # Ensure output and reboot directories exist
-    os.makedirs(io["outfile"].parent, exist_ok=True)
+    os.makedirs(output_config.output_dir, exist_ok=True)
 
     # Return the initialized parameters
     return grid, io, phys, column_config

@@ -61,7 +61,7 @@ class CliDefaults(Enum):
     TIME_STEP_SIZE = "PT3H"  # = 3 hours
     LOG_LEVEL_CONSOLE = "INFO"
     COMPONENT_NAME = "ebfm"
-    OUTPUT_FILE = Path("Output") / "model_output.nc"
+    OUTPUT_DIR = Path("Output")
     OUTPUT_FREQUENCY = "P1D"  # = daily
 
     @classmethod
@@ -290,12 +290,21 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
 
     output_group = parser.add_argument_group("output file")
 
+    example_output_file_name = INIT.create_output_file_name(CliDefaults.START_TIME.value)
+
     output_group.add_argument(
-        "--output-file",
+        "--output-dir",
         type=Path,
-        default=CliDefaults.OUTPUT_FILE.value,
-        help="Path of the NetCDF output file. Relative paths are relative to the working directory. Missing "
-        "directories are created and an existing file is overwritten.",
+        default=CliDefaults.OUTPUT_DIR.value,
+        help="Path to folder for the NetCDF output file, which is named after --start-time "
+        f"(e.g., '{example_output_file_name}'). Relative paths are relative to the working directory. The run "
+        "stops if the output file already exists, unless --allow-output-overwrite.",
+    )
+
+    output_group.add_argument(
+        "--allow-output-overwrite",
+        action="store_true",
+        help="Overwrite an existing output file in --output-dir instead of stopping the run.",
     )
 
     def parse_output_frequency(value: str) -> timedelta:

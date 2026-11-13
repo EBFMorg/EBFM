@@ -133,7 +133,7 @@ def _write_single_step(outdir, grid, extra_out=None):
     out = _fake_out(GPSUM, NL)
     if extra_out:
         out.update(extra_out)
-    outfile_path = Path(outdir) / "model_output.nc"
+    outfile_path = Path(outdir) / "output.nc"
     io = {"outfile": outfile_path, "freqout": 1}
     time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
 
