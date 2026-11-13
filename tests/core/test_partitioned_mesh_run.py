@@ -120,8 +120,8 @@ def test_partitioned_run_equals_serial_run(tmp_path):
     _write_mesh(mesh_dir)
     _write_dem(tmp_path / "dem.nc")
 
-    serial = _run(tmp_path, mesh_dir, 1)
-    partitioned = _run(tmp_path, mesh_dir, N_PARTITIONS, "--is-partitioned-elmer-mesh")
+    serial = _run(tmp_path, mesh_dir, 1, "--output-dir", "serial")
+    partitioned = _run(tmp_path, mesh_dir, N_PARTITIONS, "--is-partitioned-elmer-mesh", "--output-dir", "partitioned")
 
     # Set by the restart writer, which partitioned runs skip
     del serial["timelastsnow_netCDF"]
