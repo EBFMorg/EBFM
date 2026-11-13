@@ -11,12 +11,12 @@ from pyproj import Transformer
 from netCDF4 import Dataset, num2date
 
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.elmer.mesh import Mesh
-from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, iso8601
+from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, OutputConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
 from .restart import validate_all_variables_present, validate_variable_shape
 
@@ -41,12 +41,33 @@ def create_restart_file_name(time: datetime) -> str:
     return restart_file_prefix + iso8601(time) + ".nc"
 
 
-def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initialize_from_restart_file: bool):
+def create_output_file_name(time: datetime) -> str:
+    """
+    Creates an output file name based on the given time.
+
+    Parameters:
+        time (datetime): The time to include in the output file name.
+
+    Returns:
+        str: The generated output file name.
+    """
+    output_file_prefix = "output_"
+    return output_file_prefix + iso8601(time) + ".nc"
+
+
+def init_config(
+    time_config: TimeConfig,
+    grid_config,
+    output_config: OutputConfig,
+    restartdir: Path,
+    initialize_from_restart_file: bool,
+):
     """
     Set model parameters, specify grid parameters, I/O, and physics settings.
 
     @param[in] time_config Time configuration object.
     @param[in] grid_config Grid configuration object.
+    @param[in] output_config Output file configuration object.
     @param[in] restartdir Path to the directory containing restart files (if initializing from restart file).
     @param[in] initialize_from_restart_file Boolean flag indicating whether to initialize from a restart file.
 
@@ -84,7 +105,11 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
     io = {}
 
     io["homedir"] = Path(os.getcwd())  # Home directory
-    io["outdir"] = io["homedir"] / "Output"  # Output directory
+    io["outfile"] = output_config.output_dir / create_output_file_name(time_config.start_time)  # Output file
+    assert output_config.allow_overwrite or not io["outfile"].exists(), (
+        f"Output file {io['outfile']} already exists! Please choose a different output directory or start "
+        f"time, or pass --allow-output-overwrite to overwrite it."
+    )
 
     write_restart_file: bool
 
@@ -106,10 +131,13 @@ def init_config(time_config: TimeConfig, grid_config, restartdir: Path, initiali
         write_restart_file = False
 
     io["writebootfile"] = write_restart_file
-    io["freqout"] = 8  # OUTPUT: frequency of storing output (every n-th time-step)
+    io["freqout"] = output_config.output_frequency // time_config.time_step  # OUTPUT: store every n-th time-step
+    assert (
+        output_config.output_frequency % time_config.time_step == timedelta()
+    ), "Output frequency must be a multiple of the time step."
 
     # Ensure output and reboot directories exist
-    os.makedirs(io["outdir"], exist_ok=True)
+    os.makedirs(output_config.output_dir, exist_ok=True)
 
     # Return the initialized parameters
     return grid, io, phys, column_config

@@ -8,6 +8,7 @@ import unittest
 import io
 import os
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,6 +19,7 @@ from ebfm.core.cli import (
     parse_cli_args,
     validate_forcing_parallel_compat,
     validate_grid_parallel_compat,
+    validate_output_frequency_time_step_compat,
     validate_restart_parallel_compat,
     validate_shading_parallel_compat,
     validate_shading_coupling_compat,
@@ -193,6 +195,52 @@ class TestDefaults(unittest.TestCase):
 
     def test_random_seed_default_none(self):
         self.assertIsNone(self.args.random_seed)
+
+    def test_output_defaults(self):
+        self.assertEqual(self.args.output_dir, Path("Output"))
+        self.assertFalse(self.args.allow_output_overwrite)
+        self.assertEqual(self.args.output_frequency, timedelta(days=1))
+
+
+class TestOutputOptions(unittest.TestCase):
+    """--output-dir / --output-frequency parsing and checks."""
+
+    def test_custom_values_accepted(self):
+        args = _parse("--output-dir", "/scratch/run1", "--output-frequency", "PT6H")
+        self.assertEqual(args.output_dir, Path("/scratch/run1"))
+        self.assertEqual(args.output_frequency, timedelta(hours=6))
+
+    def test_frequency_other_than_positive_fixed_duration_rejected(self):
+        cases = {
+            "integer": "8",
+            "float": "1.5",
+            "word": "daily",
+            "zero": "PT0S",
+            "negative": "-P1D",
+            "months vary in length": "P1M",
+            "years vary in length": "P1Y",
+        }
+        for case, value in cases.items():
+            with self.subTest(case, value=value):
+                with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
+                    _parse("--output-frequency", value)
+
+    def test_frequency_must_be_multiple_of_time_step(self):
+        cases = {
+            "equal to time step": ("PT3H", "PT3H", True),
+            "multiple of time step": ("P1D", "PT3H", True),
+            "not a multiple": ("PT4H", "PT3H", False),
+            "shorter than time step": ("PT1H", "PT3H", False),
+        }
+        for case, (frequency, time_step, accepted) in cases.items():
+            with self.subTest(case, frequency=frequency, time_step=time_step):
+                args = _parse("--output-frequency", frequency, "--time-step", time_step)
+                time_config = TimeConfig(args)
+                if accepted:
+                    validate_output_frequency_time_step_compat(args, time_config)
+                else:
+                    with self.assertRaises(SystemExit), redirect_stderr(io.StringIO()):
+                        validate_output_frequency_time_step_compat(args, time_config)
 
 
 class TestGpuOptions(unittest.TestCase):

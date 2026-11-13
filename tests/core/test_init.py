@@ -20,7 +20,7 @@ from ebfm.core.INIT import init_config, init_grid, init_initial_conditions
 from ebfm.core.FINAL_create_restart_file import main as write_restart_file
 from ebfm.core.cli import parse_cli_args
 from ebfm.core.comm import defaultComm
-from ebfm.core.config import ColumnDiscretizationConfig
+from ebfm.core.config import ColumnDiscretizationConfig, OutputConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
 from ebfm.core.restart import PER_COLUMN_VARIABLES, PER_LAYER_VARIABLES, RESTART_VARIABLES
@@ -336,6 +336,72 @@ class TestRestartVariableManifest(unittest.TestCase):
         self.assertEqual(len(RESTART_VARIABLES), len(set(RESTART_VARIABLES)))
 
 
+class TestOutputConfig(unittest.TestCase):
+    """The output options reach the io dict that LOOP_write_to_file reads."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _init_io(self, *extra_args):
+        """Run init_config with the output directory in the temporary directory and return its io dict."""
+        args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--output-dir", self._outdir(), *extra_args])
+        _, io, _, _ = init_config(TimeConfig(args), GridConfig(args), OutputConfig(args), None, False)
+        return io
+
+    def _outdir(self) -> str:
+        return str(Path(self.tmpdir.name) / "runs" / "a")
+
+    def test_default_output_dir_is_output_in_working_directory(self):
+        output_config = OutputConfig(parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH)]))
+
+        self.assertEqual(output_config.output_dir, Path.cwd() / "Output")
+
+    def test_relative_output_dir_is_relative_to_working_directory(self):
+        output_config = OutputConfig(parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--output-dir", "runs/a"]))
+
+        self.assertEqual(output_config.output_dir, Path.cwd() / "runs" / "a")
+
+    def test_output_file_is_named_after_start_time_and_its_directory_is_created(self):
+        io = self._init_io("--start-time", "1990-05-01T00:00:00Z", "--end-time", "1990-05-02T00:00:00Z")
+
+        self.assertEqual(io["outfile"], Path(self._outdir()) / "output_1990-05-01T00:00:00Z.nc")
+        self.assertTrue(io["outfile"].parent.is_dir())
+
+    def test_existing_output_file_is_not_overwritten(self):
+        outfile = self._init_io()["outfile"]
+        outfile.write_text("earlier output")
+
+        with self.assertRaises(AssertionError):
+            self._init_io()
+        self.assertEqual(outfile.read_text(), "earlier output")
+
+    def test_existing_output_file_is_accepted_with_allow_output_overwrite(self):
+        outfile = self._init_io()["outfile"]
+        outfile.write_text("earlier output")
+
+        self.assertEqual(self._init_io("--allow-output-overwrite")["outfile"], outfile)
+
+    def test_default_output_frequency_is_daily(self):
+        io = self._init_io()
+
+        self.assertEqual(io["freqout"], 8)  # time steps of the default PT3H per day
+
+    def test_output_frequency_is_converted_to_time_steps(self):
+        cases = {
+            "daily, hourly steps": ("P1D", "PT1H", 24),
+            "six-hourly, three-hourly steps": ("PT6H", "PT3H", 2),
+            "every time step": ("PT3H", "PT3H", 1),
+            "weekly, daily steps": ("P1W", "P1D", 7),
+        }
+        for case, (frequency, time_step, expected) in cases.items():
+            with self.subTest(case):
+                io = self._init_io("--output-frequency", frequency, "--time-step", time_step)
+                self.assertEqual(io["freqout"], expected)
+
+
 class TestMatlabShadingLookupTable(unittest.TestCase):
     """The shading look-up table must only be pre-computed when shading is enabled.
 
@@ -354,7 +420,7 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
     def _init_grid(self, shading_flag):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), shading_flag])
         grid_config = GridConfig(args)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        grid, io, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
         return init_grid(grid, io, grid_config, defaultComm)
 
     def test_shading_disabled_skips_the_lookup_table(self):
@@ -392,7 +458,7 @@ class TestMatlabGridSplit(unittest.TestCase):
     def _init_grid(self, num_ranks, rank):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--no-shading"])
         grid_config = GridConfig(args, num_ranks, rank)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        grid, io, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
         return init_grid(grid, io, grid_config, defaultComm)
 
     def test_blocks_of_all_ranks_make_up_the_serial_grid(self):
@@ -449,7 +515,7 @@ class TestElmerGridCoordinates(unittest.TestCase):
             ["--elmer-mesh", self.tmpdir.name, "--elmer-mesh-crs-epsg", str(self._CRS_EPSG), *extra_args]
         )
         grid_config = GridConfig(args)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, Path(self.tmpdir.name), False)
+        grid, io, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
         with mock.patch.object(INIT, "read_elmer_mesh", return_value=self.mesh):
             return init_grid(grid, io, grid_config, defaultComm)
 
