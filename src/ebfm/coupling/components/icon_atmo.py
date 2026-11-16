@@ -44,7 +44,7 @@ class IconAtmo(Component):
                     name="pr",
                     coupled_component=self,
                     timestep=timestep,
-                    metadata="Precipitation rate (in kg m-2 s-1)",
+                    metadata="Precipitation rate of rain (in kg m-2 s-1)",
                     exchange_type=ExchangeType.TARGET,
                 ),
                 Field(
@@ -200,12 +200,12 @@ class IconAtmo(Component):
 
         @returns entries of EBFM's forcing IN
         """
-        P = data_from_icon_atmo["pr"]
+        rain = data_from_icon_atmo["pr"]
         snow = data_from_icon_atmo["pr_snow"]
         return {
-            "P": P,
+            "P": rain + snow,  # total precipitation
             "snow": snow,
-            "rain": P - snow,  # TODO: make this more flexible and configurable
+            "rain": rain,
             "SWin": data_from_icon_atmo["rsds"],
             "LWin": data_from_icon_atmo["rlds"],
             "C": data_from_icon_atmo["clt"],
