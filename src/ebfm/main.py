@@ -146,7 +146,7 @@ def icon_atmo_fallback_values(IN) -> dict[str, np.ndarray]:
         "sfcpres": IN["Pres"],
         "tas": IN["T"],
         "rsds": IN["SWin"],
-        "pr": IN["P"],
+        "pr": IN["rain"],
         "pr_snow": IN["snow"],
     }
 
