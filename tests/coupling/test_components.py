@@ -15,6 +15,7 @@ from ebfm.coupling.fields import Field, FieldSet, GenericExchangeType, Timestep
 from ebfm.coupling.couplers import FakeCoupler
 from ebfm.coupling.couplers.base import CouplerExitCode
 from ebfm.coupling.couplers.fakeCoupler import FakeFieldConfig
+from ebfm.main import icon_atmo_fallback_values
 
 from argparse import Namespace
 
@@ -224,6 +225,36 @@ class TestIconAtmoComponent(unittest.TestCase):
         np.testing.assert_allclose(forcing["rain"], expected_rain)
         np.testing.assert_allclose(forcing["snow"], expected_snow)
         np.testing.assert_allclose(forcing["P"], expected_rain + expected_snow)
+
+    def test_fallback_values_keep_forcing(self):
+        """
+        Test that EBFM keeps its forcing if no data is received from ICON, i.e. that mapping the fallback values
+        back to EBFM gives the forcing they were taken from.
+        """
+        coupler = FakeCoupler(self.coupling_config, fake_fields={})  # nothing is received
+        icon_atmo = coupler.get_component("icon_atmo")
+
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        IN = {
+            "rain": np.array([1.0]),
+            "snow": np.array([2.0]),
+            "P": np.array([3.0]),
+            "SWin": np.array([100.0]),
+            "LWin": np.array([300.0]),
+            "C": np.array([0.5]),
+            "WS": np.array([5.0]),
+            "T": np.array([260.0]),
+            "q": np.array([1e-3]),
+            "Pres": np.array([101325.0]),
+        }
+
+        forcing = icon_atmo.map_to_ebfm(icon_atmo.exchange({}, icon_atmo_fallback_values(IN)))
+
+        self.assertEqual(forcing.keys(), IN.keys())
+        for name in IN:
+            with self.subTest(name=name):
+                np.testing.assert_allclose(forcing[name], IN[name])
 
     def test_exchange_without_target_keys(self):
         """
