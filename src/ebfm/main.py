@@ -297,33 +297,14 @@ def _main_impl():
             logger.debug("Started...")
             data_to_icon_atmo = {}
 
-            fallback_values = {
-                "rlds": IN["LWin"],
-                "clt": IN["C"],
-                "sfcwind": IN["WS"],
-                "huss": IN["q"],
-                "sfcpres": IN["Pres"],
-                "tas": IN["T"],
-                "rsds": IN["SWin"],
-                "pr": IN["P"],
-                "pr_snow": IN["snow"],
-            }
+            fallback_values = icon_atmo.fallback_values_from_ebfm(IN)
 
             data_from_icon_atmo = icon_atmo.exchange(data_to_icon_atmo, fallback_values)
 
             logger.debug("Done.")
             logger.debug(f"Received the following data from ICON: {data_from_icon_atmo}")
 
-            IN["P"] = data_from_icon_atmo["pr"]
-            IN["snow"] = data_from_icon_atmo["pr_snow"]
-            IN["SWin"] = data_from_icon_atmo["rsds"]
-            IN["LWin"] = data_from_icon_atmo["rlds"]
-            IN["C"] = data_from_icon_atmo["clt"]
-            IN["WS"] = data_from_icon_atmo["sfcwind"]
-            IN["T"] = data_from_icon_atmo["tas"]
-            IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"] = data_from_icon_atmo["huss"]
-            IN["Pres"] = data_from_icon_atmo["sfcpres"]
+            IN.update(icon_atmo.map_to_ebfm(data_from_icon_atmo))
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config, column_gather)
