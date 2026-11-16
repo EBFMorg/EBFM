@@ -203,6 +203,28 @@ class TestIconAtmoComponent(unittest.TestCase):
         print(fallback_values["pr_snow"])
         self.assertTrue(np.array_equal(data_from_icon["pr_snow"], fallback_values["pr_snow"]))
 
+    def test_precipitation_mapped_to_ebfm(self):
+        """
+        Test that ICON's pr is taken as rainfall and added to the snowfall pr_snow for the total precipitation.
+        """
+        coupler = FakeCoupler(self.coupling_config)  # provides fake values for all TARGET fields
+        icon_atmo = coupler.get_component("icon_atmo")
+
+        rain_rate, snow_rate = 1.0, 2.0
+        coupler._register_fake_values(FakeFieldConfig(icon_atmo, name="pr", value=rain_rate))
+        coupler._register_fake_values(FakeFieldConfig(icon_atmo, name="pr_snow", value=snow_rate))
+
+        coupler.setup(grid=self.grid_dict, time=self.time_config)
+
+        forcing = icon_atmo.map_to_ebfm(icon_atmo.exchange({}))
+
+        n_points = self.grid_dict["x"].shape
+        expected_rain = icon_atmo._map_mass_flux_to_ebfm(np.full(n_points, rain_rate))
+        expected_snow = icon_atmo._map_mass_flux_to_ebfm(np.full(n_points, snow_rate))
+        np.testing.assert_allclose(forcing["rain"], expected_rain)
+        np.testing.assert_allclose(forcing["snow"], expected_snow)
+        np.testing.assert_allclose(forcing["P"], expected_rain + expected_snow)
+
     def test_exchange_without_target_keys(self):
         """
         Test that omitting target_keys receives all coupled fields and that fallback_values stays the second
