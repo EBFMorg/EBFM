@@ -133,6 +133,24 @@ def set_random_seed(logger, random_seed: int | None, comm):
         logger.info(f"NumPy random seed fixed to {random_seed} for reproducibility.")
 
 
+def icon_atmo_fallback_values(IN) -> dict[str, np.ndarray]:
+    """
+    Fallback values for the fields received from the ICON atmosphere if no data is received, taken from EBFM's
+    current forcing IN. Mapping them with IconAtmo.map_forcing_to_ebfm gives the forcing they were taken from.
+    """
+    return {
+        "rlds": IN["LWin"],
+        "clt": IN["C"],
+        "sfcwind": IN["WS"],
+        "huss": IN["q"],
+        "sfcpres": IN["Pres"],
+        "tas": IN["T"],
+        "rsds": IN["SWin"],
+        "pr": IN["rain"],
+        "pr_snow": IN["snow"],
+    }
+
+
 def _main_impl():
     args = parse_cli_args()
 
@@ -297,33 +315,14 @@ def _main_impl():
             logger.debug("Started...")
             data_to_icon_atmo = {}
 
-            fallback_values = {
-                "rlds": IN["LWin"],
-                "clt": IN["C"],
-                "sfcwind": IN["WS"],
-                "huss": IN["q"],
-                "sfcpres": IN["Pres"],
-                "tas": IN["T"],
-                "rsds": IN["SWin"],
-                "pr": IN["P"],
-                "pr_snow": IN["snow"],
-            }
+            fallback_values = icon_atmo_fallback_values(IN)
 
             data_from_icon_atmo = icon_atmo.exchange(data_to_icon_atmo, fallback_values)
 
             logger.debug("Done.")
             logger.debug(f"Received the following data from ICON: {data_from_icon_atmo}")
 
-            IN["P"] = data_from_icon_atmo["pr"]
-            IN["snow"] = data_from_icon_atmo["pr_snow"]
-            IN["SWin"] = data_from_icon_atmo["rsds"]
-            IN["LWin"] = data_from_icon_atmo["rlds"]
-            IN["C"] = data_from_icon_atmo["clt"]
-            IN["WS"] = data_from_icon_atmo["sfcwind"]
-            IN["T"] = data_from_icon_atmo["tas"]
-            IN["rain"] = IN["P"] - IN["snow"]  # TODO: make this more flexible and configurable
-            IN["q"] = data_from_icon_atmo["huss"]
-            IN["Pres"] = data_from_icon_atmo["sfcpres"]
+            IN.update(icon_atmo.map_forcing_to_ebfm(data_from_icon_atmo))
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config, column_gather)

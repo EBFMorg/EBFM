@@ -44,7 +44,7 @@ class IconAtmo(Component):
                     name="pr",
                     coupled_component=self,
                     timestep=timestep,
-                    metadata="Precipitation rate (in kg m-2 s-1)",
+                    metadata="Precipitation rate of rain (in kg m-2 s-1)",
                     exchange_type=ExchangeType.TARGET,
                 ),
                 Field(
@@ -168,3 +168,27 @@ class IconAtmo(Component):
             received_data["sfcpres"] = sfcpres
 
         return received_data
+
+    def map_forcing_to_ebfm(self, data_from_icon_atmo: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+        """
+        Map the fields received from IconAtmo to EBFM's meteorological forcing.
+
+        @param[in] data_from_icon_atmo fields received in an exchange, with precipitation converted to m w.e. per
+                                       time step
+
+        @returns entries of EBFM's forcing IN
+        """
+        rain = data_from_icon_atmo["pr"]
+        snow = data_from_icon_atmo["pr_snow"]
+        return {
+            "P": rain + snow,  # total precipitation
+            "snow": snow,
+            "rain": rain,
+            "SWin": data_from_icon_atmo["rsds"],
+            "LWin": data_from_icon_atmo["rlds"],
+            "C": data_from_icon_atmo["clt"],
+            "WS": data_from_icon_atmo["sfcwind"],
+            "T": data_from_icon_atmo["tas"],
+            "q": data_from_icon_atmo["huss"],
+            "Pres": data_from_icon_atmo["sfcpres"],
+        }
