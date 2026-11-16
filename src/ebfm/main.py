@@ -136,7 +136,7 @@ def set_random_seed(logger, random_seed: int | None, comm):
 def icon_atmo_fallback_values(IN) -> dict[str, np.ndarray]:
     """
     Fallback values for the fields received from the ICON atmosphere if no data is received, taken from EBFM's
-    current forcing IN. Mapping them with IconAtmo.map_to_ebfm gives the forcing they were taken from.
+    current forcing IN. Mapping them with IconAtmo.map_forcing_to_ebfm gives the forcing they were taken from.
     """
     return {
         "rlds": IN["LWin"],
@@ -322,7 +322,7 @@ def _main_impl():
             logger.debug("Done.")
             logger.debug(f"Received the following data from ICON: {data_from_icon_atmo}")
 
-            IN.update(icon_atmo.map_to_ebfm(data_from_icon_atmo))
+            IN.update(icon_atmo.map_forcing_to_ebfm(data_from_icon_atmo))
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config, column_gather)

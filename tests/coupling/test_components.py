@@ -217,7 +217,7 @@ class TestIconAtmoComponent(unittest.TestCase):
 
         coupler.setup(grid=self.grid_dict, time=self.time_config)
 
-        forcing = icon_atmo.map_to_ebfm(icon_atmo.exchange({}))
+        forcing = icon_atmo.map_forcing_to_ebfm(icon_atmo.exchange({}))
 
         n_points = self.grid_dict["x"].shape
         expected_rain = icon_atmo._map_mass_flux_to_ebfm(np.full(n_points, rain_rate))
@@ -249,7 +249,7 @@ class TestIconAtmoComponent(unittest.TestCase):
             "Pres": np.array([101325.0]),
         }
 
-        forcing = icon_atmo.map_to_ebfm(icon_atmo.exchange({}, icon_atmo_fallback_values(IN)))
+        forcing = icon_atmo.map_forcing_to_ebfm(icon_atmo.exchange({}, icon_atmo_fallback_values(IN)))
 
         self.assertEqual(forcing.keys(), IN.keys())
         for name in IN:

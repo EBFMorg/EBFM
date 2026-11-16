@@ -169,7 +169,7 @@ class IconAtmo(Component):
 
         return received_data
 
-    def map_to_ebfm(self, data_from_icon_atmo: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
+    def map_forcing_to_ebfm(self, data_from_icon_atmo: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Map the fields received from IconAtmo to EBFM's meteorological forcing.
 
