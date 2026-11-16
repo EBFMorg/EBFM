@@ -133,6 +133,24 @@ def set_random_seed(logger, random_seed: int | None, comm):
         logger.info(f"NumPy random seed fixed to {random_seed} for reproducibility.")
 
 
+def icon_atmo_fallback_values(IN) -> dict[str, np.ndarray]:
+    """
+    Fallback values for the fields received from the ICON atmosphere if no data is received, taken from EBFM's
+    current forcing IN. Mapping them with IconAtmo.map_to_ebfm gives the forcing they were taken from.
+    """
+    return {
+        "rlds": IN["LWin"],
+        "clt": IN["C"],
+        "sfcwind": IN["WS"],
+        "huss": IN["q"],
+        "sfcpres": IN["Pres"],
+        "tas": IN["T"],
+        "rsds": IN["SWin"],
+        "pr": IN["P"],
+        "pr_snow": IN["snow"],
+    }
+
+
 def _main_impl():
     args = parse_cli_args()
 
@@ -297,7 +315,7 @@ def _main_impl():
             logger.debug("Started...")
             data_to_icon_atmo = {}
 
-            fallback_values = icon_atmo.fallback_values_from_ebfm(IN)
+            fallback_values = icon_atmo_fallback_values(IN)
 
             data_from_icon_atmo = icon_atmo.exchange(data_to_icon_atmo, fallback_values)
 

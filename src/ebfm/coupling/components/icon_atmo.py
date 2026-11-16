@@ -169,28 +169,6 @@ class IconAtmo(Component):
 
         return received_data
 
-    def fallback_values_from_ebfm(self, IN: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
-        """
-        Fallback values for the fields received from IconAtmo, taken from EBFM's current forcing.
-
-        This is the inverse of map_to_ebfm: mapping the fallback values back gives the forcing they were taken from.
-
-        @param[in] IN EBFM's meteorological forcing, with precipitation in m w.e. per time step
-
-        @returns Mapping of field names to fallback values, in EBFM units
-        """
-        return {
-            "rlds": IN["LWin"],
-            "clt": IN["C"],
-            "sfcwind": IN["WS"],
-            "huss": IN["q"],
-            "sfcpres": IN["Pres"],
-            "tas": IN["T"],
-            "rsds": IN["SWin"],
-            "pr": IN["P"],
-            "pr_snow": IN["snow"],
-        }
-
     def map_to_ebfm(self, data_from_icon_atmo: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
         """
         Map the fields received from IconAtmo to EBFM's meteorological forcing.
