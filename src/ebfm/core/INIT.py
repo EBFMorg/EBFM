@@ -3,22 +3,21 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import os
-from typing import Any
 import numpy as np
-from numpy import ndarray, dtype
-import scipy.io as sio
 from pyproj import Transformer
-from netCDF4 import Dataset, num2date
+from netCDF4 import num2date
 
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
+from ebfm.grid.elmer.reader import read_elmer_mesh, read_dem, read_dem_xios
 
-from ebfm.elmer.mesh import Mesh
+from ebfm.grid.elmer.mesh import Mesh
+from ebfm.grid.structured.matlab import read_MATLAB_fields
+from ebfm.grid.structured.netcdf import read_NETCDF_grid
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, OutputConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
-from .restart import validate_all_variables_present, validate_variable_shape
+from .restart import partition_file_name, partitioning_name, read_restart_file
 
 from .constants import DAYS_PER_YEAR, LATENT_HEAT_OF_FUSION, MELTING_POINT, SECONDS_PER_DAY, WATER_DENSITY
 
@@ -37,8 +36,21 @@ def create_restart_file_name(time: datetime) -> str:
     Returns:
         str: The generated restart file name.
     """
-    restart_file_prefix = "restart_"
-    return restart_file_prefix + iso8601(time) + ".nc"
+    return create_restart_dir_name(time) + ".nc"
+
+
+def create_restart_dir_name(time: datetime) -> str:
+    """
+    Name of the directory that holds the restart files of the partitions of a partitioned grid, in a directory per
+    partitioning.
+
+    Parameters:
+        time (datetime): The time to include in the directory name.
+
+    Returns:
+        str: The restart file name without its suffix.
+    """
+    return "restart_" + iso8601(time)
 
 
 def create_output_file_name(time: datetime) -> str:
@@ -51,8 +63,51 @@ def create_output_file_name(time: datetime) -> str:
     Returns:
         str: The generated output file name.
     """
-    output_file_prefix = "output_"
-    return output_file_prefix + iso8601(time) + ".nc"
+    return create_output_dir_name(time) + ".nc"
+
+
+def create_output_dir_name(time: datetime) -> str:
+    """
+    Name of the directory that holds the output files of the partitions of a partitioned mesh, one per partition.
+
+    Parameters:
+        time (datetime): The time to include in the directory name.
+
+    Returns:
+        str: The output file name without its suffix.
+    """
+    return "output_" + iso8601(time)
+
+
+def _restart_file_to_read(restartdir: Path, time: datetime, n_partitions: int | None) -> Path:
+    """
+    The restart file to start from at time, or for a run on a partitioned grid, the directory of the restart files
+    of the partitions of its partitioning, restart_<time>/partitioning.<n_partitions>.
+    """
+    file = restartdir / create_restart_file_name(time)
+    if n_partitions is None:
+        to_read = file
+    else:
+        to_read = restartdir / create_restart_dir_name(time) / partitioning_name(n_partitions)
+    if to_read.exists():
+        return to_read
+
+    message = f"Restart file {to_read} does not exist."
+    other = sorted((restartdir / create_restart_dir_name(time)).glob("partitioning.*"))
+    if n_partitions is not None and file.exists():
+        message += (
+            f" Split the restart file {file} for this partitioning with 'python -m ebfm.io.split_restart {file} "
+            "<partitioning of the grid>'."
+        )
+    elif other:
+        message += (
+            f" There are restart files of other partitionings: {', '.join(map(str, other))}. Merge them into "
+            f"{file.name} with 'python -m ebfm.io.merge {other[0]}'"
+        )
+        if n_partitions is not None:
+            message += " and split that for this partitioning with 'python -m ebfm.io.split_restart'"
+        message += "."
+    raise AssertionError(message)
 
 
 def init_config(
@@ -105,7 +160,18 @@ def init_config(
     io = {}
 
     io["homedir"] = Path(os.getcwd())  # Home directory
-    io["outfile"] = output_config.output_dir / create_output_file_name(time_config.start_time)  # Output file
+    # With a partitioned mesh, every rank writes the output and restart file of its own partition
+    partition_id = grid_config.partition_id if grid_config.is_partitioned else None
+    n_partitions = grid_config.num_partitions if grid_config.is_partitioned else None
+    io["partition_id"] = partition_id
+    if partition_id is None:
+        io["outfile"] = output_config.output_dir / create_output_file_name(time_config.start_time)
+    else:
+        io["outfile"] = (
+            output_config.output_dir
+            / create_output_dir_name(time_config.start_time)
+            / partition_file_name(partition_id)
+        )
     assert output_config.allow_overwrite or not io["outfile"].exists(), (
         f"Output file {io['outfile']} already exists! Please choose a different output directory or start "
         f"time, or pass --allow-output-overwrite to overwrite it."
@@ -119,10 +185,17 @@ def init_config(
         write_restart_file = True
 
         if initialize_from_restart_file:
-            io["bootfilein"] = restartdir / create_restart_file_name(time_config.start_time)
-            assert io["bootfilein"].exists(), f"Restart file {io['bootfilein']} does not exist!"
+            io["bootfilein"] = _restart_file_to_read(restartdir, time_config.start_time, n_partitions)
 
-        io["bootfileout"] = restartdir / create_restart_file_name(time_config.end_time)
+        if partition_id is None:
+            io["bootfileout"] = restartdir / create_restart_file_name(time_config.end_time)
+        else:
+            io["bootfileout"] = (
+                restartdir
+                / create_restart_dir_name(time_config.end_time)
+                / partitioning_name(n_partitions)
+                / partition_file_name(partition_id)
+            )
         assert not io["bootfileout"].exists(), (
             f"Restart file {io['bootfileout']} already exists! Please choose a different restart directory or end "
             f"time to avoid overwriting existing restart files."
@@ -209,7 +282,7 @@ def init_constants():
     return C
 
 
-def init_grid(grid: GridDict, io, config: GridConfig, comm):
+def init_grid(grid: GridDict, config: GridConfig, comm):
     """
     Initializes the GridDict based on the given GridConfig.
 
@@ -220,7 +293,6 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
 
     Parameters:
         grid (GridDict): Dictionary to store grid-related parameters.
-        io (dict): Dictionary with I/O settings (e.g. bootfilein, bootfileout, homedir).
         config (GridConfig): Grid configuration object containing settings for grid initialization.
         comm: EBFM's MPI communicator, whose ranks hold the columns of the domain.
     """
@@ -235,18 +307,8 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         assert (
             config.grid_type in grid_input_type_supporting_dem
         ), f"Additional DEM file can only be specified for {grid_input_type_supporting_dem}."
-        if config.is_partitioned:
-            mesh: Mesh = read_elmer_mesh(
-                mesh_root=config.mesh_file,
-                is_partitioned=config.is_partitioned,
-                partition_id=config.partition_id,
-                source_crs_epsg=config.elmer_mesh_crs_epsg,
-            )
-        else:
-            mesh: Mesh = read_elmer_mesh(
-                mesh_root=config.mesh_file,
-                source_crs_epsg=config.elmer_mesh_crs_epsg,
-            )
+        mesh = _read_elmer_mesh(config)
+        mesh.compute_geometry()
 
         grid["column_id"] = mesh.cell_ids
         _set_cell_center_coordinates(grid, mesh)
@@ -275,10 +337,8 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
     elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
-        mesh: Mesh = read_elmer_mesh(
-            config.mesh_file,
-            source_crs_epsg=config.elmer_mesh_crs_epsg,
-        )
+        mesh = _read_elmer_mesh(config)
+        mesh.compute_geometry()
 
         # assuming mesh.nodes contains DEM data in the z component
         # see README.md for the required preprocessing steps.
@@ -297,28 +357,9 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         # ---------------------------------------------------------------------
         # Read grid data
         if config.grid_type is GridInputType.MATLAB:
-            input_data = read_MATLAB_grid(config.mesh_file)
-
-            grid["x_2D"] = input_data["x"][0][0]
-            grid["y_2D"] = input_data["y"][0][0]
-            grid["z_2D"] = input_data["z"][0][0]
-            mask_2D = input_data["mask"][0][0]
-
-            # Flip grid E-W or N-S when needed
-            fy, _ = np.gradient(grid["y_2D"])
-
-            if fy[0, 0] < 0:
-                grid["x_2D"] = np.flipud(grid["x_2D"])
-                grid["y_2D"] = np.flipud(grid["y_2D"])
-                grid["z_2D"] = np.flipud(grid["z_2D"])
-                mask_2D = np.flipud(mask_2D)
-
-            _, fx = np.gradient(grid["x_2D"])
-            if fx[0, 0] < 0:
-                grid["x_2D"] = np.fliplr(grid["x_2D"])
-                grid["y_2D"] = np.fliplr(grid["y_2D"])
-                grid["z_2D"] = np.fliplr(grid["z_2D"])
-                mask_2D = np.fliplr(mask_2D)
+            fields = read_MATLAB_fields(config.mesh_file)
+            grid["x_2D"], grid["y_2D"], grid["z_2D"] = fields["x"], fields["y"], fields["z"]
+            mask_2D = fields["mask"]
 
             # Calculate latitude & longitude fields (from the original UTM coordinates)
             utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
@@ -340,12 +381,9 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
             grid["lon_2D"] = input_data["lon"]
             grid["lat_2D"] = input_data["lat"]
 
-        # Columns as flat indices into the 2-D fields; in a run on several MPI ranks a contiguous block of them,
-        # the first block on rank 0. The 2-D fields stay whole: the output writer places all columns into them.
+        # Columns as flat indices into the 2-D fields. A partition of the grid has the 2-D fields of the whole grid,
+        # with only its own cells active.
         ind = np.flatnonzero(mask_2D == 1)
-        if config.num_partitions > 1:
-            assert 1 <= config.partition_id <= config.num_partitions, f"Invalid partition id {config.partition_id}."
-            ind = np.array_split(ind, config.num_partitions)[config.partition_id - 1]
         grid["ind"] = (ind,)
         grid["column_id"] = ind
 
@@ -429,6 +467,18 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
     validate_grid(grid)
 
     return grid
+
+
+def _read_elmer_mesh(config: GridConfig) -> Mesh:
+    """The Elmer mesh of this rank: its partition of a partitioned mesh, else the whole mesh."""
+    if config.is_partitioned:
+        return read_elmer_mesh(
+            mesh_root=config.mesh_file,
+            is_partitioned=True,
+            partition_id=config.partition_id,
+            source_crs_epsg=config.elmer_mesh_crs_epsg,
+        )
+    return read_elmer_mesh(mesh_root=config.mesh_file, source_crs_epsg=config.elmer_mesh_crs_epsg)
 
 
 def slope_azimuth(slope_x: np.ndarray, slope_y: np.ndarray) -> np.ndarray:
@@ -562,145 +612,13 @@ def calculate_step_sizes(az):
     return ddx, ddy
 
 
-def read_MATLAB_grid(gridfile: Path):
-    """
-    Provides grid information by reading from a .mat file or allowing user input.
-
-    Parameters:
-        gridfile: Path to the .mat file containing grid data.
-
-    Returns:
-        dict: A dictionary named `input_data` containing:
-            - 'x': 2D NumPy array of UTM easting coordinates (m).
-            - 'y': 2D NumPy array of UTM northing coordinates (m).
-            - 'z': 2D NumPy array of elevation (m).
-            - 'mask': 2D NumPy array of glacier mask (0 = no glacier, 1 = glacier).
-    """
-
-    logger.info("EBFM: Reading grid data from MATLAB file...")
-    input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
-
-    try:
-        # Load MATLAB file
-        mat_file = sio.loadmat(str(gridfile))
-        grid_svalbard = mat_file.get("grid_svalbard", None)
-
-        if grid_svalbard is None:
-            raise ValueError("`grid_svalbard` not found in the .mat file!")
-
-        # Extract data from the MATLAB structure
-        input_data["x"] = grid_svalbard["x"]
-        input_data["y"] = grid_svalbard["y"]
-        input_data["z"] = grid_svalbard["z"]
-        input_data["mask"] = grid_svalbard["mask"]
-
-    except FileNotFoundError:
-        logger.info(f"File not found: {gridfile}")
-        raise
-    except KeyError as e:
-        logger.info(f"Missing field in .mat file: {e}")
-        raise
-
-    return input_data
-
-
-def read_NETCDF_grid(gridfile: Path, fill_missing_elevation: bool = False):
-    """
-    Read grid information from an NetCDF (.nc) file with DEM.
-
-    Cells with missing orography are always inactive. Their elevation is NaN, or 0 m if `fill_missing_elevation`.
-
-    Parameters:
-        gridfile: Path to NetCDF file (.nc).
-        fill_missing_elevation: Set missing elevations to 0 m instead of NaN.
-
-    Returns:
-        dict: A dictionary named `input_data` containing:
-            - 'x': 2D NumPy array of UTM zone 24N easting coordinates (m).
-            - 'y': 2D NumPy array of UTM zone 24N northing coordinates (m).
-            - 'z': 2D NumPy array of orography/elevation.
-            - 'mask': 2D NumPy array of fractional glacier mask values.
-            - 'lon': 2D NumPy array of longitude coordinates in degrees East.
-            - 'lat': 2D NumPy array of latitude coordinates.
-    """
-
-    logger.info("EBFM: Reading grid data from NetCDF file...")
-    input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
-
-    try:
-        with Dataset(gridfile, "r") as ncfile:
-            if "orography" in ncfile.variables:
-                raw_orography = ncfile.variables["orography"][:]
-            elif "orog" in ncfile.variables:
-                raw_orography = ncfile.variables["orog"][:]
-            else:
-                raise KeyError(f"Neither `orography` nor `orog` found in NetCDF grid file {gridfile}.")
-
-            if "mask" not in ncfile.variables:
-                raise KeyError(f"Missing `mask` in in NetCDF grid file {gridfile}.")
-
-            raw_mask = ncfile.variables["mask"][:]
-            latitude = np.asarray(ncfile.variables["latitude"][:])
-            longitude = np.asarray(ncfile.variables["longitude"][:])
-
-            orography = np.asarray(raw_orography)
-            mask = np.asarray(raw_mask, dtype=np.float32)
-
-            orography = np.squeeze(orography)
-            mask = np.squeeze(mask)
-            latitude = np.squeeze(latitude)
-            longitude = np.squeeze(longitude)
-
-            if np.ma.isMaskedArray(raw_orography):
-                valid_orography = ~np.squeeze(np.ma.getmaskarray(raw_orography))
-            else:
-                valid_orography = np.isfinite(orography)
-
-            if latitude.ndim == 1 and longitude.ndim == 1:
-                longitude, latitude = np.meshgrid(longitude, latitude)
-
-            if orography.shape != mask.shape or orography.shape != latitude.shape or orography.shape != longitude.shape:
-                raise ValueError(
-                    "`orography`/`orog`, `mask`, `latitude`, and `longitude` must have matching 2D shapes. "
-                    f"Got orography={orography.shape}, mask={mask.shape}, "
-                    f"latitude={latitude.shape}, longitude={longitude.shape}."
-                )
-
-            mask = np.where(valid_orography & (mask > 0.0), 1.0, 0.0).astype(np.float32)
-            if fill_missing_elevation:
-                n_missing = int((~valid_orography).sum())
-                if n_missing > 0:
-                    logger.warning(f"Setting {n_missing} missing elevations in {gridfile} to 0 m.")
-                orography = np.where(valid_orography, orography, 0.0)
-            else:
-                orography = np.where(valid_orography, orography, np.nan)
-            longitude = np.mod(longitude, 360.0)
-
-            if not np.any(mask > 0.0):
-                raise ValueError(f"Mask of {gridfile} contains no active cells with `mask > 0`.")
-
-            lonlat_to_utm24n = Transformer.from_crs("EPSG:4326", "EPSG:32624", always_xy=True)
-            x, y = lonlat_to_utm24n.transform(longitude, latitude)
-
-            input_data["x"] = x
-            input_data["y"] = y
-            input_data["z"] = orography
-            input_data["lat"] = latitude
-            input_data["lon"] = longitude
-            input_data["mask"] = mask
-
-    except FileNotFoundError:
-        logger.info(f"File not found: {gridfile}")
-        raise
-    except KeyError as e:
-        logger.info(f"Missing field in NetCDF file {gridfile}: {e}")
-        raise
-
-    return input_data
-
-
 def init_initial_conditions(
-    C, grid: GridDict, io, time, column: ColumnDiscretizationConfig, init_with_restart_file: bool
+    C,
+    grid: GridDict,
+    io,
+    time,
+    column: ColumnDiscretizationConfig,
+    init_with_restart_file: bool,
 ):
     """
     Sets the model's initial conditions at the start of the simulation.
@@ -735,36 +653,7 @@ def init_initial_conditions(
     if init_with_restart_file:
         logger.info(f"Initialize from restart file: {io['bootfilein']}...")
 
-        # Open the NetCDF file
-        with Dataset(io["bootfilein"], "r") as ncfile:
-            validate_all_variables_present(ncfile.variables, io["bootfilein"])
-            # Iterate through all variables in the file
-            for var_name in ncfile.variables:
-                # Read the variable data. netCDF4 returns a numpy.ma.MaskedArray
-                # here whenever the variable defines a fill value, regardless of
-                # whether any missing values are actually present.
-                var_data = ncfile.variables[var_name][:]
-                # Restart files are expected to be fully populated. Mixing masked
-                # arrays into the simulation state is unsafe: numpy's masked-array
-                # ufuncs silently ignore `where=` when combining masks (only the
-                # data respects `where`), so masks can leak into cells they
-                # should not and snowball across timesteps. Verify the assumption
-                # holds, then drop down to a plain ndarray.
-                assert not np.ma.is_masked(var_data), (
-                    f"Restart variable '{var_name}' in {io['bootfilein']} contains missing values, "
-                    "which is not supported."
-                )
-                if isinstance(var_data, np.ma.MaskedArray):
-                    var_data = var_data.data
-
-                # Perform consistency checks
-                validate_variable_shape(var_name, var_data.shape, gpsum, nl, io["bootfilein"])
-
-                # If a variable has no dimensions (scalar), convert it to a Python scalar
-                if var_data.shape == ():  # Scalar variable
-                    var_data = var_data.item()
-                # Save the variable data to the dictionary
-                OUT[var_name] = var_data
+        OUT = read_restart_file(io["bootfilein"], nl, grid, io.get("partition_id"))
 
         OUT["timelastsnow"] = num2date(
             OUT["timelastsnow_netCDF"],

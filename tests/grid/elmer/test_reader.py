@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 from netCDF4 import Dataset
 
-from ebfm.elmer.mesh import TriangleMesh
-from ebfm.reader import read_dem_xios
+from ebfm.grid.elmer.mesh import TriangleMesh
+from ebfm.grid.elmer.reader import read_dem_xios
 
 
 def _make_mesh() -> TriangleMesh:
@@ -53,10 +53,10 @@ class TestReadDemXios(unittest.TestCase):
         np.testing.assert_allclose(z_cells, [200.0, 300.0])
         np.testing.assert_allclose(h_cells, [3.0, 6.0])
 
-    def test_vertex_count_mismatch_is_rejected(self):
+    def test_missing_node_ids_are_rejected(self):
         dem_file = self._write_dem(zs=[100.0, 200.0, 300.0], h=[0.0, 3.0, 6.0])
 
-        with self.assertRaises(AssertionError):
+        with self.assertRaisesRegex(ValueError, "node ids"):
             read_dem_xios(dem_file, self.mesh)
 
 

@@ -50,6 +50,9 @@ class Mesh:
     y_vertices: NDArray[np.float64]
     # optional height values of vertices stored in z coordinate
     z_vertices: NDArray[np.float64]
+    # EPSG code of the projection of x/y
+    source_crs_epsg: int
+    # The following coordinates are derived from x/y_vertices by compute_geometry()
     # longitude/latitude coordinates of vertices in radians, ordering follows local ids [0,1,...,n_vertices-1]
     lon_vertices: NDArray[np.float64]
     lat_vertices: NDArray[np.float64]
@@ -81,6 +84,17 @@ class Mesh:
         self.cell_ids = cell_ids
         self.cell_to_vertex = cell_to_vertex
         self.source_crs_epsg = source_crs_epsg
+        # Initialize z_cells to zeros (to be filled/overwritten by DEM)
+        n_cells = self.cell_to_vertex.shape[0]
+        self.z_cells = np.zeros(n_cells)
+
+    def compute_geometry(self) -> None:
+        """
+        Derive the lon/lat coordinates of the vertices and the coordinates of the cell centers.
+
+        Transforming the vertices is the expensive part of setting up a mesh, so it is done once, before the geometry
+        is first used.
+        """
         transformer = pyproj.Transformer.from_crs(self.source_crs_epsg, 4326, always_xy=True)
         self.lon_vertices, self.lat_vertices = transformer.transform(self.x_vertices, self.y_vertices, radians=True)
 
@@ -91,15 +105,12 @@ class Mesh:
 
         inverse_transformer = pyproj.Transformer.from_crs(4326, self.source_crs_epsg, always_xy=True)
         self.x_cells, self.y_cells = inverse_transformer.transform(self.lon_cells, self.lat_cells, radians=True)
-        # Initialize z_cells to zeros (to be filled/overwritten by DEM)
-        n_cells = self.cell_to_vertex.shape[0]
-        self.z_cells = np.zeros(n_cells)
 
     def vertex_surface_gradient(self) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """
         Gradient of the plane through the vertices of each cell, as derived from `z_vertices`.
 
-        Only defined for triangular cells, which span exactly one plane.
+        Only defined for triangular cells, which span exactly one plane. Needs compute_geometry() first.
 
         Returns:
             dz_deast, dz_dnorth: elevation change per metre towards local east and north

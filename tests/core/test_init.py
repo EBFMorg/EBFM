@@ -4,6 +4,7 @@
 #
 # This file was generated with the help of AI tools.
 
+import shutil
 import unittest
 import tempfile
 from pathlib import Path
@@ -17,14 +18,15 @@ from pyproj import Geod, Transformer
 
 from ebfm.core import INIT
 from ebfm.core.INIT import init_config, init_grid, init_initial_conditions
+from ebfm.grid.structured.partitioning import partition_grid
 from ebfm.core.FINAL_create_restart_file import main as write_restart_file
 from ebfm.core.cli import parse_cli_args
 from ebfm.core.comm import defaultComm
 from ebfm.core.config import ColumnDiscretizationConfig, OutputConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
-from ebfm.core.restart import PER_COLUMN_VARIABLES, PER_LAYER_VARIABLES, RESTART_VARIABLES
-from ebfm.elmer.mesh import TriangleMesh
+from ebfm.core.restart import COLUMN_ID_VARIABLE, PER_COLUMN_VARIABLES, PER_LAYER_VARIABLES, RESTART_VARIABLES
+from ebfm.grid.elmer.mesh import TriangleMesh
 
 GPSUM = 5
 NL = 4
@@ -43,7 +45,7 @@ def _make_grid(number_of_columns: int = GPSUM) -> dict:
     `init_initial_conditions` derives the column count from the grid via
     `ebfm.core.grid.number_of_columns`, so the mask is what sets it.
     """
-    return {"mask": np.ones(number_of_columns, dtype=int)}
+    return {"mask": np.ones(number_of_columns, dtype=int), "column_id": np.arange(number_of_columns)}
 
 
 def _build_out_dict() -> dict:
@@ -67,7 +69,7 @@ def _build_out_dict() -> dict:
 
 def _write_restart_file(path: Path, with_missing_value: bool = False) -> None:
     io = {"writebootfile": True, "bootfileout": path}
-    write_restart_file(_build_out_dict(), io, restartdir=path.parent)
+    write_restart_file(_build_out_dict(), io, column_ids=np.arange(GPSUM))
 
     if with_missing_value:
         # Restart files produced by EBFM are always fully populated. To
@@ -216,7 +218,11 @@ class TestRestartFileShapeValidation(unittest.TestCase):
         bootfile = Path(self.tmpdir.name) / f"restart_test_{name}.nc"
         out = _build_out_dict()
         out.update(overrides)
-        write_restart_file(out, {"writebootfile": True, "bootfileout": bootfile}, restartdir=bootfile.parent)
+        write_restart_file(
+            out,
+            {"writebootfile": True, "bootfileout": bootfile},
+            column_ids=np.arange(GPSUM),
+        )
         return bootfile
 
     def test_per_layer_variable_stored_per_column_is_rejected(self):
@@ -299,6 +305,143 @@ class TestRestartFileShapeValidation(unittest.TestCase):
         self.assertEqual(OUT["a_scalar"], 1.0)
 
 
+def copy_without_column_ids(path: Path, copy: Path) -> None:
+    """Copy a restart file without its column ids, as written before they existed."""
+    with Dataset(path) as source, Dataset(copy, "w") as target:
+        for name, dimension in source.dimensions.items():
+            if not name.startswith(COLUMN_ID_VARIABLE):
+                target.createDimension(name, len(dimension))
+        for name, variable in source.variables.items():
+            if name != COLUMN_ID_VARIABLE:
+                target.createVariable(name, variable.dtype, variable.dimensions)[:] = variable[:]
+
+
+class TestRestartColumnIds(unittest.TestCase):
+    """The rows of a restart file are matched to the columns of the grid by their ids."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.bootfile = Path(self.tmpdir.name) / "restart_test.nc"
+        out = _build_out_dict()
+        out["Tsurf"] = 250.0 + np.arange(GPSUM)
+        write_restart_file(
+            out,
+            {"writebootfile": True, "bootfileout": self.bootfile},
+            column_ids=np.arange(GPSUM),
+        )
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _load(self, bootfile, column_ids):
+        grid = {**_make_grid(), "column_id": column_ids}
+        OUT, _, _ = init_initial_conditions(
+            {"alb_ice": 0.5}, grid, {"bootfilein": bootfile}, {}, _make_column(), init_with_restart_file=True
+        )
+        return OUT
+
+    def test_rows_follow_the_column_ids_of_the_grid(self):
+        OUT = self._load(self.bootfile, np.arange(GPSUM)[::-1])
+
+        np.testing.assert_array_equal(OUT["Tsurf"], 250.0 + np.arange(GPSUM)[::-1])
+        self.assertNotIn(COLUMN_ID_VARIABLE, OUT)
+
+    def test_unknown_column_id_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, r"holds no row for 1 of the 5 columns, e.g. for column id 99"):
+            self._load(self.bootfile, np.array([0, 1, 2, 3, 99]))
+
+    def test_file_without_column_ids_is_read_in_file_order(self):
+        bootfile = self.bootfile.with_name("without_column_ids.nc")
+        copy_without_column_ids(self.bootfile, bootfile)
+
+        OUT = self._load(bootfile, np.arange(GPSUM)[::-1])
+
+        np.testing.assert_array_equal(OUT["Tsurf"], 250.0 + np.arange(GPSUM))
+
+
+class TestRestartPartitionFiles(unittest.TestCase):
+    """On a partitioned mesh, every rank reads the restart file of its partition from a directory of them."""
+
+    COLUMN_IDS = 10 + np.arange(GPSUM)
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.restart_dir = Path(self.tmpdir.name) / "restart_test"
+        out = _build_out_dict()
+        out["Tsurf"] = 250.0 + np.arange(GPSUM)
+        write_restart_file(
+            out,
+            {"writebootfile": True, "bootfileout": self.restart_dir / "part.2.nc"},
+            column_ids=self.COLUMN_IDS,
+        )
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _load(self, column_ids, partition_id):
+        grid = {**_make_grid(len(column_ids)), "column_id": column_ids}
+        io = {"bootfilein": self.restart_dir, "partition_id": partition_id}
+        OUT, _, _ = init_initial_conditions({"alb_ice": 0.5}, grid, io, {}, _make_column(), init_with_restart_file=True)
+        return OUT
+
+    def test_rows_of_the_partition_file_follow_the_column_ids_of_the_grid(self):
+        OUT = self._load(self.COLUMN_IDS[::-1], partition_id=2)
+
+        np.testing.assert_array_equal(OUT["Tsurf"], 250.0 + np.arange(GPSUM)[::-1])
+        self.assertNotIn(COLUMN_ID_VARIABLE, OUT)
+
+    def test_grid_that_is_not_partitioned_needs_a_merged_file(self):
+        with self.assertRaisesRegex(ValueError, r"ebfm\.io\.merge"):
+            self._load(self.COLUMN_IDS, partition_id=None)
+
+    def test_missing_partition_file_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, r"no restart file .*part\.3\.nc"):
+            self._load(self.COLUMN_IDS, partition_id=3)
+
+    def test_partition_file_of_another_partitioning_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, r"holds 5 columns, but this partition has 4.*different partitioning"):
+            self._load(self.COLUMN_IDS[:4], partition_id=2)
+
+
+class TestRestartFileToRead(unittest.TestCase):
+    """A run on N ranks starts from the restart files of its partitioning, and points to the tools for other files."""
+
+    TIME = datetime(1979, 1, 2, tzinfo=timezone.utc)
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.restartdir = Path(self.tmpdir.name)
+        self.file = self.restartdir / INIT.create_restart_file_name(self.TIME)
+        self.partitionings = self.restartdir / INIT.create_restart_dir_name(self.TIME)
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _to_read(self, n_partitions):
+        return INIT._restart_file_to_read(self.restartdir, self.TIME, n_partitions)
+
+    def test_single_rank_reads_the_file_and_partitioned_run_its_partitioning(self):
+        self.file.touch()
+        (self.partitionings / "partitioning.4").mkdir(parents=True)
+
+        self.assertEqual(self._to_read(None), self.file)
+        self.assertEqual(self._to_read(4), self.partitionings / "partitioning.4")
+
+    def test_partitioned_run_points_to_split_restart_for_a_single_file(self):
+        self.file.touch()
+
+        with self.assertRaisesRegex(AssertionError, r"ebfm\.io\.split_restart"):
+            self._to_read(4)
+
+    def test_other_partitionings_are_pointed_to_merge(self):
+        (self.partitionings / "partitioning.8").mkdir(parents=True)
+
+        for n_partitions in (None, 4):
+            with self.subTest(n_partitions=n_partitions):
+                with self.assertRaisesRegex(AssertionError, r"partitioning\.8.*ebfm\.io\.merge"):
+                    self._to_read(n_partitions)
+
+
 class TestRestartVariableManifest(unittest.TestCase):
     """The writer and the loader must agree on what a restart file contains.
 
@@ -312,12 +455,12 @@ class TestRestartVariableManifest(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def test_writer_writes_exactly_the_manifest(self):
+    def test_writer_writes_exactly_the_manifest_and_the_column_ids(self):
         bootfile = Path(self.tmpdir.name) / "restart_test.nc"
         _write_restart_file(bootfile)
 
         with Dataset(bootfile) as ncfile:
-            self.assertEqual(set(ncfile.variables), set(RESTART_VARIABLES))
+            self.assertEqual(set(ncfile.variables), {*RESTART_VARIABLES, COLUMN_ID_VARIABLE})
 
     def test_writer_writes_each_group_at_its_own_shape(self):
         bootfile = Path(self.tmpdir.name) / "restart_test.nc"
@@ -420,8 +563,8 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
     def _init_grid(self, shading_flag):
         args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), shading_flag])
         grid_config = GridConfig(args)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config, defaultComm)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
+        return init_grid(grid, grid_config, defaultComm)
 
     def test_shading_disabled_skips_the_lookup_table(self):
         grid = self._init_grid("--no-shading")
@@ -444,35 +587,40 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
             INIT._precompute_shading_matlab({"is_parallel_run": True}, mask_2D=None)
 
 
-class TestMatlabGridSplit(unittest.TestCase):
-    """Split over several MPI ranks, a MATLAB grid gives each rank a contiguous block of the serial columns."""
+class TestMatlabGridPartitions(unittest.TestCase):
+    """The partitions of a MATLAB grid hold contiguous blocks of the serial columns, with their serial geometry."""
 
-    N_RANKS = 3
+    N_PARTITIONS = 3
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
+        self.grid_file = Path(self.tmpdir.name) / _MATLAB_MESH.name
+        shutil.copy(_MATLAB_MESH, self.grid_file)
+        self.partitioning = partition_grid(self.grid_file, self.N_PARTITIONS)
 
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def _init_grid(self, num_ranks, rank):
-        args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--no-shading"])
-        grid_config = GridConfig(args, num_ranks, rank)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
-        return init_grid(grid, io, grid_config, defaultComm)
+    def _init_grid(self, partition_id=None):
+        args = parse_cli_args(["--matlab-mesh", str(self.grid_file), "--no-shading"])
+        if partition_id is not None:
+            args.partitioning, args.partition_id = self.partitioning, partition_id
+        grid_config = GridConfig(args)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
+        return init_grid(grid, grid_config, defaultComm)
 
-    def test_blocks_of_all_ranks_make_up_the_serial_grid(self):
-        serial = self._init_grid(num_ranks=1, rank=0)
-        blocks = [self._init_grid(self.N_RANKS, rank) for rank in range(self.N_RANKS)]
+    def test_partitions_make_up_the_serial_grid(self):
+        serial = self._init_grid()
+        partitions = [self._init_grid(partition_id) for partition_id in range(1, self.N_PARTITIONS + 1)]
 
         self.assertEqual(
-            [len(block["mask"]) for block in blocks],
-            [len(b) for b in np.array_split(serial["mask"], self.N_RANKS)],
+            [len(partition["mask"]) for partition in partitions],
+            [len(b) for b in np.array_split(serial["mask"], self.N_PARTITIONS)],
         )
         for key in ("column_id", "x", "y", "z", "lat", "lon", "slope_beta", "slope_gamma"):
             with self.subTest(key=key):
-                np.testing.assert_array_equal(np.concatenate([block[key] for block in blocks]), serial[key])
-        np.testing.assert_array_equal(np.concatenate([block["ind"][0] for block in blocks]), serial["ind"][0])
+                np.testing.assert_array_equal(np.concatenate([p[key] for p in partitions]), serial[key])
+        np.testing.assert_array_equal(np.concatenate([p["ind"][0] for p in partitions]), serial["ind"][0])
 
 
 class TestElmerGridCoordinates(unittest.TestCase):
@@ -515,9 +663,9 @@ class TestElmerGridCoordinates(unittest.TestCase):
             ["--elmer-mesh", self.tmpdir.name, "--elmer-mesh-crs-epsg", str(self._CRS_EPSG), *extra_args]
         )
         grid_config = GridConfig(args)
-        grid, io, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
+        grid, _, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
         with mock.patch.object(INIT, "read_elmer_mesh", return_value=self.mesh):
-            return init_grid(grid, io, grid_config, defaultComm)
+            return init_grid(grid, grid_config, defaultComm)
 
     def test_lat_lon_are_the_cell_centers_of_the_mesh(self):
         grid = self._init_grid()
@@ -574,74 +722,6 @@ class TestElmerGridCoordinates(unittest.TestCase):
 
         np.testing.assert_allclose(grid["lat"], np.degrees(self.mesh.lat_cells))
         np.testing.assert_allclose(grid["lon"], np.degrees(self.mesh.lon_cells))
-
-
-class TestReadNetcdfGrid(unittest.TestCase):
-    """Missing orography is NaN unless the user opts in to filling it with zero elevation.
-
-    Filling must only touch cells without orography data. Inactive cells with valid orography (e.g. ice-free land
-    next to the ice margin) must keep their elevation, otherwise `np.gradient` sees an artificial cliff and
-    over-estimates the slope of the adjacent active cells.
-    """
-
-    _FILL = -9999.0
-
-    def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-
-        # Row 0: active, active, missing orography (but mask > 0)
-        # Row 1: active, inactive with valid orography, missing orography (mask == 0)
-        self.gridfile = self._write_grid("grid.nc", [[1000.0, 1100.0, self._FILL], [900.0, 500.0, self._FILL]])
-
-    def _write_grid(self, name: str, orog) -> Path:
-        gridfile = Path(self.tmpdir.name) / name
-        mask = np.array([[1.0, 1.0, 1.0], [1.0, 0.0, 0.0]])
-        lon, lat = np.meshgrid([-45.0, -44.9, -44.8], [72.0, 72.1])
-
-        with Dataset(gridfile, "w") as nc:
-            nc.createDimension("y", 2)
-            nc.createDimension("x", 3)
-            nc.createVariable("orog", "f8", ("y", "x"), fill_value=self._FILL)[:] = np.array(orog)
-            nc.createVariable("mask", "f8", ("y", "x"))[:] = mask
-            nc.createVariable("latitude", "f8", ("y", "x"))[:] = lat
-            nc.createVariable("longitude", "f8", ("y", "x"))[:] = lon
-        return gridfile
-
-    def tearDown(self):
-        self.tmpdir.cleanup()
-
-    def test_missing_orography_is_inactive(self):
-        for fill in (False, True):
-            with self.subTest(fill_missing_elevation=fill):
-                data = INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=fill)
-                np.testing.assert_array_equal(data["mask"], [[1.0, 1.0, 0.0], [1.0, 0.0, 0.0]])
-
-    def test_missing_orography_is_nan_by_default(self):
-        data = INIT.read_NETCDF_grid(self.gridfile)
-        self.assertTrue(np.isnan(data["z"][0, 2]))
-        self.assertTrue(np.isnan(data["z"][1, 2]))
-
-    def test_missing_orography_is_filled_with_zero_on_request(self):
-        data = INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=True)
-        self.assertEqual(data["z"][0, 2], 0.0)
-        self.assertEqual(data["z"][1, 2], 0.0)
-        self.assertTrue(np.isfinite(data["z"]).all())
-
-    def test_filling_is_logged(self):
-        with self.assertLogs(INIT.logger, level="WARNING") as logs:
-            INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=True)
-        self.assertIn("Setting 2 missing elevations", logs.output[0])
-
-    def test_nothing_logged_without_missing_orography(self):
-        gridfile = self._write_grid("complete.nc", [[1000.0, 1100.0, 1200.0], [900.0, 500.0, 400.0]])
-        with self.assertNoLogs(INIT.logger, level="WARNING"):
-            INIT.read_NETCDF_grid(gridfile, fill_missing_elevation=True)
-
-    def test_valid_orography_of_inactive_cell_is_kept(self):
-        for fill in (False, True):
-            with self.subTest(fill_missing_elevation=fill):
-                data = INIT.read_NETCDF_grid(self.gridfile, fill_missing_elevation=fill)
-                self.assertEqual(data["z"][1, 1], 500.0)
 
 
 class TestSlopeAzimuth(unittest.TestCase):

@@ -9,33 +9,17 @@ import numpy as np
 from netCDF4 import Dataset, date2num
 
 from .LOOP_general_functions import is_first_time_step, is_output_time_step, is_final_time_step
-from .comm.gather import ColumnGather
 
 _FILL_VALUE = -9999.0
 
 
-def _gather_grid(gather: ColumnGather, grid):
+def _write_unstructured_grid(nc_file, grid, with_ids: bool = False):
     """
-    Grid of the columns of all ranks, on the root rank, as far as the output file needs it.
+    Write unstructured mesh coordinates and topology to an open NetCDF file.
 
-    @returns the grid on the root rank, None on all other ranks
+    @param[in] with_ids also write the column ids of the cells and the ids of the vertices, with which the files of the
+                        partitions of a partitioned mesh are merged
     """
-    if gather.comm.size == 1:
-        return grid
-
-    assert not grid["is_unstructured"], "Gathering the output of an unstructured grid is not supported."
-
-    # Every rank holds the full 2-D fields. The column ids of a structured grid are the flat indices of the columns
-    # in them, so the sorted ids of all ranks are the positions of all columns.
-    output_grid = {**grid, "ind": gather.column_ids}
-
-    if not gather.is_root:
-        return None
-    return output_grid
-
-
-def _write_unstructured_grid(nc_file, grid):
-    """Write unstructured mesh coordinates and topology to an open NetCDF file."""
     n_cells = grid["x"].shape[0]
 
     nc_file.createDimension("cell", n_cells)
@@ -64,6 +48,11 @@ def _write_unstructured_grid(nc_file, grid):
     lon.description = "Cell-center longitude"
     lat.description = "Cell-center latitude"
 
+    if with_ids:
+        column_id = nc_file.createVariable("column_id", np.int64, ("cell",))
+        column_id[:] = grid["column_id"]
+        column_id.description = "Column id of the cell"
+
     mesh = grid.get("mesh")
     if mesh is None:
         return
@@ -88,6 +77,11 @@ def _write_unstructured_grid(nc_file, grid):
     vlat[:] = np.degrees(mesh.lat_vertices)
     cell_vertices[:, :] = mesh.cell_to_vertex.astype(np.int32)
 
+    if with_ids:
+        vertex_id = nc_file.createVariable("vertex_id", np.int64, ("vertex",))
+        vertex_id[:] = mesh.vertex_ids
+        vertex_id.description = "Global id of the vertex"
+
     vx.units = "m"
     vy.units = "m"
     vz.units = "m"
@@ -97,10 +91,21 @@ def _write_unstructured_grid(nc_file, grid):
     cell_vertices.description = "Zero-based local vertex indices for each unstructured cell"
 
 
-def _write_structured_grid(nc_file, grid):
-    """Write structured grid dimensions and coordinates to an open NetCDF file."""
+def _write_structured_grid(nc_file, grid, with_ids: bool = False):
+    """
+    Write structured grid dimensions and coordinates to an open NetCDF file.
+
+    @param[in] with_ids also write the column ids of the columns, the flat indices of their cells in the 2-D fields,
+                        with which the files of the partitions of a partitioned grid are merged
+    """
     nc_file.createDimension("y", grid["x_2D"].shape[0])
     nc_file.createDimension("x", grid["x_2D"].shape[1])
+
+    if with_ids:
+        nc_file.createDimension("column", len(grid["column_id"]))
+        column_id = nc_file.createVariable("column_id", np.int64, ("column",))
+        column_id[:] = grid["column_id"]
+        column_id.description = "Flat index into the (y, x) fields of the cell of each column of this file"
 
     x = nc_file.createVariable("x", np.float64, ("y", "x"))
     y = nc_file.createVariable("y", np.float64, ("y", "x"))
@@ -163,15 +168,15 @@ def _write_output_variable(nc_file, varname, var_1D, time_index, grid, column):
         nc_file[varname][time_index, :, :] = var_2D
 
 
-def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
+def main(OUTFILE, io, OUT, grid, t, time, column):
     """
     Accumulate the output variables of this time step and write them to a NetCDF file every io["freqout"] steps.
 
     Structured grids are written on dimensions (time, y, x). Unstructured grids are written on dimensions
     (time, cell), with optional mesh topology if grid["mesh"] is available.
 
-    Collective over gather.comm: each rank accumulates its own columns, the root rank gathers the columns of
-    all ranks and writes them to a single file.
+    Every rank writes the file of its own columns. On a partitioned grid, the file also holds their column ids (and
+    the vertex ids of a mesh), with which ebfm.io.merge merges the files of all partitions.
     """
     # Specify variables to be written
     if is_first_time_step(t):
@@ -249,22 +254,19 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
     time_units = "days since 1970-01-01 00:00:00"
     time_calendar = "gregorian"
 
-    # The root rank defines the file from the grid of all ranks
-    if is_first_time_step(t):
-        io["output_grid"] = _gather_grid(gather, grid)
-
     # Initialize NetCDF file at the first time step
-    if is_first_time_step(t) and gather.is_root:
+    if is_first_time_step(t):
         os.makedirs(Path(io["outfile"]).parent, exist_ok=True)
 
         # Create NetCDF file
         io["nc_file"] = Dataset(io["outfile"], "w", format="NETCDF4")
         io["nc_file"].createDimension("time", None)  # Unlimited time dimension
 
-        if io["output_grid"]["is_unstructured"]:
-            _write_unstructured_grid(io["nc_file"], io["output_grid"])
+        with_ids = bool(grid.get("is_partitioned"))
+        if grid["is_unstructured"]:
+            _write_unstructured_grid(io["nc_file"], grid, with_ids=with_ids)
         else:
-            _write_structured_grid(io["nc_file"], io["output_grid"])
+            _write_structured_grid(io["nc_file"], grid, with_ids=with_ids)
 
         io["nc_file"].createDimension("nl", column.nl)  # Vertical layers for `sub` variables
 
@@ -274,7 +276,7 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
             var_units = entry[1]
             var_desc = entry[3]
 
-            dimensions, chunksizes = _output_dimensions(varname, io["output_grid"], column)
+            dimensions, chunksizes = _output_dimensions(varname, grid, column)
 
             nc_var = io["nc_file"].createVariable(
                 varname=varname,
@@ -304,18 +306,14 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
         time_days_since_1970 = date2num(time["TCUR"], units=time_units, calendar=time_calendar)
 
         # Write time variable
-        if gather.is_root:
-            io["nc_file"]["time"][time_index] = time_days_since_1970
+        io["nc_file"]["time"][time_index] = time_days_since_1970
 
-        # Write variables to NetCDF, gathering one variable at a time to limit the memory needed on the root rank
         for entry in OUTFILE["varsout"]:
             varname = entry[0]
-            var_1D = gather.gather(OUTFILE["TEMP"][varname])
-            if gather.is_root:
-                _write_output_variable(io["nc_file"], varname, var_1D, time_index, io["output_grid"], column)
+            _write_output_variable(io["nc_file"], varname, OUTFILE["TEMP"][varname], time_index, grid, column)
 
     # Close the NetCDF file at the final time step
-    if is_final_time_step(t, time) and gather.is_root:
+    if is_final_time_step(t, time):
         io["nc_file"].close()
 
     return io, OUTFILE

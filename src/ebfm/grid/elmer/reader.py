@@ -10,8 +10,8 @@ import argparse
 import numpy as np
 from numpy.typing import NDArray
 
-from ebfm.elmer.mesh import TriangleMesh
-import ebfm.elmer.parser
+from ebfm.grid.elmer.mesh import TriangleMesh
+import ebfm.grid.elmer.parser
 
 import logging
 
@@ -58,8 +58,8 @@ def read_elmer_mesh(
     ), f"Mesh file {elements_file} does not exist. Please ensure that this file exists in {mesh_root}."
 
     # Parse header, nodes, and elements files
-    n_vertices, n_cells = ebfm.elmer.parser.parse_header(header_file)
-    global_vertex_ids, x_vertices, y_vertices, z_vertices = ebfm.elmer.parser.parse_nodes(nodes_file)
+    n_vertices, n_cells = ebfm.grid.elmer.parser.parse_header(header_file)
+    global_vertex_ids, x_vertices, y_vertices, z_vertices = ebfm.grid.elmer.parser.parse_nodes(nodes_file)
     local_vertex_ids = range(len(global_vertex_ids))  # use [0,1,...,n_vertices-1] to identify vertices locally
 
     assert (
@@ -75,7 +75,7 @@ def read_elmer_mesh(
         len(z_vertices) == n_vertices
     ), f"Number of vertices in nodes file ({len(z_vertices)}) does not match the header ({n_vertices})."
 
-    global_cell_ids, global_cell_to_vertex = ebfm.elmer.parser.parse_elements(elements_file)
+    global_cell_ids, global_cell_to_vertex = ebfm.grid.elmer.parser.parse_elements(elements_file)
 
     vertex_l2g = {
         loc: glob for loc, glob in zip(local_vertex_ids, global_vertex_ids)
@@ -108,6 +108,9 @@ def read_dem_xios(dem_file: Path, mesh: TriangleMesh):
     and maps to cell centers via arithmetic averaging of scalar field values.
     (For coordinate averaging, see mesh._compute_cell_centers() which uses spherical geometry.)
 
+    The file stores the values by Elmer node id: the value of node id i is at position i - 1. The mesh may hold only
+    part of the nodes, e.g. the partition of one MPI rank.
+
     Args:
         dem_file (Path): Path to the DEM NetCDF file.
         mesh (TriangleMesh): Mesh object with vertex and cell information
@@ -118,16 +121,21 @@ def read_dem_xios(dem_file: Path, mesh: TriangleMesh):
 
     import netCDF4
 
-    nc = netCDF4.Dataset(dem_file)
+    with netCDF4.Dataset(dem_file) as nc:
+        # Read node data from nc file
+        zs_nodes = np.squeeze(nc["zs"][:]).data
+        h_nodes = np.squeeze(nc["h"][:]).data
 
-    # Read vertex data from nc file
-    zs_vertices = np.squeeze(nc["zs"][:]).data
-    h_vertices = np.squeeze(nc["h"][:]).data
+    n_nodes = len(zs_nodes)
+    if mesh.vertex_ids.min() < 1 or mesh.vertex_ids.max() > n_nodes:
+        raise ValueError(
+            f"The Elmer mesh has node ids {mesh.vertex_ids.min()}..{mesh.vertex_ids.max()}, but {dem_file} has values "
+            f"for node ids 1..{n_nodes} only."
+        )
 
-    assert len(zs_vertices) == len(mesh.x_vertices), (
-        f"Surface mesh ({len(zs_vertices)} vertices) and Elmer mesh "
-        f"({len(mesh.x_vertices)} vertices) do not have the same number of vertices"
-    )
+    # Values of the mesh's vertices, in the order of its local vertex indices
+    zs_vertices = zs_nodes[mesh.vertex_ids - 1]
+    h_vertices = h_nodes[mesh.vertex_ids - 1]
 
     # Map vertex values to cell centers by arithmetic averaging (scalar fields)
     n_cells = mesh.cell_to_vertex.shape[0]

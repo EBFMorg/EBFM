@@ -2,7 +2,8 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Collect the columns that the ranks of EBFM's communicator hold on one rank, e.g. to write them to a file."""
+"""Collect the columns that the ranks of EBFM's communicator hold on one rank, e.g. to fit the lapse rate over the
+whole domain."""
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,14 +18,15 @@ class ColumnGather:
     Every rank holds a subset of the columns, identified by their ids (grid["column_id"], see ebfm.core.grid).
     The root rank receives the columns of all ranks sorted by id.
 
-    Construction and every gather are collective: all ranks of the communicator must take part, in the same
-    order. With a single rank, nothing is communicated and the gathers return their input unchanged.
+    Construction and every gather are collective: all ranks of the communicator must take part, in the
+    same order. With a single rank, nothing is communicated and they return their input unchanged.
     """
 
     def __init__(self, comm: Comm, column_ids: NDArray[np.integer], root: int = 0):
         """
         @param[in] comm communicator whose ranks hold the columns
         @param[in] column_ids ids of the columns this rank holds (grid["column_id"]); no other rank may hold them
+                              (see ebfm.core.grid.validate_grid_distribution)
         @param[in] root rank that receives the gathered arrays
         """
         self.comm = comm

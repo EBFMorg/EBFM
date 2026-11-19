@@ -191,43 +191,11 @@ path/to/your/elmer/MESH/
 └── mesh.nodes
 ```
 
-The option `--is-partitioned-elmer-mesh` will tell EBFM that the provided Elmer
-mesh is a partitioned mesh. A partitioned mesh file follows the structure:
-
-```
-path/to/your/elmer/mesh
-    └── MESH
-        ├── mesh.boundary
-        ├── mesh.elements
-        ├── mesh.header
-        ├── mesh.nodes
-        └── partitioning.128
-            ├── part.1.boundary
-            ├── part.1.elements
-            ├── part.1.header
-            ├── part.1.nodes
-            ...
-            ├── part.128.boundary
-            ├── part.128.elements
-            ├── part.128.header
-            └── part.128.nodes
-```
-
-Usage example for partitioned mesh:
-
-```sh
-ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --use-part 42 --elmer-mesh-crs-epsg 3413
-```
-
-On several MPI ranks, `--use-part` is not allowed: rank i computes the partition i + 1, e.g. the partitions 1 to 4 with:
-
-```sh
-mpirun -n 4 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --elmer-mesh-crs-epsg 3413
-```
-
-Besides a partitioned mesh, only a MATLAB grid runs on several MPI ranks (see [Running on several MPI ranks](#running-on-several-mpi-ranks)).
-
-Note: The partitioned mesh is not included in this repository.
+On N MPI ranks, EBFM expects a partitioning of the mesh into N partitions at
+`MESH/partitioning.N`, e.g. as ElmerGrid writes it, or it will raise an error.
+The option `--create-partitioning` tells EBFM to create its own partitioning
+there in a preprocessing step if necessary (see
+[Running on several MPI ranks](#running-on-several-mpi-ranks)).
 
 ### Getting the example data
 
@@ -246,14 +214,14 @@ Once available, you can either copy or symlink the required files into the
 using the CLI arguments shown above.
 
 
-### Using `reader.py` to amend elevation data to `examples/greenland_mesh_v0`
+### Using `ebfm.grid.elmer.reader` to amend elevation data to `examples/greenland_mesh_v0`
 
-The helper script `reader.py` can be used to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
+The module `ebfm.grid.elmer.reader` can be run standalone to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
 
 Assuming the example data has been copied into the `examples/` directory as described above, you can run the following command from the repository root:
 
 ```sh
-python3 src/ebfm/reader.py examples/greenland_mesh_v0/MESH examples/BedMachineGreenland-v5.nc --outpath examples/greenland_mesh_v0_with_DEM/MESH --elmer-mesh-crs-epsg 3413
+python -m ebfm.grid.elmer.reader examples/greenland_mesh_v0/MESH examples/BedMachineGreenland-v5.nc --outpath examples/greenland_mesh_v0_with_DEM/MESH --elmer-mesh-crs-epsg 3413
 ```
 
 This will write the updated mesh to a new directory. The path `examples/greenland_mesh_v0_with_DEM` should not already exist. The original `examples/greenland_mesh_v0/MESH` directory is copied and left unchanged.
@@ -261,7 +229,7 @@ This will write the updated mesh to a new directory. The path `examples/greenlan
 Alternatively, you can modify the mesh directly in place, which overwrites `mesh.nodes`:
 
 ```sh
-python3 src/ebfm/reader.py examples/greenland_mesh_v0/MESH examples/BedMachineGreenland-v5_lo.nc --in-place --elmer-mesh-crs-epsg 3413
+python -m ebfm.grid.elmer.reader examples/greenland_mesh_v0/MESH examples/BedMachineGreenland-v5_lo.nc --in-place --elmer-mesh-crs-epsg 3413
 ```
 
 The resulting mesh can then be used directly with EBFM similar to the example with the MATLAB file from above:
@@ -286,20 +254,50 @@ ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart --re
 
 Note that it is necessary to provide a `--start-time` consistent with the given restart file.
 
-### Running on several MPI ranks
+A restart file holds the columns of the whole grid together with their ids
+(`column_id`). A restart file without `column_id`, written by an older version
+of EBFM, holds the columns in the order of the grid.
 
-EBFM splits a MATLAB grid over the MPI ranks of a run (requires `pip install 'ebfm[mpi]'`):
+A run on N MPI ranks writes and reads a directory of restart files instead, one
+per partition, e.g.
+`examples/restart/restart_1979-01-02T00:00:00Z/partitioning.4/part.1.nc`.
+
+To merge the restart files of the partitions into a single restart file,
+`examples/restart/restart_1979-01-02T00:00:00Z.nc`, from which a run on a
+single rank starts, run:
 
 ```sh
-mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
+python -m ebfm.io.merge examples/restart/restart_1979-01-02T00:00:00Z/partitioning.4
 ```
 
-* Each rank computes a contiguous block of the columns, the first block on rank 0.
-* Rank 0 writes the output file and `--dump-reference` for all ranks. They are
-  identical to those of a run on a single rank.
-* Not supported on several ranks, and rejected with an error: shading,
-  `--forcing-dir`, `--restart-dir`/`--restart-init`, and grids other than a
-  MATLAB grid or a partitioned Elmer mesh.
+To split a single restart file into the restart files of the partitions of a
+partitioning, here `examples/restart/restart_1979-01-02T00:00:00Z/partitioning.128`
+for an Elmer mesh partitioned into 128 partitions, run:
+
+```sh
+python -m ebfm.io.split_restart examples/restart/restart_1979-01-02T00:00:00Z.nc path/to/MESH/partitioning.128
+```
+
+### Running on several MPI ranks
+
+EBFM runs on several MPI ranks (requires `pip install 'ebfm[mpi]'`):
+
+```sh
+mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --create-partitioning --no-shading
+```
+
+* On N ranks, EBFM reads the grid from its partitioning into N partitions, one
+  per rank: `MESH/partitioning.N` of an Elmer mesh `MESH` (see above), and
+  `GRID.partitioning.N` next to a MATLAB or NetCDF grid file `GRID.mat` or
+  `GRID.nc`. `--create-partitioning` creates it if it does not exist, by
+  splitting the grid into N contiguous blocks of columns.
+* Every rank writes the output and restart files of its own partition, and
+  `python -m ebfm.io.merge` merges them into the file of a run on a single
+  rank.
+* Not supported on several ranks, and rejected with an error: shading and
+  `--forcing-dir`.
+* `--no-check-grid-distribution` skips the start-up check that every column is
+  held by exactly one rank.
 
 ### Performance and Profiling Runs
 
@@ -332,16 +330,20 @@ be run in a MPMD (multiple process multiple data) run.
 Follow the install instructions from above and run the example command for a coupled simulation with Elmer/Ice and ICON:
 
 ```sh
-mpirun -np 1 ebfm \
-  --elmer-mesh $MESHES/greenland_mesh_v0/MESH/partitioning.128/ \
+mpirun -np 4 ebfm \
+  --elmer-mesh $MESHES/greenland_mesh_v0/MESH --create-partitioning \
   --netcdf-dem-mesh $DATA/BedMachineGreenland-v5.nc \
-  --is-partitioned-elmer-mesh --use-part 1 \
   --coupler-config $CPL_CONFIG --couple-to-elmer-ice --couple-to-icon-atmo \
   : \
-  -np 1 $ELMER_ROOT/src/elmer_dummy_f.x $MESHES/greenland_mesh_v0/MESH/partitioning.128 1 $CPL_CONFIG \
+  -np 2 $ELMER_ROOT/src/elmer_dummy_f.x $MESHES/greenland_mesh_v0/MESH/partitioning.128 128 $CPL_CONFIG \
   : \
   -np 1 $ICON_ROOT/src/icon_dummy.x $MESHES/icon_grid_0054_R02B08_G.nc $DATA/mbe3064_atm_elmer_monmean_1979.nc $DATA/varlist_elmerfile
 ```
+
+The components do not need the same partitioning of the mesh, since YAC matches
+the cells by their global ids: here EBFM runs on 4 ranks on
+`MESH/partitioning.4`, which it creates if needed, and the Elmer/Ice dummy on 2
+ranks on the 128 partitions of `MESH/partitioning.128`, 64 per rank.
 
 Be aware that the command above requires setting a few environment variables.
 Assuming your project is structured following [this repository](https://gitlab.dkrz.de/TerraDT/ebfm_dummy),

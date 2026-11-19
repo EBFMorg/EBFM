@@ -53,10 +53,12 @@ EBFM reads two variables from the file:
 * `zs`: surface elevation (m)
 * `h`: ice thickness (m)
 
-Both have the dimensions `(time, nmesh2D_node)` with a single time step and hold one value per mesh node, in the order
-of `mesh.nodes`. EBFM averages the three node values of each element to obtain the elevation and ice thickness of the
-corresponding column and treats columns with more than 1 m of ice as glacier. The file also contains the node
-coordinates `x` and `y` (EPSG:3413), which agree with `mesh.nodes` and allow to check the node order.
+Both have the dimensions `(time, nmesh2D_node)` with a single time step and hold one value per mesh node, stored by
+Elmer node id: the value of node id `i` is at position `i - 1`. In `greenland_mesh_v0` the node ids run from 1 in the
+order of `mesh.nodes`, so this is also the order of `mesh.nodes`. EBFM averages the three node values of each element to
+obtain the elevation and ice thickness of the corresponding column and treats columns with more than 1 m of ice as
+glacier. The file also contains the node coordinates `x` and `y` (EPSG:3413), which agree with `mesh.nodes` and allow to
+check the node order.
 
 The original file was written by Elmer/Ice v9.0 (Rev: c4a78ac59) with the `XIOSOutputSolver`. The relevant part of
 the XIOS context is:

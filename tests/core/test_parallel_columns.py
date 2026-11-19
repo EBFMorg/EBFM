@@ -2,7 +2,8 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Columns distributed over several MPI ranks are gathered on one rank in column id order and reduced over all ranks."""
+"""Columns distributed over several MPI ranks are held by exactly one rank each, gathered on one rank in column id
+order and reduced over all ranks."""
 
 import importlib.util
 import os
@@ -16,7 +17,7 @@ import pytest
 
 from ebfm.core.comm import defaultComm
 from ebfm.core.comm.gather import ColumnGather
-from ebfm.core.grid import domain_mean
+from ebfm.core.grid import domain_mean, validate_grid_distribution
 
 COMM_TESTS = Path(__file__).resolve().parent / "comm"
 TIMEOUT = 120
@@ -68,3 +69,20 @@ def test_domain_mean_on_three_ranks():
     assert result.returncode == 0, result.stdout + result.stderr
     for rank in range(3):
         assert f"rank {rank}: ok" in result.stdout, result.stdout + result.stderr
+
+
+def test_single_rank_holds_every_column():
+    validate_grid_distribution({"column_id": np.array([4, 2, 9])}, defaultComm)  # must not raise
+
+
+@requires_mpirun
+@pytest.mark.parametrize(
+    "mode, expected",
+    [("distinct", "ok"), ("duplicate", "Some columns are held by more than one of the 3 MPI ranks")],
+)
+def test_grid_distribution_on_three_ranks(mode, expected):
+    result = _mpirun(3, "validate_grid_distribution.py", mode)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    for rank in range(3):
+        assert f"rank {rank}: {expected}" in result.stdout, result.stdout + result.stderr

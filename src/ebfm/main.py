@@ -18,6 +18,7 @@ from ebfm.core import (
 )
 from ebfm.core import LOOP_write_to_file, FINAL_create_restart_file
 from ebfm.core.comm.gather import ColumnGather
+from ebfm.core.grid import validate_grid_distribution
 from ebfm.core.config import CouplingConfig, GridConfig, TimeConfig, ForcingConfig, OutputConfig
 from ebfm.core.logger import Logger, setup_logging, log_levels_map, getLogger
 from ebfm.core.cli import (
@@ -25,12 +26,11 @@ from ebfm.core.cli import (
     parse_cli_args,
     resolve_numba_threads,
     validate_shading_coupling_compat,
-    validate_grid_parallel_compat,
-    validate_use_part_parallel_compat,
     validate_forcing_parallel_compat,
-    validate_restart_parallel_compat,
+    validate_partition_count,
     validate_shading_parallel_compat,
     validate_output_frequency_time_step_compat,
+    resolve_partitioning,
 )
 
 import ebfm.coupling
@@ -177,6 +177,8 @@ def _main_impl():
     else:
         ebfm_comm = ebfm.core.comm.defaultComm
 
+    is_parallel_run = ebfm_comm.size > 1
+
     coupler_cls = ebfm.coupling.select_coupler_class(coupling_config)
     coupler = coupler_cls(coupling_config=coupling_config)
 
@@ -193,12 +195,8 @@ def _main_impl():
 
     forcing_config = ForcingConfig(coupling_config, args)
 
-    # Ensure --use-part is only used in runs on a single rank.
-    validate_use_part_parallel_compat(args, ebfm_comm)
-
-    if not hasattr(args, "use_part"):
-        # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
-        args.use_part = ebfm_comm.rank + 1
+    # On several ranks, the grid is read from its partitioning with one partition per rank
+    resolve_partitioning(args, ebfm_comm, logger)
 
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
     if args.with_numba:
@@ -224,26 +222,23 @@ def _main_impl():
     logger.debug("Reading configuration and checking for consistency.")
 
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    grid_config = GridConfig(args, ebfm_comm.size, ebfm_comm.rank)
+    grid_config = GridConfig(args)
 
     # Ensure shading routine is only used in uncoupled runs.
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.
     validate_shading_coupling_compat(grid_config, coupling_config)
 
-    # Ensure a run on several ranks uses a partitioned mesh.
-    validate_grid_parallel_compat(grid_config, ebfm_comm)
-
     # Ensure forcing files are only read in runs on a single rank.
     validate_forcing_parallel_compat(args, ebfm_comm)
-
-    # Ensure restart files are only read and written in runs on a single rank.
-    validate_restart_parallel_compat(args, ebfm_comm)
 
     # Ensure shading routine is only used in runs on a single rank.
     validate_shading_parallel_compat(grid_config, ebfm_comm)
 
     # Ensure every output record covers a whole number of time steps.
     validate_output_frequency_time_step_compat(args, time_config)
+
+    # Each rank computes exactly one partition of a partitioned mesh
+    validate_partition_count(grid_config, ebfm_comm)
 
     logger.debug("Successfully completed consistency checks.")
 
@@ -256,12 +251,21 @@ def _main_impl():
     set_random_seed(logger, args.random_seed, ebfm_comm)
 
     C = INIT.init_constants()
-    grid = INIT.init_grid(grid, io, grid_config, ebfm_comm)
+    grid = INIT.init_grid(grid, grid_config, ebfm_comm)
 
-    # Rank 0 collects the columns of all ranks, e.g. to write them to the output file or for --dump-reference
+    # Each rank must compute its own columns, otherwise the ranks would repeat each other's work
+    if args.check_grid_distribution and is_parallel_run:
+        validate_grid_distribution(grid, ebfm_comm)
+
+    # Rank 0 collects the columns of all ranks for the lapse rate of the whole domain, --print-diagnostics and
+    # --dump-reference. Every rank writes the output and restart files of its own columns.
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
-    if ebfm_comm.size > 1 and not grid["is_partitioned"]:
-        logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
+
+    if is_parallel_run and ebfm_comm.rank == 0:
+        logger.warning(
+            "The lapse rate of potential temperature is fitted over the columns of all ranks, which synchronizes all "
+            f"{ebfm_comm.size} ranks every time step."
+        )
 
     OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 
@@ -395,25 +399,17 @@ def _main_impl():
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')
 
-        # Needed by FINAL_create_restart_file.main(OUT, io). The grid carries the elevation of the current
+        # Needed by FINAL_create_restart_file.main. The grid carries the elevation of the current
         # time step, whether it was read during initialization or received from Elmer/Ice just above.
         OUT["x"] = grid["x"]
         OUT["y"] = grid["y"]
         OUT["surface_elevation"] = grid["z"]
 
-        # Write output to files (for unpartitioned grids only; see the warning emitted before the time loop)
-        # TODO: partitioned output should be supported in a dedicated parallel-safe writer.
-        if not grid["is_partitioned"]:
-            io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, column_gather)
-        else:
-            logger.warning("Skipping writing output to file for partitioned runs.")
+        # Write output to files (see the warning emitted before the time loop)
+        io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
 
     # Write restart file
-    # TODO: should be supported for all cases to avoid case distinction here
-    if not grid["is_partitioned"]:
-        FINAL_create_restart_file.main(OUT, io, args.restart_dir)
-    else:
-        logger.warning("Skipping writing of restart file for partitioned runs.")
+    FINAL_create_restart_file.main(OUT, io, grid["column_id"])
 
     logger.info("Time loop completed.")
 

@@ -27,6 +27,8 @@ from ebfm.core.comm import mpi_available
 from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ, iso8601
 from ebfm.core.grid import GridInputType
 from ebfm.core.logger import log_levels_map
+import ebfm.grid.elmer.partitioning as elmer_partitioning
+import ebfm.grid.structured.partitioning as structured_partitioning
 
 # Module-level parser reference, set by parse_cli_args().
 # Allows post-parse validation functions to call parser.error() without
@@ -187,7 +189,6 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     mesh_opts = {
         grid_type: f"--{arg_dest.replace('_', '-')}" for grid_type, arg_dest in GridConfig.mesh_arg_dests.items()
     }
-    partitioned_elmer_mesh_opt = "--is-partitioned-elmer-mesh"
     netcdf_dem_mesh_opt = "--netcdf-dem-mesh"
     fill_missing_elevation_opt = "--fill-missing-elevation"
 
@@ -238,7 +239,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "--netcdf-dem-mesh-unstructured",
         type=Path,
         help="Path to an Elmer/Ice XIOS output file with surface elevation (zs) and ice thickness (h) at the nodes "
-        f"of the {mesh_opts[GridInputType.ELMER]}, in the order of its mesh.nodes. "
+        f"of the {mesh_opts[GridInputType.ELMER]}, stored by node id (node id i at position i - 1). "
         f"Optional if using {mesh_opts[GridInputType.ELMER]}.",
     )
 
@@ -377,17 +378,21 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     )
 
     parallel_group.add_argument(
-        partitioned_elmer_mesh_opt,
+        "--create-partitioning",
         action="store_true",
-        help="Indicate if the provided Elmer mesh is partitioned for parallel runs.",
+        help="On N MPI ranks, create the partitioning of the grid into N partitions if it does not exist: "
+        "MESH/partitioning.N for --elmer-mesh MESH, GRID.partitioning.N for --matlab-mesh or --netcdf-mesh "
+        "GRID.mat or GRID.nc. The grid is split into N contiguous blocks of cells (see ebfm.grid.elmer.partitioning "
+        "and ebfm.grid.structured.partitioning). Later runs reuse it. Elmer/Ice cannot run on it, so it blocks an "
+        "Elmer/Ice run on N ranks with the same mesh directory.",
     )
 
     parallel_group.add_argument(
-        "--use-part",
-        type=int,
-        default=argparse.SUPPRESS,  # To not print (default: ...) in --help
-        help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. "
-        "If not provided, the MPI rank + 1 will be used as partition ID. Only allowed in runs on a single MPI rank.",
+        "--check-grid-distribution",
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Check before the time loop that every column is held by exactly one MPI rank. The check "
+        "communicates the ids of all columns; skip it once a setup is known to distribute its grid correctly.",
     )
 
     logger_group = parser.add_argument_group("logging configuration")
@@ -492,12 +497,6 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     args = parser.parse_args(args)
 
     # Option compatibility checks — all user-facing, produce actionable error messages.
-    if args.is_partitioned_elmer_mesh and getattr(args, GridConfig.mesh_arg_dests[GridInputType.ELMER], None) is None:
-        parser.error(f"{partitioned_elmer_mesh_opt} requires {mesh_opts[GridInputType.ELMER]}")
-
-    if args.is_partitioned_elmer_mesh and args.netcdf_dem_mesh is None:
-        parser.error(f"{partitioned_elmer_mesh_opt} requires {netcdf_dem_mesh_opt}")
-
     if args.fill_missing_elevation and getattr(args, GridConfig.mesh_arg_dests[GridInputType.NETCDF], None) is None:
         parser.error(f"{fill_missing_elevation_opt} requires {mesh_opts[GridInputType.NETCDF]}")
 
@@ -521,8 +520,6 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
 
     _mpi_opts = {
         "--local-group-label": hasattr(args, "local_group_label") and args.local_group_label != args.component_name,
-        "--is-partitioned-elmer-mesh": args.is_partitioned_elmer_mesh,
-        "--use-part": hasattr(args, "use_part"),
     }
     active_mpi_opts = [opt for opt, active in _mpi_opts.items() if active]
     if active_mpi_opts and not mpi_available:
@@ -592,53 +589,6 @@ def validate_shading_parallel_compat(grid_config, comm) -> None:
         )
 
 
-def validate_grid_parallel_compat(grid_config, comm) -> None:
-    """Check that a run on several MPI ranks uses a grid that runs there.
-
-    EBFM splits a MATLAB grid over the ranks; of a partitioned Elmer mesh, each rank computes one partition.
-
-    Must be called on every rank of comm.
-
-    @param[in] grid_config resolved GridConfig
-    @param[in] comm        EBFM's MPI communicator
-    """
-    if comm.size == 1:
-        # Every grid runs on a single rank
-        return
-
-    if grid_config.grid_type is GridInputType.MATLAB:
-        # EBFM splits the columns over the ranks
-        return
-
-    if grid_config.grid_type is GridInputType.NETCDF:
-        rejected_grid = "--netcdf-mesh"
-    elif not grid_config.is_partitioned:
-        rejected_grid = "--elmer-mesh without --is-partitioned-elmer-mesh"
-    else:
-        return
-
-    _cli_error(
-        f"{rejected_grid} is not supported for runs on several MPI ranks ({comm.size} ranks). "
-        "Only --matlab-mesh and a partitioned Elmer mesh (--is-partitioned-elmer-mesh) run on several ranks. "
-        "Please run on a single rank."
-    )
-
-
-def validate_use_part_parallel_compat(args: Namespace, comm) -> None:
-    """Check that --use-part is not given in a run on several MPI ranks, where every rank would compute it.
-
-    Must be called on every rank of comm, before args.use_part defaults to the rank's partition.
-
-    @param[in] args parsed CLI arguments
-    @param[in] comm EBFM's MPI communicator
-    """
-    if hasattr(args, "use_part") and comm.size > 1:
-        _cli_error(
-            f"--use-part is not supported for runs on several MPI ranks ({comm.size} ranks), since every rank would "
-            f"compute partition {args.use_part}. Please leave out --use-part: rank i then computes partition i + 1."
-        )
-
-
 def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
     """Check that no forcing files are read in a run on several MPI ranks.
 
@@ -667,16 +617,74 @@ def validate_output_frequency_time_step_compat(args: Namespace, time_config) -> 
         )
 
 
-def validate_restart_parallel_compat(args: Namespace, comm) -> None:
-    """Check that no restart files are read or written in a run on several MPI ranks.
+def validate_partition_count(grid_config, comm) -> None:
+    """Check that the partitioning of the grid has exactly one partition per MPI rank.
 
     Must be called on every rank of comm.
 
-    @param[in] args parsed CLI arguments
-    @param[in] comm EBFM's MPI communicator
+    @param[in] grid_config resolved GridConfig
+    @param[in] comm        EBFM's MPI communicator
     """
-    if (args.restart_dir is not None or args.restart_init) and comm.size > 1:
-        _cli_error(
-            f"Restart files (--restart-dir, --restart-init) are not supported for runs on several MPI ranks "
-            f"({comm.size} ranks). Please run on a single rank."
+    if not grid_config.is_partitioned or grid_config.num_partitions == comm.size:
+        return
+
+    _cli_error(
+        f"The partitioning of the grid has {grid_config.num_partitions} partitions, but EBFM runs on {comm.size} MPI "
+        "ranks. Each rank computes exactly one partition."
+    )
+
+
+def resolve_partitioning(args: Namespace, comm, logger) -> None:
+    """Make a run on N > 1 MPI ranks use the partitioning of its grid into N partitions.
+
+    The partitioning of an Elmer mesh MESH is MESH/partitioning.N, that of a MATLAB or NetCDF grid file GRID.mat or
+    GRID.nc is GRID.partitioning.N. If it does not exist, rank 0 creates it with --create-partitioning, and the run
+    stops with an error otherwise. Sets args.partitioning to it, None on a single rank, and args.partition_id to the
+    partition this rank computes, rank + 1, so must be called before GridConfig is built, on every rank of comm.
+
+    @param[in,out] args parsed CLI arguments
+    @param[in]     comm EBFM's MPI communicator
+    @param[in]     logger logger for the partitioning used
+    """
+    args.partitioning = None
+    args.partition_id = comm.rank + 1
+    if comm.size == 1:
+        return
+
+    (grid_type,) = [t for t, dest in GridConfig.mesh_arg_dests.items() if getattr(args, dest, None) is not None]
+    grid_path = getattr(args, GridConfig.mesh_arg_dests[grid_type])
+    if grid_type is GridInputType.ELMER:
+        partitioning = elmer_partitioning.partitioning_dir(grid_path, comm.size)
+        create = elmer_partitioning.partition_elmer_mesh
+        coupling_hint = (
+            " Elmer/Ice cannot run on it, so if Elmer/Ice runs on as many ranks with this mesh directory, partition "
+            "the mesh with ElmerGrid instead."
         )
+    else:
+        partitioning = structured_partitioning.partitioning_dir(grid_path, comm.size)
+        create = structured_partitioning.partition_grid
+        coupling_hint = ""
+
+    if not partitioning.is_dir():
+        if not args.create_partitioning:
+            _cli_error(
+                f"EBFM runs on {comm.size} MPI ranks, so it needs a partitioning of the grid {grid_path} with one "
+                f"partition per rank, {partitioning}, which does not exist. Pass --create-partitioning to let EBFM "
+                f"create it there; later runs reuse it.{coupling_hint}"
+            )
+        error = None
+        if comm.rank == 0:
+            logger.info(f"Creating the partitioning {partitioning} of the grid...")
+            try:
+                create(grid_path, comm.size)
+            except FileExistsError:
+                pass  # created by another run in the meantime
+            except (OSError, ValueError) as e:
+                error = f"Could not create the partitioning {partitioning}: {e}"
+        error = comm.bcast(error, root=0)
+        if error:
+            _cli_error(error)
+
+    if comm.rank == 0:
+        logger.info(f"Using the partitioning {partitioning} of the grid.")
+    args.partitioning = partitioning
