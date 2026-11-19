@@ -189,7 +189,6 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     mesh_opts = {
         grid_type: f"--{arg_dest.replace('_', '-')}" for grid_type, arg_dest in GridConfig.mesh_arg_dests.items()
     }
-    partitioned_elmer_mesh_opt = "--is-partitioned-elmer-mesh"
     netcdf_dem_mesh_opt = "--netcdf-dem-mesh"
     fill_missing_elevation_opt = "--fill-missing-elevation"
 
@@ -379,27 +378,13 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     )
 
     parallel_group.add_argument(
-        partitioned_elmer_mesh_opt,
-        action="store_true",
-        help="Indicate that the provided Elmer mesh directory is a partitioning (part.<i>.* files), e.g. "
-        "MESH/partitioning.128. Without it, a run on N MPI ranks uses MESH/partitioning.N.",
-    )
-
-    parallel_group.add_argument(
         "--create-partitioning",
         action="store_true",
         help="On N MPI ranks, create the partitioning of the grid into N partitions if it does not exist: "
         "MESH/partitioning.N for --elmer-mesh MESH, GRID.partitioning.N for --matlab-mesh or --netcdf-mesh "
         "GRID.mat or GRID.nc. The grid is split into N contiguous blocks of cells (see ebfm.grid.elmer.partitioning "
-        "and ebfm.grid.structured.partitioning). Later runs reuse it. Elmer/Ice cannot run on such a partitioning.",
-    )
-
-    parallel_group.add_argument(
-        "--use-part",
-        type=int,
-        default=argparse.SUPPRESS,  # To not print (default: ...) in --help
-        help="If using a partitioned Elmer mesh, allows to specify which partition ID to use for this run. "
-        "If not provided, the MPI rank + 1 will be used as partition ID. Only allowed in runs on a single MPI rank.",
+        "and ebfm.grid.structured.partitioning). Later runs reuse it. Elmer/Ice cannot run on it, so it blocks an "
+        "Elmer/Ice run on N ranks with the same mesh directory.",
     )
 
     parallel_group.add_argument(
@@ -408,13 +393,6 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         action=argparse.BooleanOptionalAction,
         help="Check before the time loop that every column is held by exactly one MPI rank. The check "
         "communicates the ids of all columns; skip it once a setup is known to distribute its grid correctly.",
-    )
-
-    parallel_group.add_argument(
-        "--allow-partition-mismatch",
-        action="store_true",
-        help="Allow a number of MPI ranks that differs from the number of partitions of a partitioned Elmer mesh, "
-        "e.g. to compute only some partitions. Each rank still computes one partition.",
     )
 
     logger_group = parser.add_argument_group("logging configuration")
@@ -519,9 +497,6 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     args = parser.parse_args(args)
 
     # Option compatibility checks — all user-facing, produce actionable error messages.
-    if args.is_partitioned_elmer_mesh and getattr(args, GridConfig.mesh_arg_dests[GridInputType.ELMER], None) is None:
-        parser.error(f"{partitioned_elmer_mesh_opt} requires {mesh_opts[GridInputType.ELMER]}")
-
     if args.fill_missing_elevation and getattr(args, GridConfig.mesh_arg_dests[GridInputType.NETCDF], None) is None:
         parser.error(f"{fill_missing_elevation_opt} requires {mesh_opts[GridInputType.NETCDF]}")
 
@@ -545,8 +520,6 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
 
     _mpi_opts = {
         "--local-group-label": hasattr(args, "local_group_label") and args.local_group_label != args.component_name,
-        "--is-partitioned-elmer-mesh": args.is_partitioned_elmer_mesh,
-        "--use-part": hasattr(args, "use_part"),
     }
     active_mpi_opts = [opt for opt, active in _mpi_opts.items() if active]
     if active_mpi_opts and not mpi_available:
@@ -616,21 +589,6 @@ def validate_shading_parallel_compat(grid_config, comm) -> None:
         )
 
 
-def validate_use_part_parallel_compat(args: Namespace, comm) -> None:
-    """Check that --use-part is not given in a run on several MPI ranks, where every rank would compute it.
-
-    Must be called on every rank of comm, before args.use_part defaults to the rank's partition.
-
-    @param[in] args parsed CLI arguments
-    @param[in] comm EBFM's MPI communicator
-    """
-    if hasattr(args, "use_part") and comm.size > 1:
-        _cli_error(
-            f"--use-part is not supported for runs on several MPI ranks ({comm.size} ranks), since every rank would "
-            f"compute partition {args.use_part}. Please leave out --use-part: rank i then computes partition i + 1."
-        )
-
-
 def validate_forcing_parallel_compat(args: Namespace, comm) -> None:
     """Check that no forcing files are read in a run on several MPI ranks.
 
@@ -659,28 +617,21 @@ def validate_output_frequency_time_step_compat(args: Namespace, time_config) -> 
         )
 
 
-def validate_partition_count(args: Namespace, grid_config, comm, logger) -> None:
-    """Check that a partitioned Elmer mesh has exactly one partition per MPI rank.
+def validate_partition_count(grid_config, comm) -> None:
+    """Check that the partitioning of the grid has exactly one partition per MPI rank.
 
-    Must be called on every rank of comm. With --allow-partition-mismatch a mismatch is only a warning.
+    Must be called on every rank of comm.
 
-    @param[in] args        parsed CLI arguments
     @param[in] grid_config resolved GridConfig
     @param[in] comm        EBFM's MPI communicator
-    @param[in] logger      logger for the warning
     """
     if not grid_config.is_partitioned or grid_config.num_partitions == comm.size:
         return
 
-    message = (
-        f"The partitioned mesh has {grid_config.num_partitions} partitions, but EBFM runs on {comm.size} MPI "
-        "ranks. Each rank computes exactly one partition, so a run on "
-        f"{grid_config.num_partitions} ranks is needed to compute all of them."
+    _cli_error(
+        f"The partitioning of the grid has {grid_config.num_partitions} partitions, but EBFM runs on {comm.size} MPI "
+        "ranks. Each rank computes exactly one partition."
     )
-    if not args.allow_partition_mismatch:
-        _cli_error(f"{message} Pass --allow-partition-mismatch to run anyway.")
-    if comm.rank == 0:
-        logger.warning(message)
 
 
 def resolve_partitioning(args: Namespace, comm, logger) -> None:
@@ -688,15 +639,16 @@ def resolve_partitioning(args: Namespace, comm, logger) -> None:
 
     The partitioning of an Elmer mesh MESH is MESH/partitioning.N, that of a MATLAB or NetCDF grid file GRID.mat or
     GRID.nc is GRID.partitioning.N. If it does not exist, rank 0 creates it with --create-partitioning, and the run
-    stops with an error otherwise. Sets args.partitioning to it, and for an Elmer mesh also args.elmer_mesh and
-    args.is_partitioned_elmer_mesh, so must be called before GridConfig is built, on every rank of comm.
+    stops with an error otherwise. Sets args.partitioning to it, None on a single rank, and args.partition_id to the
+    partition this rank computes, rank + 1, so must be called before GridConfig is built, on every rank of comm.
 
     @param[in,out] args parsed CLI arguments
     @param[in]     comm EBFM's MPI communicator
     @param[in]     logger logger for the partitioning used
     """
     args.partitioning = None
-    if comm.size == 1 or args.is_partitioned_elmer_mesh:
+    args.partition_id = comm.rank + 1
+    if comm.size == 1:
         return
 
     (grid_type,) = [t for t, dest in GridConfig.mesh_arg_dests.items() if getattr(args, dest, None) is not None]
@@ -704,7 +656,10 @@ def resolve_partitioning(args: Namespace, comm, logger) -> None:
     if grid_type is GridInputType.ELMER:
         partitioning = elmer_partitioning.partitioning_dir(grid_path, comm.size)
         create = elmer_partitioning.partition_elmer_mesh
-        coupling_hint = " When coupling to Elmer/Ice, put the ElmerGrid partitioning of Elmer/Ice there instead."
+        coupling_hint = (
+            " Elmer/Ice cannot run on it, so if Elmer/Ice runs on as many ranks with this mesh directory, partition "
+            "the mesh with ElmerGrid instead."
+        )
     else:
         partitioning = structured_partitioning.partitioning_dir(grid_path, comm.size)
         create = structured_partitioning.partition_grid
@@ -733,6 +688,3 @@ def resolve_partitioning(args: Namespace, comm, logger) -> None:
     if comm.rank == 0:
         logger.info(f"Using the partitioning {partitioning} of the grid.")
     args.partitioning = partitioning
-    if grid_type is GridInputType.ELMER:
-        args.elmer_mesh = partitioning
-        args.is_partitioned_elmer_mesh = True

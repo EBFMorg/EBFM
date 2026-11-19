@@ -604,7 +604,7 @@ class TestMatlabGridPartitions(unittest.TestCase):
     def _init_grid(self, partition_id=None):
         args = parse_cli_args(["--matlab-mesh", str(self.grid_file), "--no-shading"])
         if partition_id is not None:
-            args.partitioning, args.use_part = self.partitioning, partition_id
+            args.partitioning, args.partition_id = self.partitioning, partition_id
         grid_config = GridConfig(args)
         grid, _, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
         return init_grid(grid, grid_config, defaultComm)

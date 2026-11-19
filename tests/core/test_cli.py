@@ -24,7 +24,6 @@ from ebfm.core.cli import (
     validate_partition_count,
     validate_shading_coupling_compat,
     validate_shading_parallel_compat,
-    validate_use_part_parallel_compat,
     resolve_partitioning,
 )
 
@@ -35,7 +34,6 @@ from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 _MATLAB = ["--matlab-mesh", "mesh.mat"]
 _ELMER = ["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413"]
 _CARRA2 = ["--netcdf-mesh", "mesh.nc"]
-_PARTITIONED_ELMER = _ELMER + ["--netcdf-dem-mesh", "mesh.nc", "--is-partitioned-elmer-mesh"]
 
 
 def _parse(*extra: str, base: list[str] = _MATLAB):
@@ -113,27 +111,6 @@ class TestElmerMeshConstraints(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "4326"])
         self.assertEqual(ctx.exception.code, 2)
-
-
-class TestPartitionedMeshConstraints(unittest.TestCase):
-    """--is-partitioned-elmer-mesh requires --elmer-mesh, with elevations from any source."""
-
-    def test_partitioned_without_elmer_mesh_rejected(self):
-        with self.assertRaises(SystemExit) as ctx:
-            parse_cli_args(_MATLAB + ["--is-partitioned-elmer-mesh"])
-        self.assertEqual(ctx.exception.code, 2)
-
-    @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
-    def test_partitioned_elmer_mesh_accepted_with_every_elevation_source(self):
-        elmer = ["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413", "--is-partitioned-elmer-mesh"]
-        cases = {
-            "mesh nodes": [],
-            "--netcdf-dem-mesh": ["--netcdf-dem-mesh", "mesh.nc"],
-            "--netcdf-dem-mesh-unstructured": ["--netcdf-dem-mesh-unstructured", "xios.nc"],
-        }
-        for name, dem_args in cases.items():
-            with self.subTest(name):
-                self.assertTrue(parse_cli_args(elmer + dem_args).is_partitioned_elmer_mesh)
 
 
 class TestDefaults(unittest.TestCase):
@@ -453,30 +430,6 @@ class TestValidateShadingParallelCompat(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 2)
 
 
-@unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
-class TestValidateUsePartParallelCompat(unittest.TestCase):
-    """validate_use_part_parallel_compat raises a CLI error for --use-part in a run on several ranks."""
-
-    def setUp(self):
-        # Ensure _parser is set by running a valid parse first.
-        parse_cli_args(_MATLAB)
-
-    def _validate(self, use_part, comm_size: int):
-        args = _parse(*(["--use-part", use_part] if use_part else []), base=_PARTITIONED_ELMER)
-        validate_use_part_parallel_compat(args, MagicMock(size=comm_size))
-
-    def test_use_part_on_single_rank_ok(self):
-        self._validate(use_part="42", comm_size=1)  # must not raise
-
-    def test_no_use_part_on_several_ranks_ok(self):
-        self._validate(use_part=None, comm_size=4)  # must not raise
-
-    def test_use_part_on_several_ranks_rejected(self):
-        with self.assertRaises(SystemExit) as ctx:
-            self._validate(use_part="42", comm_size=4)
-        self.assertEqual(ctx.exception.code, 2)
-
-
 class TestValidateForcingParallelCompat(unittest.TestCase):
     """validate_forcing_parallel_compat raises a CLI error when forcing files are read in a run on several ranks."""
 
@@ -501,38 +454,26 @@ class TestValidateForcingParallelCompat(unittest.TestCase):
 
 
 class TestValidatePartitionCount(unittest.TestCase):
-    """A partitioned mesh needs one MPI rank per partition, unless --allow-partition-mismatch is passed."""
+    """The partitioning of the grid needs one MPI rank per partition."""
 
     def setUp(self):
         # Ensure _parser is set by running a valid parse first.
         parse_cli_args(_MATLAB)
-        self.logger = MagicMock()
 
-    def _validate(self, is_partitioned=True, num_partitions=4, comm_size=4, rank=0, allow=False):
-        args = _parse(*(["--allow-partition-mismatch"] if allow else []))
+    def _validate(self, is_partitioned=True, num_partitions=4, comm_size=4):
         grid_config = MagicMock(is_partitioned=is_partitioned, num_partitions=num_partitions)
-        comm = MagicMock(size=comm_size, rank=rank)
-        validate_partition_count(args, grid_config, comm, self.logger)
+        validate_partition_count(grid_config, MagicMock(size=comm_size))
 
     def test_one_rank_per_partition_ok(self):
         self._validate()  # must not raise
-        self.logger.warning.assert_not_called()
 
-    def test_non_partitioned_mesh_ok(self):
+    def test_grid_that_is_not_partitioned_ok(self):
         self._validate(is_partitioned=False, num_partitions=1)  # must not raise
 
     def test_mismatch_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             self._validate(num_partitions=128)
         self.assertEqual(ctx.exception.code, 2)
-
-    def test_mismatch_allowed_warns_on_rank_0_only(self):
-        self._validate(num_partitions=128, allow=True)
-        self.logger.warning.assert_called_once()
-
-        self.logger.reset_mock()
-        self._validate(num_partitions=128, rank=1, allow=True)
-        self.logger.warning.assert_not_called()
 
 
 class TestResolvePartitioning(unittest.TestCase):
@@ -599,23 +540,18 @@ class TestResolvePartitioning(unittest.TestCase):
                     for suffix in suffixes[name]:
                         self.assertTrue((partitioning / f"part.{partition_id}.{suffix}").is_file())
 
-    def test_elmer_mesh_is_replaced_by_its_partitioning(self):
+    def test_rank_computes_partition_rank_plus_1(self):
         (self.mesh / "partitioning.3").mkdir()
+        args = parse_cli_args(self.cases["Elmer mesh"][0])
 
-        args = self._resolve(self.cases["Elmer mesh"][0])
+        resolve_partitioning(args, MagicMock(size=3, rank=2), self.logger)
 
-        self.assertEqual(args.elmer_mesh, self.mesh / "partitioning.3")
-        self.assertTrue(args.is_partitioned_elmer_mesh)
+        self.assertEqual(args.partition_id, 3)
 
-    def test_unpartitioned(self):
-        cases = {
-            "single rank": (self.cases["MATLAB grid"][0], [], 1),
-            "partitioned mesh": (self.cases["Elmer mesh"][0], ["--is-partitioned-elmer-mesh"], 3),
-        }
-        for name, (grid_args, extra_args, comm_size) in cases.items():
+    def test_single_rank_reads_the_whole_grid(self):
+        for name, (grid_args, _) in self.cases.items():
             with self.subTest(name):
-                args = self._resolve(grid_args, *extra_args, comm_size=comm_size)
-                self.assertIsNone(args.partitioning)
+                self.assertIsNone(self._resolve(grid_args, comm_size=1).partitioning)
 
 
 class TestCliCalendarArgument(unittest.TestCase):

@@ -26,7 +26,6 @@ from ebfm.core.cli import (
     parse_cli_args,
     resolve_numba_threads,
     validate_shading_coupling_compat,
-    validate_use_part_parallel_compat,
     validate_forcing_parallel_compat,
     validate_partition_count,
     validate_shading_parallel_compat,
@@ -196,13 +195,6 @@ def _main_impl():
 
     forcing_config = ForcingConfig(coupling_config, args)
 
-    # Ensure --use-part is only used in runs on a single rank.
-    validate_use_part_parallel_compat(args, ebfm_comm)
-
-    if not hasattr(args, "use_part"):
-        # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
-        args.use_part = ebfm_comm.rank + 1
-
     # On several ranks, the grid is read from its partitioning with one partition per rank
     resolve_partitioning(args, ebfm_comm, logger)
 
@@ -246,7 +238,7 @@ def _main_impl():
     validate_output_frequency_time_step_compat(args, time_config)
 
     # Each rank computes exactly one partition of a partitioned mesh
-    validate_partition_count(args, grid_config, ebfm_comm, logger)
+    validate_partition_count(grid_config, ebfm_comm)
 
     logger.debug("Successfully completed consistency checks.")
 

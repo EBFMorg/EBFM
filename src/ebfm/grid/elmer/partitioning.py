@@ -14,8 +14,9 @@ module if it is missing and --create-partitioning is given. To create it beforeh
     python -m ebfm.grid.elmer.partitioning MESH 4
     mpirun -np 4 ebfm --elmer-mesh MESH ...
 
-The partitions are not those of ElmerGrid and carry no boundary or shared-node files, so Elmer/Ice cannot run on
-them. When coupling to Elmer/Ice, partition the mesh with ElmerGrid instead.
+The partitions carry no boundary or shared-node files, so Elmer/Ice cannot run on them. EBFM and Elmer/Ice may run on
+different partitionings, but they look for them in the same place: if both run on N ranks with one mesh directory,
+partition the mesh with ElmerGrid instead.
 """
 
 import argparse

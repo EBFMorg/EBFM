@@ -54,7 +54,8 @@ requires_mpirun = pytest.mark.skipif(
 
 def _write_mesh(mesh_dir: Path) -> None:
     """
-    Write a rectangle of NX x NY squares, two triangles each, as an Elmer mesh and as N_PARTITIONS partitions of it.
+    Write a rectangle of NX x NY squares, two triangles each, as an Elmer mesh and as N_PARTITIONS partitions of it, in
+    mesh_dir/partitioning.N_PARTITIONS, where EBFM looks for them.
 
     Each partition is a contiguous block of elements, holding the nodes its elements use, so the element ids of the
     partitions, in rank order, are those of the whole mesh.
@@ -83,8 +84,9 @@ def _write_mesh(mesh_dir: Path) -> None:
         )
 
     write("mesh", elements)
+    (mesh_dir / f"partitioning.{N_PARTITIONS}").mkdir()
     for partition_id, part_elements in enumerate(np.array_split(np.arange(len(elements)), N_PARTITIONS), start=1):
-        write(f"part.{partition_id}", [elements[k] for k in part_elements])
+        write(f"partitioning.{N_PARTITIONS}/part.{partition_id}", [elements[k] for k in part_elements])
 
 
 def _write_dem(dem_file: Path) -> None:
@@ -144,7 +146,7 @@ def test_partitioned_run_equals_serial_run(tmp_path):
     _write_dem(tmp_path / "dem.nc")
 
     serial = _run(tmp_path, mesh_dir, 1, "--output-dir", "serial")
-    partitioned = _run(tmp_path, mesh_dir, N_PARTITIONS, "--is-partitioned-elmer-mesh", "--output-dir", "partitioned")
+    partitioned = _run(tmp_path, mesh_dir, N_PARTITIONS, "--output-dir", "partitioned")
 
     _assert_same_references(partitioned, serial)
 
@@ -171,7 +173,6 @@ def test_restart_files_of_partitioned_and_serial_runs(tmp_path):
         tmp_path,
         mesh_dir,
         N_PARTITIONS,
-        "--is-partitioned-elmer-mesh",
         "--restart-dir",
         "partitioned",
         "--output-dir",
@@ -183,7 +184,7 @@ def test_restart_files_of_partitioned_and_serial_runs(tmp_path):
 
     _tool("merge", restart_dir, "-o", tmp_path / "merged.nc")
     _assert_same_variables(restart_file, tmp_path / "merged.nc")
-    _tool("split_restart", restart_file, mesh_dir, "-o", tmp_path / "split")
+    _tool("split_restart", restart_file, mesh_dir / f"partitioning.{N_PARTITIONS}", "-o", tmp_path / "split")
     for part in restart_dir.iterdir():
         _assert_same_variables(part, tmp_path / "split" / part.name)
 
@@ -197,8 +198,8 @@ def test_restart_files_of_partitioned_and_serial_runs(tmp_path):
         return _run(tmp_path, mesh_dir, n_ranks, *times, *restart, *output, *args)
 
     serial = second_leg(1, "serial")
-    partitioned = second_leg(N_PARTITIONS, "partitioned", "--is-partitioned-elmer-mesh")
-    from_serial = second_leg(N_PARTITIONS, "from_serial", "--is-partitioned-elmer-mesh")
+    partitioned = second_leg(N_PARTITIONS, "partitioned")
+    from_serial = second_leg(N_PARTITIONS, "from_serial")
 
     _assert_same_references(partitioned, serial)
     _assert_same_references(from_serial, serial)

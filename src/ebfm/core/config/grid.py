@@ -70,7 +70,7 @@ class GridConfig:
         self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
 
         partitioning = getattr(args, "partitioning", None)
-        self.is_partitioned = args.is_partitioned_elmer_mesh or partitioning is not None
+        self.is_partitioned = partitioning is not None
         self.dem_file = None
         self.partition_id = None
         self.num_partitions = 1
@@ -106,9 +106,11 @@ class GridConfig:
             raise Exception("Invalid grid configuration.")
 
         if self.is_partitioned:
-            self.partition_id = args.use_part
+            self.partition_id = args.partition_id
             if self.is_unstructured:
-                self.num_partitions = len(list(Path(elmer_mesh).glob("part.*.header")))
+                # The partitioning holds the files of the partitions of the mesh, part.<i>.*
+                self.num_partitions = len(list(Path(partitioning).glob("part.*.header")))
+                self.mesh_file = Path(partitioning)
             else:
                 # A partition of a structured grid is a grid file of its own, read instead of the whole grid
                 self.num_partitions = len(list(Path(partitioning).glob(f"part.*{Path(self.mesh_file).suffix}")))

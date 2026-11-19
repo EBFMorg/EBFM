@@ -7,7 +7,6 @@ import unittest
 from pathlib import Path
 
 from ebfm.core.cli import parse_cli_args
-from ebfm.core.comm import mpi_available
 from ebfm.core.config import GridConfig
 
 _ELMER = ["--elmer-mesh-crs-epsg", "3413"]
@@ -26,14 +25,14 @@ class TestNumberOfPartitions(unittest.TestCase):
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
     def test_partitioned_mesh(self):
-        args = parse_cli_args(
-            ["--elmer-mesh", str(self.mesh), *_ELMER, "--is-partitioned-elmer-mesh", "--netcdf-dem-mesh", "dem.nc"]
-        )
-        args.use_part = 1
+        args = parse_cli_args(["--elmer-mesh", str(self.mesh.parent), *_ELMER])
+        args.partitioning, args.partition_id = self.mesh, 1
 
-        self.assertEqual(GridConfig(args).num_partitions, 3)
+        grid_config = GridConfig(args)
+
+        self.assertEqual(grid_config.num_partitions, 3)
+        self.assertEqual(grid_config.mesh_file, self.mesh)
 
     def test_non_partitioned_mesh(self):
         args = parse_cli_args(["--elmer-mesh", str(self.mesh), *_ELMER])
@@ -48,7 +47,7 @@ class TestNumberOfPartitions(unittest.TestCase):
                 for partition_id in range(1, 5):
                     (partitioning / f"part.{partition_id}{suffix}").touch()
                 args = parse_cli_args(grid_args)
-                args.partitioning, args.use_part = partitioning, 3
+                args.partitioning, args.partition_id = partitioning, 3
 
                 grid_config = GridConfig(args)
 
