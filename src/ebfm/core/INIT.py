@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from ebfm.grid.elmer.reader import read_elmer_mesh, read_dem, read_dem_xios
 
 from ebfm.grid.elmer.mesh import Mesh
-from ebfm.grid.structured.matlab import read_MATLAB_grid
+from ebfm.grid.structured.matlab import read_MATLAB_fields
 from ebfm.grid.structured.netcdf import read_NETCDF_grid
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, OutputConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
@@ -296,28 +296,9 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         # ---------------------------------------------------------------------
         # Read grid data
         if config.grid_type is GridInputType.MATLAB:
-            input_data = read_MATLAB_grid(config.mesh_file)
-
-            grid["x_2D"] = input_data["x"][0][0]
-            grid["y_2D"] = input_data["y"][0][0]
-            grid["z_2D"] = input_data["z"][0][0]
-            mask_2D = input_data["mask"][0][0]
-
-            # Flip grid E-W or N-S when needed
-            fy, _ = np.gradient(grid["y_2D"])
-
-            if fy[0, 0] < 0:
-                grid["x_2D"] = np.flipud(grid["x_2D"])
-                grid["y_2D"] = np.flipud(grid["y_2D"])
-                grid["z_2D"] = np.flipud(grid["z_2D"])
-                mask_2D = np.flipud(mask_2D)
-
-            _, fx = np.gradient(grid["x_2D"])
-            if fx[0, 0] < 0:
-                grid["x_2D"] = np.fliplr(grid["x_2D"])
-                grid["y_2D"] = np.fliplr(grid["y_2D"])
-                grid["z_2D"] = np.fliplr(grid["z_2D"])
-                mask_2D = np.fliplr(mask_2D)
+            fields = read_MATLAB_fields(config.mesh_file)
+            grid["x_2D"], grid["y_2D"], grid["z_2D"] = fields["x"], fields["y"], fields["z"]
+            mask_2D = fields["mask"]
 
             # Calculate latitude & longitude fields (from the original UTM coordinates)
             utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)

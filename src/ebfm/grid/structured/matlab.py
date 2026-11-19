@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import scipy.io as sio
 from numpy import dtype, ndarray
 
@@ -54,3 +55,27 @@ def read_MATLAB_grid(gridfile: Path):
         raise
 
     return input_data
+
+
+def read_MATLAB_fields(gridfile: Path) -> dict[str, np.ndarray]:
+    """
+    The 2-D fields of a MATLAB grid file, oriented so that y and x increase along the first and second axis.
+
+    The flat indices of the active cells (mask == 1) in these fields are the column ids of the grid.
+
+    Returns:
+        dict: 'x', 'y', 'z' and 'mask', 2D NumPy arrays as in read_MATLAB_grid.
+    """
+    input_data = read_MATLAB_grid(gridfile)
+    fields = {name: input_data[name][0][0] for name in ("x", "y", "z", "mask")}
+
+    # Flip grid E-W or N-S when needed
+    fy, _ = np.gradient(fields["y"])
+    if fy[0, 0] < 0:
+        fields = {name: np.flipud(values) for name, values in fields.items()}
+
+    _, fx = np.gradient(fields["x"])
+    if fx[0, 0] < 0:
+        fields = {name: np.fliplr(values) for name, values in fields.items()}
+
+    return fields
