@@ -9,24 +9,21 @@ import numpy as np
 
 import logging
 
-from .comm.gather import ColumnGather
 from .restart import COLUMN_ID_VARIABLE, RESTART_VARIABLES
 
 logger = logging.getLogger(__name__)
 
 
-def main(OUT, io, gather: ColumnGather):
+def main(OUT, io, column_ids: np.ndarray):
     """
-    Write the restart file (boot file) if io["writebootfile"] is set.
+    Write the restart file (boot file) of this rank's columns if io["writebootfile"] is set.
 
-    Collective over gather.comm: the root rank gathers the columns of all ranks one variable at a time and writes
-    them, ordered by column id, together with their ids. A gather over a single rank writes that rank's columns in
-    their own order, which is how every rank of a run on a partitioned mesh writes the file of its partition. Sets
-    OUT["timelastsnow_netCDF"] on every rank, also when no restart file is written.
+    Writes the restart variables together with the ids of the columns. Sets OUT["timelastsnow_netCDF"], also when no
+    restart file is written.
 
     @param[in] OUT model state of this rank's columns
     @param[in] io I/O settings: writebootfile and bootfileout, whose directory is created if it does not exist
-    @param[in] gather the columns written to the file
+    @param[in] column_ids ids of this rank's columns (grid["column_id"])
     """
     # float64 even if all times are whole days, for which date2num returns integers
     OUT["timelastsnow_netCDF"] = np.asarray(
@@ -41,24 +38,13 @@ def main(OUT, io, gather: ColumnGather):
     if not io["writebootfile"]:
         return
 
-    ncfile = None
-    if gather.is_root:
-        os.makedirs(Path(io["bootfileout"]).parent, exist_ok=True)
-        ncfile = Dataset(io["bootfileout"], "w", format="NETCDF4")
-
-    try:
+    os.makedirs(Path(io["bootfileout"]).parent, exist_ok=True)
+    with Dataset(io["bootfileout"], "w", format="NETCDF4") as ncfile:
         for var_name in RESTART_VARIABLES:
-            values = gather.gather(OUT[var_name])
-            if ncfile is not None:
-                _write_variable(ncfile, var_name, values)
-        if ncfile is not None:
-            _write_variable(ncfile, COLUMN_ID_VARIABLE, gather.column_ids)
-    finally:
-        if ncfile is not None:
-            ncfile.close()
+            _write_variable(ncfile, var_name, OUT[var_name])
+        _write_variable(ncfile, COLUMN_ID_VARIABLE, np.asarray(column_ids))
 
-    if gather.is_root:
-        logger.info(f"Boot file saved to {io['bootfileout']}")
+    logger.info(f"Boot file saved to {io['bootfileout']}")
 
 
 def _write_variable(ncfile: Dataset, var_name: str, var_data: np.ndarray) -> None:

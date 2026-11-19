@@ -12,7 +12,6 @@ Restart files of a partitioned Elmer mesh are also tested in test_partitioned_me
 
 from pathlib import Path
 
-from test_init import copy_without_column_ids
 from test_parallel_runs import (
     CASES,
     _assert_same_results,
@@ -67,14 +66,3 @@ def test_restart_chain_on_4_then_3_ranks_equals_serial_chain(tmp_path):
     tool("merge", restart_2, "-o", tmp_path / "merged_2.nc")
     assert_same_variables(serial / "restart" / RESTART_FILES[1], tmp_path / "merged_2.nc")
     _assert_same_results(serial / "leg2", tmp_path / "np3" / "leg2")
-
-
-@requires_mpirun
-def test_restart_file_without_column_ids_on_several_ranks(tmp_path):
-    serial = _serial_chain(tmp_path)
-    (tmp_path / "parallel" / "restart").mkdir(parents=True)
-    copy_without_column_ids(serial / "restart" / RESTART_FILES[0], tmp_path / "parallel" / "restart" / RESTART_FILES[0])
-
-    parallel = _leg(parallel_args("matlab", tmp_path), _LEG_2, 3, tmp_path / "parallel")
-
-    _assert_same_results(serial / "leg2", parallel)

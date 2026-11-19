@@ -15,8 +15,6 @@ from netCDF4 import Dataset
 
 from ebfm.core import LOOP_write_to_file
 from ebfm.core.LOOP_write_to_file import _output_dimensions, main as write_output
-from ebfm.core.comm import defaultComm
-from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.config import ColumnDiscretizationConfig
 
 NL = 4
@@ -136,21 +134,7 @@ def _unstructured_grid_with_mesh():
     return {**_unstructured_grid(), "mesh": _mesh()}
 
 
-def _local_share(grid, out, columns):
-    """
-    The grid and OUT that an MPI rank holding only the given columns sees.
-
-    @param[in] columns positions of the rank's columns in the grid, in the order the rank holds them
-    """
-    local_grid = dict(grid)
-    for key in ("column_id", "x", "y", "z", "lon", "lat", "ind"):
-        if key in grid:
-            local_grid[key] = grid[key][columns]
-    local_out = {key: values[columns] for key, values in out.items()}
-    return local_grid, local_out
-
-
-def _write_single_step(outdir, grid, extra_out=None, columns=None):
+def _write_single_step(outdir, grid, extra_out=None):
     """
     Run the writer for a one-step simulation and return the closed output file.
 
@@ -161,8 +145,6 @@ def _write_single_step(outdir, grid, extra_out=None, columns=None):
     @param[in] grid structured or unstructured grid dict (_structured_grid()/_unstructured_grid())
     @param[in] extra_out optional dict merged into the fabricated OUT before writing, for keys
                          _fake_out() doesn't declare (e.g. the conditional "ebm_diagnostics")
-    @param[in] columns positions of the columns this MPI rank holds (see _local_share); None for all columns.
-                       The writer is called on every rank of ebfm.core.comm.defaultComm.
 
     @returns (path to the written NetCDF file, the writer's outfile dict, the OUT dict
              actually written)
@@ -171,13 +153,11 @@ def _write_single_step(outdir, grid, extra_out=None, columns=None):
     out = _fake_out(GPSUM, NL)
     if extra_out:
         out.update(extra_out)
-    if columns is not None:
-        grid, out = _local_share(grid, out, columns)
     outfile_path = Path(outdir) / "output.nc"
     io = {"outfile": outfile_path, "freqout": 1}
     time = {"TCUR": datetime(2020, 1, 1), "tn": 1}
 
-    _, outfile = write_output({}, io, out, grid, 0, time, column, ColumnGather(defaultComm, grid["column_id"]))
+    _, outfile = write_output({}, io, out, grid, 0, time, column)
 
     return outfile_path, outfile, out
 

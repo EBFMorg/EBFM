@@ -22,7 +22,6 @@ from ebfm.grid.structured.partitioning import partition_grid
 from ebfm.core.FINAL_create_restart_file import main as write_restart_file
 from ebfm.core.cli import parse_cli_args
 from ebfm.core.comm import defaultComm
-from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.config import ColumnDiscretizationConfig, OutputConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
@@ -68,14 +67,9 @@ def _build_out_dict() -> dict:
     }
 
 
-def _single_rank_gather() -> ColumnGather:
-    """The columns of _make_grid() on a single rank."""
-    return ColumnGather(defaultComm, np.arange(GPSUM))
-
-
 def _write_restart_file(path: Path, with_missing_value: bool = False) -> None:
     io = {"writebootfile": True, "bootfileout": path}
-    write_restart_file(_build_out_dict(), io, gather=_single_rank_gather())
+    write_restart_file(_build_out_dict(), io, column_ids=np.arange(GPSUM))
 
     if with_missing_value:
         # Restart files produced by EBFM are always fully populated. To
@@ -227,7 +221,7 @@ class TestRestartFileShapeValidation(unittest.TestCase):
         write_restart_file(
             out,
             {"writebootfile": True, "bootfileout": bootfile},
-            gather=_single_rank_gather(),
+            column_ids=np.arange(GPSUM),
         )
         return bootfile
 
@@ -333,7 +327,7 @@ class TestRestartColumnIds(unittest.TestCase):
         write_restart_file(
             out,
             {"writebootfile": True, "bootfileout": self.bootfile},
-            gather=_single_rank_gather(),
+            column_ids=np.arange(GPSUM),
         )
 
     def tearDown(self):
@@ -378,7 +372,7 @@ class TestRestartPartitionFiles(unittest.TestCase):
         write_restart_file(
             out,
             {"writebootfile": True, "bootfileout": self.restart_dir / "part.2.nc"},
-            gather=ColumnGather(defaultComm, self.COLUMN_IDS),
+            column_ids=self.COLUMN_IDS,
         )
 
     def tearDown(self):
@@ -407,6 +401,45 @@ class TestRestartPartitionFiles(unittest.TestCase):
     def test_partition_file_of_another_partitioning_is_rejected(self):
         with self.assertRaisesRegex(ValueError, r"holds 5 columns, but this partition has 4.*different partitioning"):
             self._load(self.COLUMN_IDS[:4], partition_id=2)
+
+
+class TestRestartFileToRead(unittest.TestCase):
+    """A run on N ranks starts from the restart files of its partitioning, and points to the tools for other files."""
+
+    TIME = datetime(1979, 1, 2, tzinfo=timezone.utc)
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.restartdir = Path(self.tmpdir.name)
+        self.file = self.restartdir / INIT.create_restart_file_name(self.TIME)
+        self.partitionings = self.restartdir / INIT.create_restart_dir_name(self.TIME)
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _to_read(self, n_partitions):
+        return INIT._restart_file_to_read(self.restartdir, self.TIME, n_partitions)
+
+    def test_single_rank_reads_the_file_and_partitioned_run_its_partitioning(self):
+        self.file.touch()
+        (self.partitionings / "partitioning.4").mkdir(parents=True)
+
+        self.assertEqual(self._to_read(None), self.file)
+        self.assertEqual(self._to_read(4), self.partitionings / "partitioning.4")
+
+    def test_partitioned_run_points_to_split_restart_for_a_single_file(self):
+        self.file.touch()
+
+        with self.assertRaisesRegex(AssertionError, r"ebfm\.io\.split_restart"):
+            self._to_read(4)
+
+    def test_other_partitionings_are_pointed_to_merge(self):
+        (self.partitionings / "partitioning.8").mkdir(parents=True)
+
+        for n_partitions in (None, 4):
+            with self.subTest(n_partitions=n_partitions):
+                with self.assertRaisesRegex(AssertionError, r"partitioning\.8.*ebfm\.io\.merge"):
+                    self._to_read(n_partitions)
 
 
 class TestRestartVariableManifest(unittest.TestCase):

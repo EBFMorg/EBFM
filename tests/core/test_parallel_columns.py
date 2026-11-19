@@ -3,9 +3,8 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 """Columns distributed over several MPI ranks are held by exactly one rank each, gathered on one rank in column id
-order, scattered back and reduced over all ranks."""
+order and reduced over all ranks."""
 
-import filecmp
 import importlib.util
 import os
 import shutil
@@ -19,7 +18,6 @@ import pytest
 from ebfm.core.comm import defaultComm
 from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.grid import domain_mean, validate_grid_distribution
-from test_loop_write_to_file import _structured_grid, _write_single_step
 
 COMM_TESTS = Path(__file__).resolve().parent / "comm"
 TIMEOUT = 120
@@ -58,23 +56,6 @@ def test_gather_on_three_ranks():
         assert f"rank {rank}: ok" in result.stdout, result.stdout + result.stderr
 
 
-def test_single_rank_scatters_without_communication():
-    gather = ColumnGather(defaultComm, np.array([4, 2, 9]))
-    values = np.array([1.0, 2.0, 3.0])
-
-    assert gather.scatter(values) is values
-    assert gather.scatter_unordered(values) is values
-
-
-@requires_mpirun
-def test_scatter_on_three_ranks():
-    result = _mpirun(3, "scatter_columns.py")
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    for rank in range(3):
-        assert f"rank {rank}: ok" in result.stdout, result.stdout + result.stderr
-
-
 def test_domain_mean_on_a_single_rank_is_the_serial_mean():
     values = np.array([61.3, 78.2, 80.1, 72.9])
 
@@ -105,13 +86,3 @@ def test_grid_distribution_on_three_ranks(mode, expected):
     assert result.returncode == 0, result.stdout + result.stderr
     for rank in range(3):
         assert f"rank {rank}: {expected}" in result.stdout, result.stdout + result.stderr
-
-
-@requires_mpirun
-@pytest.mark.parametrize("n_ranks", [2, 3])
-def test_parallel_output_file_equals_serial_one(tmp_path, n_ranks):
-    serial_file, _, _ = _write_single_step(tmp_path / "serial", _structured_grid())
-    result = _mpirun(n_ranks, "write_output_on_ranks.py", str(tmp_path / "parallel"))
-
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert filecmp.cmp(serial_file, tmp_path / "parallel" / serial_file.name, shallow=False)

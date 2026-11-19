@@ -314,19 +314,16 @@ ebfm --matlab-mesh examples/dem_and_mask.mat --restart-dir examples/restart --re
 Note that it is necessary to provide a `--start-time` consistent with the given restart file.
 
 A restart file holds the columns of the whole grid together with their ids
-(`column_id`), so a run may continue from it on any number of MPI ranks and on
-a partitioned mesh. A restart file without `column_id`, written by an older
-version of EBFM, holds the columns in the order of a run on a single rank.
+(`column_id`). A restart file without `column_id`, written by an older version
+of EBFM, holds the columns in the order of the grid.
 
-A run on N MPI ranks writes a directory of restart files instead, one per
-partition, e.g.
-`examples/restart/restart_1979-01-02T00:00:00Z/partitioning.4/part.1.nc`, and
-every rank reads its own file from such a directory. It also continues from a
-single restart file, which rank 0 reads.
+A run on N MPI ranks writes and reads a directory of restart files instead, one
+per partition, e.g.
+`examples/restart/restart_1979-01-02T00:00:00Z/partitioning.4/part.1.nc`.
 
 To merge the restart files of the partitions into a single restart file,
-`examples/restart/restart_1979-01-02T00:00:00Z.nc`, from which any run can
-start, run:
+`examples/restart/restart_1979-01-02T00:00:00Z.nc`, from which a run on a
+single rank starts, run:
 
 ```sh
 python -m ebfm.io.merge examples/restart/restart_1979-01-02T00:00:00Z/partitioning.4

@@ -265,17 +265,9 @@ def _main_impl():
     if args.check_grid_distribution and is_parallel_run:
         validate_grid_distribution(grid, ebfm_comm)
 
-    # Rank 0 collects the columns of all ranks, e.g. to write them to the output file, the restart file or for
-    # --dump-reference
+    # Rank 0 collects the columns of all ranks for the lapse rate of the whole domain, --print-diagnostics and
+    # --dump-reference. Every rank writes the output and restart files of its own columns.
     column_gather = ColumnGather(ebfm_comm, grid["column_id"])
-    # With a partitioned mesh, every rank writes the output and restart files of its own partition
-    if grid["is_partitioned"]:
-        file_gather = ColumnGather(ebfm.core.comm.selfComm, grid["column_id"])
-        logger.info("Every rank writes the output and restart files of its own partition.")
-    else:
-        file_gather = column_gather
-        if is_parallel_run:
-            logger.info(f"Rank 0 writes the output of all {ebfm_comm.size} ranks.")
 
     if is_parallel_run and ebfm_comm.rank == 0:
         logger.warning(
@@ -283,9 +275,7 @@ def _main_impl():
             f"{ebfm_comm.size} ranks every time step."
         )
 
-    OUT, IN, OUTFILE = INIT.init_initial_conditions(
-        C, grid, io, time, column, init_with_restart_file=args.restart_init, gather=column_gather
-    )
+    OUT, IN, OUTFILE = INIT.init_initial_conditions(C, grid, io, time, column, init_with_restart_file=args.restart_init)
 
     coupler.setup(grid, time_config)
 
@@ -424,10 +414,10 @@ def _main_impl():
         OUT["surface_elevation"] = grid["z"]
 
         # Write output to files (see the warning emitted before the time loop)
-        io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column, file_gather)
+        io, OUTFILE = LOOP_write_to_file.main(OUTFILE, io, OUT, grid, t, time, column)
 
     # Write restart file
-    FINAL_create_restart_file.main(OUT, io, file_gather)
+    FINAL_create_restart_file.main(OUT, io, grid["column_id"])
 
     logger.info("Time loop completed.")
 

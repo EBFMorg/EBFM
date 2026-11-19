@@ -15,8 +15,6 @@ from ebfm.grid.elmer.reader import read_elmer_mesh, read_dem, read_dem_xios
 from ebfm.grid.elmer.mesh import Mesh
 from ebfm.grid.structured.matlab import read_MATLAB_fields
 from ebfm.grid.structured.netcdf import read_NETCDF_grid
-from .comm import defaultComm
-from .comm.gather import ColumnGather
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, OutputConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
 from .restart import partition_file_name, partitioning_name, read_restart_file
@@ -85,29 +83,31 @@ def _restart_file_to_read(restartdir: Path, time: datetime, n_partitions: int | 
     """
     The restart file to start from at time, or for a run on a partitioned grid, the directory of the restart files
     of the partitions of its partitioning, restart_<time>/partitioning.<n_partitions>.
-
-    A run on a partitioned grid prefers the directory to the file if both exist.
     """
     file = restartdir / create_restart_file_name(time)
-    candidates = [file]
-    if n_partitions is not None:
-        candidates.insert(0, restartdir / create_restart_dir_name(time) / partitioning_name(n_partitions))
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
+    if n_partitions is None:
+        to_read = file
+    else:
+        to_read = restartdir / create_restart_dir_name(time) / partitioning_name(n_partitions)
+    if to_read.exists():
+        return to_read
 
-    message = f"Restart file {file} does not exist"
-    if n_partitions is not None:
-        message += f", nor do the restart files of this partitioning, {candidates[0]}"
+    message = f"Restart file {to_read} does not exist."
     other = sorted((restartdir / create_restart_dir_name(time)).glob("partitioning.*"))
-    if other:
+    if n_partitions is not None and file.exists():
         message += (
-            f". There are restart files of other partitionings: {', '.join(map(str, other))}. Merge them into "
+            f" Split the restart file {file} for this partitioning with 'python -m ebfm.io.split_restart {file} "
+            "<partitioning of the grid>'."
+        )
+    elif other:
+        message += (
+            f" There are restart files of other partitionings: {', '.join(map(str, other))}. Merge them into "
             f"{file.name} with 'python -m ebfm.io.merge {other[0]}'"
         )
         if n_partitions is not None:
             message += " and split that for this partitioning with 'python -m ebfm.io.split_restart'"
-    raise AssertionError(message + ".")
+        message += "."
+    raise AssertionError(message)
 
 
 def init_config(
@@ -619,7 +619,6 @@ def init_initial_conditions(
     time,
     column: ColumnDiscretizationConfig,
     init_with_restart_file: bool,
-    gather: ColumnGather | None = None,
 ):
     """
     Sets the model's initial conditions at the start of the simulation.
@@ -631,8 +630,6 @@ def init_initial_conditions(
         time (dict): Dictionary with time-related parameters (e.g. ts).
         column (ColumnDiscretizationConfig): How each column is divided into layers.
         init_with_restart_file (bool): Flag indicating whether to initialize from a restart file or set manually.
-        gather (ColumnGather): The columns of all MPI ranks, which read the restart file together; None for the
-            columns of a single rank. Collective over its communicator when reading a restart file.
 
     Returns:
         OUT (dict): Dictionary containing model outputs initialized with default or restart file values.
@@ -656,9 +653,7 @@ def init_initial_conditions(
     if init_with_restart_file:
         logger.info(f"Initialize from restart file: {io['bootfilein']}...")
 
-        if gather is None:
-            gather = ColumnGather(defaultComm, grid["column_id"])
-        OUT = read_restart_file(io["bootfilein"], nl, gather, grid, io.get("partition_id"))
+        OUT = read_restart_file(io["bootfilein"], nl, grid, io.get("partition_id"))
 
         OUT["timelastsnow"] = num2date(
             OUT["timelastsnow_netCDF"],

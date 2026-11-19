@@ -158,8 +158,9 @@ def test_partitioned_run_equals_serial_run(tmp_path):
 @requires_mpirun
 def test_restart_files_of_partitioned_and_serial_runs(tmp_path):
     """
-    A partitioned run writes and reads a restart file per partition, and continues from the restart file of a serial
-    run as well; the files convert into each other with the tools.
+    A partitioned run writes and reads a restart file per partition. Merged by ebfm.io.merge, they are the restart
+    file of a serial run, and split by ebfm.io.split_restart, the restart file of a serial run continues on the
+    partitioned mesh.
     """
     mesh_dir = tmp_path / "MESH"
     _write_mesh(mesh_dir)
@@ -186,8 +187,8 @@ def test_restart_files_of_partitioned_and_serial_runs(tmp_path):
     for part in restart_dir.iterdir():
         _assert_same_variables(part, tmp_path / "split" / part.name)
 
-    (tmp_path / "from_serial").mkdir()
-    shutil.copy(restart_file, tmp_path / "from_serial" / restart_file.name)
+    # The restart file of the serial run, split for the partitioning
+    shutil.copytree(tmp_path / "split", tmp_path / "from_serial" / restart_file.stem / "partitioning.3")
 
     def second_leg(n_ranks: int, restart_dir: str, *args: str) -> dict[str, np.ndarray]:
         times = ["--start-time", "1979-07-01T12:00:00Z", "--end-time", "1979-07-02T00:00:00Z"]
