@@ -9,7 +9,7 @@ restart_<time>/ that holds part.<n>.nc for every partition n, each with the colu
 writes such a directory from a restart file of the whole mesh, matching the rows of the file to the cells of the
 partitions by the `column_id` variable, the Elmer element id.
 
-python -m ebfm.partitioning.merge is the inverse.
+python -m ebfm.io.merge is the inverse.
 """
 
 import argparse

@@ -395,7 +395,7 @@ class TestRestartPartitionFiles(unittest.TestCase):
         self.assertNotIn(COLUMN_ID_VARIABLE, OUT)
 
     def test_grid_that_is_not_partitioned_needs_a_merged_file(self):
-        with self.assertRaisesRegex(ValueError, r"ebfm\.partitioning\.merge"):
+        with self.assertRaisesRegex(ValueError, r"ebfm\.io\.merge"):
             self._load(self.COLUMN_IDS, partition_id=None)
 
     def test_missing_partition_file_is_rejected(self):

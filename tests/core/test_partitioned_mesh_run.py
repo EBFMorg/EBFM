@@ -6,7 +6,7 @@
 
 A serial run on the whole mesh and a run on 3 MPI ranks, one partition each, must give equal --dump-reference
 snapshots, and equal output and restart files once the per-partition files are merged with
-ebfm.partitioning.merge. The mesh spans 70 degrees north, a bin boundary of the water vapour coefficient in
+ebfm.io.merge. The mesh spans 70 degrees north, a bin boundary of the water vapour coefficient in
 LOOP_EBM_SWin, and its elevation rises non-linearly from south to north, so the partitions, latitude bands, differ
 in their latitude mean and in the lapse rate fitted over their own columns.
 """
@@ -117,8 +117,8 @@ def _run(workdir: Path, mesh_dir: Path, n_ranks: int, *args: str) -> dict[str, n
 
 
 def _tool(module: str, *args) -> None:
-    """Run a module of ebfm.partitioning standalone."""
-    cmd = [sys.executable, "-m", f"ebfm.partitioning.{module}", *map(str, args)]
+    """Run a module of ebfm.io standalone."""
+    cmd = [sys.executable, "-m", f"ebfm.io.{module}", *map(str, args)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
     assert result.returncode == 0, f"{' '.join(cmd)} failed:\n{result.stdout}\n{result.stderr}"
 

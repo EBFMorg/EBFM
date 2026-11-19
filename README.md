@@ -246,12 +246,12 @@ instead. The elevations may come from the mesh nodes, `--netcdf-dem-mesh` or
 
 Every rank writes the output of its own partition, e.g.
 `Output/output_1979-01-01T00:00:00Z/part.42.nc`, with the column ids of its
-cells and the ids of its vertices. `ebfm.partitioning.merge` merges the files
+cells and the ids of its vertices. `ebfm.io.merge` merges the files
 of all partitions into one, with the cells ordered by their Elmer element id
 and every vertex once:
 
 ```sh
-python -m ebfm.partitioning.merge Output/output_1979-01-01T00:00:00Z
+python -m ebfm.io.merge Output/output_1979-01-01T00:00:00Z
 ```
 
 Note: The partitioning.128 mesh is not included in this repository.
@@ -325,9 +325,9 @@ a single restart file, which rank 0 reads. To convert between the two:
 
 ```sh
 # One restart file from the files of all partitions, for any other run
-python -m ebfm.partitioning.merge examples/restart/restart_1979-01-02T00:00:00Z
+python -m ebfm.io.merge examples/restart/restart_1979-01-02T00:00:00Z
 # One restart file per partition of a partitioned mesh
-python -m ebfm.partitioning.split_restart examples/restart/restart_1979-01-02T00:00:00Z.nc path/to/MESH/partitioning.128
+python -m ebfm.io.split_restart examples/restart/restart_1979-01-02T00:00:00Z.nc path/to/MESH/partitioning.128
 ```
 
 ### Running on several MPI ranks
@@ -344,7 +344,7 @@ mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
   identical to those of a run on a single rank.
 * An Elmer mesh runs on its partitioning with one partition per rank, which
   `--create-partitioning` creates if needed (see above). Every rank writes the
-  output and restart files of its own partition, and `ebfm.partitioning.merge`
+  output and restart files of its own partition, and `ebfm.io.merge`
   merges them.
 * Not supported on several ranks, and rejected with an error: shading and
   `--forcing-dir`.

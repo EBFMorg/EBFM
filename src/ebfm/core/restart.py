@@ -13,7 +13,7 @@ so the file does not depend on how the columns are distributed over the ranks.
 
 A run on a partitioned Elmer mesh writes a directory of restart files instead, `part.<n>.nc` for partition n, each
 with the columns of its partition, and reads its own from such a directory on every rank. The modules
-ebfm.partitioning.split_restart and ebfm.partitioning.merge convert between the two.
+ebfm.io.split_restart and ebfm.io.merge convert between the two.
 """
 
 import logging
@@ -162,7 +162,7 @@ def read_restart_file(path: Path, nl: int, gather: ColumnGather, grid, partition
         if partition_id is None:
             raise ValueError(
                 f"{path} is a directory of per-partition restart files, which only a run on a partitioned Elmer mesh "
-                "reads. Merge them into one restart file with python -m ebfm.partitioning.merge."
+                "reads. Merge them into one restart file with python -m ebfm.io.merge."
             )
         return _read_partition_file(path / partition_file_name(partition_id), nl, grid["column_id"])
 
@@ -210,7 +210,7 @@ def _read_partition_file(path: Path, nl: int, column_ids) -> dict:
     if not path.exists():
         raise ValueError(
             f"There is no restart file {path} for this partition. The restart directory was written for a mesh with "
-            "fewer partitions; merge it into one restart file with python -m ebfm.partitioning.merge."
+            "fewer partitions; merge it into one restart file with python -m ebfm.io.merge."
         )
 
     with Dataset(path, "r") as ncfile:
@@ -221,7 +221,7 @@ def _read_partition_file(path: Path, nl: int, column_ids) -> dict:
         raise ValueError(
             f"Restart file {path} holds {n_file_columns} columns, but this partition has {len(column_ids)}. It was "
             "written for a different partitioning; merge the directory into one restart file with 'python -m "
-            "ebfm.partitioning.merge', which any run can start from."
+            "ebfm.io.merge', which any run can start from."
         )
 
     variables = _read_variables(path, len(column_ids), nl)

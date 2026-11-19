@@ -12,7 +12,7 @@ part.<n>.nc for every partition n:
 * restart_<time>/: restart files. The merged file is a restart file of the whole mesh, ordered by column id, which
   every run can start from.
 
-python -m ebfm.partitioning.split_restart is the inverse for restart files.
+python -m ebfm.io.split_restart is the inverse for restart files.
 """
 
 import argparse

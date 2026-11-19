@@ -7,7 +7,7 @@
 Each case runs EBFM once on a single rank and once per rank count under mpirun, and requires equal --dump-reference
 snapshots and equal output: a byte-identical output file for a MATLAB grid, which rank 0 writes, and for an Elmer mesh,
 which runs on the partitioning EBFM creates with --create-partitioning, the output files of the partitions merged by
-ebfm.partitioning.merge.
+ebfm.io.merge.
 """
 
 import filecmp
@@ -81,8 +81,8 @@ def _log_tails(workdir: Path, n_lines: int = 15) -> str:
 
 
 def _tool(module: str, *args) -> None:
-    """Run a module of ebfm.partitioning standalone."""
-    cmd = [sys.executable, "-m", f"ebfm.partitioning.{module}", *map(str, args)]
+    """Run a module of ebfm.io standalone."""
+    cmd = [sys.executable, "-m", f"ebfm.io.{module}", *map(str, args)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
     assert result.returncode == 0, f"{' '.join(cmd)} failed:\n{result.stdout}\n{result.stderr}"
 
