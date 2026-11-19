@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import unittest
+from argparse import Namespace
 from types import SimpleNamespace
 from unittest import mock
 
 import numpy as np
 
+from ebfm.core.config import CouplingConfig, FieldValidationLevel, TimeConfig
 from ebfm.coupling.couplers import FakeCoupler
 from ebfm.coupling.couplers.helpers import coupling_supported
 from ebfm.coupling.components.base import Component
@@ -37,12 +39,15 @@ class _StubComponent(Component):
         return {}
 
 
-def _field(name: str, coupled_component: Component, exchange_type=GenericExchangeType.TARGET) -> Field:
+def _field(
+    name: str, coupled_component: Component, exchange_type=GenericExchangeType.TARGET, valid_range=None
+) -> Field:
     return Field(
         name=name,
         coupled_component=coupled_component,
         timestep=Timestep(value="PT1H"),
         exchange_type=exchange_type,
+        valid_range=valid_range,
     )
 
 
@@ -171,6 +176,68 @@ class TestYACCouplerFieldRegistration(unittest.TestCase):
             coupler._construct_coupling_pre_sync(field_definitions)  # must not raise
 
         self.assertEqual(len(coupler._fields.all()), len(field_definitions.all()))
+
+
+class TestCouplerChecksReceivedData(unittest.TestCase):
+    """
+    Coupler.get rejects received values outside the valid range of their field definition, for every coupler
+    backend. A field without a valid range accepts all values.
+    """
+
+    args = Namespace(
+        start_time="2025-01-01T00:00:00Z",
+        end_time="2025-01-02T00:00:00Z",
+        time_step="PT1H",
+        calendar="proleptic_gregorian",
+        component_name="ebfm",
+        couple_to_icon_atmo=True,
+        couple_to_icon_land=False,
+        couple_to_elmer_ice=False,
+        fake_coupling=True,
+        field_validation_level=FieldValidationLevel("FATAL"),
+        coupler_config=None,
+    )
+    grid = {"x": np.zeros(3), "has_shading": False}
+
+    def test_received_data_is_checked(self):
+        time_config = TimeConfig(args=self.args)
+        coupler = FakeCoupler(CouplingConfig(args=self.args, time_config=time_config))
+        coupler.setup(grid=self.grid, time=time_config)
+
+        with mock.patch.object(coupler, "_check_received") as check_received:
+            data, error = coupler.get("icon_atmo", "tas")
+
+        self.assertIsNone(error)
+        check_received.assert_called_once_with("icon_atmo", "tas", data)
+
+    def _coupler_with_field(self, valid_range: tuple[float, float] | None) -> FakeCoupler:
+        coupler = FakeCoupler.__new__(FakeCoupler)
+        coupler._grid = {"lat": np.array([70.0, 71.0, 72.0]), "lon": np.array([320.0, 321.0, 322.0])}
+        field = _field("tas", _StubComponent(coupler=coupler, name="partner"), valid_range=valid_range)
+        coupler._field_definitions = FieldSet({field})
+        return coupler
+
+    def test_values_inside_valid_range_pass(self):
+        coupler = self._coupler_with_field(valid_range=(150.0, 350.0))
+
+        coupler._check_received("partner", "tas", np.array([150.0, 250.0, 350.0]))
+
+    def test_values_outside_valid_range_are_rejected(self):
+        coupler = self._coupler_with_field(valid_range=(150.0, 350.0))
+
+        with self.assertRaises(RuntimeError) as raised:
+            coupler._check_received("partner", "tas", np.array([250.0, -999.9, 400.0]))
+
+        message = str(raised.exception)
+        self.assertIn("2 of 3 values of field 'tas' from component 'partner'", message)
+        self.assertIn("[150, 350]", message)
+        self.assertIn("column 1 (lat=71.0000, lon=321.0000): -999.9", message)
+        self.assertIn("column 2 (lat=72.0000, lon=322.0000): 400", message)
+
+    def test_field_without_valid_range_accepts_all_values(self):
+        coupler = self._coupler_with_field(valid_range=None)
+
+        coupler._check_received("partner", "tas", np.array([-999.9, 1e20, np.nan]))
 
 
 if __name__ == "__main__":

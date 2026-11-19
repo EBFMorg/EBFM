@@ -45,6 +45,8 @@ class Field:
     timestep: Timestep  # generic timestep representation
     exchange_type: ExchangeType  # generic field exchange role
     metadata: str | None = None  # optional metadata
+    # Plausible (min, max) of received values, in the units of the field. Coupler.get rejects values outside.
+    valid_range: tuple[float, float] | None = None
 
 
 class FieldSet:
