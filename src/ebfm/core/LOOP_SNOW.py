@@ -26,7 +26,9 @@ except NameError:
     profile = lambda f: f  # noqa: E731
 
 from ebfm.core import logging
-from ebfm.core.constants import WATER_DENSITY
+from ebfm.core.constants import MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE, WATER_DENSITY
+
+from . import LOOP_SNOW_checks as checks
 
 _SUCCESS = True
 
@@ -95,11 +97,13 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             OUT["Dfreshsnow"] = OUT["Dfreshsnow_T"] + OUT["Dfreshsnow_W"]
         else:
             OUT["Dfreshsnow"] = np.full_like(IN["snow"], C["Dfreshsnow"])
+        checks.assert_fresh_snow_density(OUT, IN, grid)
 
         # Update layer depths and properties
         shift_snowfall = IN["snow"] * C["Dwater"] / OUT["Dfreshsnow"]
         shift_riming = OUT["moist_deposition"] * C["Dwater"] / OUT["Dfreshsnow"]
         shift_tot = shift_snowfall + shift_riming
+        checks.assert_snowfall_passes(shift_tot, max_subZ, OUT, IN, grid)
         OUT["surfH"] += shift_tot
 
         OUT["runoff_irr_deep"] = np.zeros(gpsum)
@@ -155,9 +159,17 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 OUT["subD"][idx_shift, 2:nl] = subD_old[:, 1 : nl - 1]
                 OUT["subW"][idx_shift, 2:nl] = subW_old[:, 1 : nl - 1]
 
-                OUT["subZ"][idx_shift, 1] = max_subZ
-                OUT["subZ"][idx_shift, 0] = (subZ_old[:, 0] + shift_amount[idx_shift]) - max_subZ
-                subZ_layer1_new = OUT["subZ"][idx_shift, 1]
+                # The former top layer becomes layer 1. A top layer thinner than max_subZ is topped up with fresh
+                # snow to max_subZ first. A thicker one (melt_sublimation can merge a thick deep layer into it)
+                # moves down whole, and all snow of this pass starts the new top layer.
+                oversized_top = subZ_old[:, 0] > max_subZ
+                subZ_layer1_new = np.where(oversized_top, subZ_old[:, 0], max_subZ)
+                OUT["subZ"][idx_shift, 1] = subZ_layer1_new
+                OUT["subZ"][idx_shift, 0] = np.where(
+                    oversized_top,
+                    shift_amount[idx_shift],
+                    (subZ_old[:, 0] + shift_amount[idx_shift]) - max_subZ,
+                )
                 OUT["subT"][idx_shift, 1] = (
                     subT_old[:, 0] * subZ_old[:, 0] / subZ_layer1_new
                     + OUT["Tsurf"][idx_shift] * (subZ_layer1_new - subZ_old[:, 0]) / subZ_layer1_new
@@ -194,6 +206,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         # While there is still mass to remove
         while np.any(mass_removed > 0):
             n += 1
+            assert n <= nl, checks.describe_column_melted_away(mass_removed, mass_layer, OUT, grid)
             cond1 = mass_removed > mass_layer[:, n - 1]
             cond2 = (~cond1) & (mass_removed > 0)
 
@@ -206,7 +219,10 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             mass_removed[cond2] = 0.0
 
         # While there are shifts required
+        n_pass = 0
         while np.any(shift_tot < 0):
+            n_pass += 1
+            assert n_pass <= checks.MAX_SHIFT_PASSES, checks.describe_too_many_melt_passes(shift_tot, OUT, grid)
             # Thickness (m, negative) removed in this pass, at most the top two layers
             shift_amount = np.maximum(shift_tot, -OUT["subZ"][:, 1])
             shift_tot -= shift_amount
@@ -491,8 +507,23 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             # GPU: the prep / solve / boundary-clip kernels run on the resident
             # device arrays. Host precompute and post-clip below are done
             # on-device (subK / subCeff are returned in download()).
-            gpu.heat_conduction(dt, C)
+            flagged = gpu.heat_conduction(
+                dt,
+                C,
+                MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE,
+                dt / checks.MAX_HEAT_SUBSTEPS,
+                checks.WARN_DT_STAB_SECONDS / C["dayseconds"],
+            )
+            if flagged is None:
+                return _SUCCESS
+            if flagged["invalid"]:
+                checks.assert_heat_conduction_inputs(flagged, grid)
+                checks.assert_dt_stab(flagged["dt_stab"], dt, flagged, grid)
+                raise AssertionError("The GPU heat conduction check flagged columns that pass the host checks.")
+            checks.warn_small_dt_stab(flagged["dt_stab"], dt, C["dayseconds"], flagged, grid)
             return _SUCCESS
+
+        checks.assert_heat_conduction_inputs(OUT, grid)
 
         # ------ Heat Conduction Loop ------
         if get_backend() == ComputeBackend.NUMBA:
@@ -524,7 +555,8 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 dt_stab,
                 C["dayseconds"],
             )
-            assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
+            checks.assert_dt_stab(dt_stab, dt, OUT, grid)
+            checks.warn_small_dt_stab(dt_stab, dt, C["dayseconds"], OUT, grid)
             _heat_conduction_kernel(
                 OUT["subT"],
                 OUT["Tsurf"],
@@ -560,7 +592,8 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 / np.max(kk[:, 1:], axis=1)
                 / C["dayseconds"]
             )
-            assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
+            checks.assert_dt_stab(dt_stab, dt, OUT, grid)
+            checks.warn_small_dt_stab(dt_stab, dt, C["dayseconds"], OUT, grid)
 
             # Precompute kk*subZ products and the temperature-update denominators once
             # kk_sz_top: conductivity-thickness product for the top interface

@@ -269,7 +269,12 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             f"'{field.coupled_component.name}', but got {action}."
         )
 
-        data, action = field.field_handle.get()
+        # YAC does not assign target points that the interpolation stack does not reach, and by default receives into
+        # an uninitialized buffer. With NaN, Coupler.get rejects these points instead of using arbitrary values.
+        # TODO: Workaround until YAC initializes the receive buffer with NaN.
+        handle = field.field_handle
+        buf = np.full((handle.collection_size, handle.size), np.nan)
+        data, action = handle.get(buf)
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         assert data.shape[0] == _COLLECTION_SIZE, (
             f"Expected data shape ({_COLLECTION_SIZE}, ...), got {data.shape} for field '{field.name}' "

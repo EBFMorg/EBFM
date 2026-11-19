@@ -260,14 +260,23 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
     def _check_received(self, component_name: str, field_name: str, data: np.ndarray):
         """
-        Reject received data outside the valid range of its field definition.
+        Reject received data that is NaN or outside the valid range of its field definition.
 
         @param[in] component_name name of the component the data was received from
         @param[in] field_name name of the received field
         @param[in] data received data, one value per column, in the units of the field definition
 
-        @raises RuntimeError if a value is outside the valid range
+        @raises RuntimeError if a value is NaN or outside the valid range
         """
+        nan = np.isnan(data)
+        if nan.any():
+            raise RuntimeError(
+                f"Received {int(nan.sum())} of {data.size} values of field '{field_name}' from component "
+                f"'{component_name}' as NaN, e.g. points the coupler did not interpolate, or a NaN source. Every EBFM "
+                "column needs a value, so check the coupling configuration, e.g. extend the interpolation stack of "
+                "this field with nnn or a fixed value as the last method.\n" + self._describe_columns(data, nan)
+            )
+
         valid_range = self._valid_range(component_name, field_name)
         if valid_range is None:
             return
