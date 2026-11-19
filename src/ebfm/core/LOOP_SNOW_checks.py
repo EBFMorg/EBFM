@@ -12,7 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ebfm.core import logging
-from ebfm.core.constants import MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE
+from ebfm.core.constants import MIN_PLAUSIBLE_FRESH_SNOW_DENSITY, MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +167,24 @@ def _describe_too_many_heat_substeps(dt_stab: NDArray[np.float64], dt: float, OU
 def assert_dt_stab(dt_stab: NDArray[np.float64], dt: float, OUT, grid) -> None:
     assert (dt_stab > 0).all(), describe_dt_stab_failure(dt_stab, OUT, grid)
     assert not _too_many_heat_substeps(dt_stab, dt).any(), _describe_too_many_heat_substeps(dt_stab, dt, OUT, grid)
+
+
+def _describe_implausible_fresh_snow_density(OUT, IN, grid) -> str:
+    bad = np.flatnonzero(~(OUT["Dfreshsnow"] >= MIN_PLAUSIBLE_FRESH_SNOW_DENSITY))
+    return _report_columns(
+        f"Fresh snow density < {MIN_PLAUSIBLE_FRESH_SNOW_DENSITY:g} kg m-3 or NaN in {bad.size} of "
+        f"{OUT['Dfreshsnow'].size} columns. Implausible air temperature or wind speed in the forcing or the coupling "
+        "fields?",
+        bad,
+        grid,
+        lambda i: f"Dfreshsnow={OUT['Dfreshsnow'][i]:.6g} kg m-3, T={IN['T'][i]:.6g} K, WS={IN['WS'][i]:.6g} m s-1",
+    )
+
+
+def assert_fresh_snow_density(OUT, IN, grid) -> None:
+    assert (OUT["Dfreshsnow"] >= MIN_PLAUSIBLE_FRESH_SNOW_DENSITY).all(), _describe_implausible_fresh_snow_density(
+        OUT, IN, grid
+    )
 
 
 def _too_many_snowfall_passes(shift_tot: NDArray[np.float64], max_subZ: float) -> NDArray[np.bool_]:
