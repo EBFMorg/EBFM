@@ -526,18 +526,19 @@ def _heat_conduction_prep_kernel_gpu(
 
 
 @cuda.jit
-def _heat_conduction_check_kernel_gpu(subT, subD, subZ, Tsurf, dt_stab, min_subT, invalid):
+def _heat_conduction_check_kernel_gpu(subT, subD, subZ, Tsurf, dt_stab, min_subT, min_dt_stab, invalid):
     """Flag the columns the heat-conduction solve must not run on. One thread per column.
 
     invalid[i] = 1 if Tsurf, subT (layers 1..nl-1), subD or subZ is non-finite, a layer 1..nl-1 is colder than
-    min_subT, or dt_stab is not > 0. The checks match those of the NumPy / Numba paths in LOOP_SNOW.py.
+    min_subT, or dt_stab is below min_dt_stab (> 0), i.e. the solve would need too many sub-steps. The checks match
+    those of the NumPy / Numba paths in LOOP_SNOW.py.
     """
     i = cuda.grid(1)
     if i >= subT.shape[0]:
         return
     nl = subT.shape[1]
 
-    ok = math.isfinite(Tsurf[i]) and dt_stab[i] > 0.0
+    ok = math.isfinite(Tsurf[i]) and dt_stab[i] >= min_dt_stab
     for k in range(nl):
         if not (math.isfinite(subD[i, k]) and math.isfinite(subZ[i, k])):
             ok = False
@@ -729,7 +730,7 @@ class SnowDeviceState:
             self._psload_ws,
         )
 
-    def heat_conduction(self, dt, C, min_subT):
+    def heat_conduction(self, dt, C, min_subT, min_dt_stab):
         """Launch heat-conduction prep, solve and boundary/clip, all on-device.
 
         Returns None on success. If a column fails the input checks (see
@@ -760,6 +761,7 @@ class SnowDeviceState:
             self.Tsurf,
             self._dt_stab,
             min_subT,
+            min_dt_stab,
             self._invalid,
         )
         if self._invalid.copy_to_host().any():

@@ -102,6 +102,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         shift_snowfall = IN["snow"] * C["Dwater"] / OUT["Dfreshsnow"]
         shift_riming = OUT["moist_deposition"] * C["Dwater"] / OUT["Dfreshsnow"]
         shift_tot = shift_snowfall + shift_riming
+        checks.assert_snowfall_passes(shift_tot, max_subZ, OUT, IN, grid)
         OUT["surfH"] += shift_tot
 
         OUT["runoff_irr_deep"] = np.zeros(gpsum)
@@ -196,6 +197,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         # While there is still mass to remove
         while np.any(mass_removed > 0):
             n += 1
+            assert n <= nl, checks.describe_column_melted_away(mass_removed, mass_layer, OUT, grid)
             cond1 = mass_removed > mass_layer[:, n - 1]
             cond2 = (~cond1) & (mass_removed > 0)
 
@@ -208,7 +210,10 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             mass_removed[cond2] = 0.0
 
         # While there are shifts required
+        n_pass = 0
         while np.any(shift_tot < 0):
+            n_pass += 1
+            assert n_pass <= checks.MAX_SHIFT_PASSES, checks.describe_too_many_melt_passes(shift_tot, OUT, grid)
             # Thickness (m, negative) removed in this pass, at most the top two layers
             shift_amount = np.maximum(shift_tot, -OUT["subZ"][:, 1])
             shift_tot -= shift_amount
@@ -493,10 +498,13 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             # GPU: the prep / solve / boundary-clip kernels run on the resident
             # device arrays. Host precompute and post-clip below are done
             # on-device (subK / subCeff are returned in download()).
-            invalid_state = gpu.heat_conduction(dt, C, MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE)
+            invalid_state = gpu.heat_conduction(
+                dt, C, MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE, dt / checks.MAX_HEAT_SUBSTEPS
+            )
             if invalid_state is not None:
                 checks.assert_heat_conduction_inputs(invalid_state, grid)
-                raise AssertionError(checks.describe_dt_stab_failure(invalid_state["dt_stab"], invalid_state, grid))
+                checks.assert_dt_stab(invalid_state["dt_stab"], dt, invalid_state, grid)
+                raise AssertionError("The GPU heat conduction check flagged columns that pass the host checks.")
             return _SUCCESS
 
         checks.assert_heat_conduction_inputs(OUT, grid)
@@ -531,7 +539,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 dt_stab,
                 C["dayseconds"],
             )
-            assert (dt_stab > 0).all(), checks.describe_dt_stab_failure(dt_stab, OUT, grid)
+            checks.assert_dt_stab(dt_stab, dt, OUT, grid)
             _heat_conduction_kernel(
                 OUT["subT"],
                 OUT["Tsurf"],
@@ -567,7 +575,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 / np.max(kk[:, 1:], axis=1)
                 / C["dayseconds"]
             )
-            assert (dt_stab > 0).all(), checks.describe_dt_stab_failure(dt_stab, OUT, grid)
+            checks.assert_dt_stab(dt_stab, dt, OUT, grid)
 
             # Precompute kk*subZ products and the temperature-update denominators once
             # kk_sz_top: conductivity-thickness product for the top interface

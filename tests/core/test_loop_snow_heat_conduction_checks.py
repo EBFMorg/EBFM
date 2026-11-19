@@ -8,8 +8,9 @@
 """The input checks of heat conduction in LOOP_SNOW.
 
 A corrupted column (temperatures in deg C, fill values, NaN, zero-thickness
-layers) must stop the run with a message naming the column, its location and the
-offending layers. A cold but physical column must pass.
+layers, or layers so thin that the solve would need millions of sub-steps) must
+stop the run with a message naming the column, its location and the offending
+layers. A cold but physical column must pass.
 
 test_loop_snow_gpu.py runs the same cases on the GPU backend.
 """
@@ -45,6 +46,12 @@ CORRUPTIONS = {
     "NaN surface temperature": ("Tsurf", BAD_COLUMN, np.nan, ["Non-finite", "Tsurf=nan"]),
     "zero density": ("subD", (BAD_COLUMN, BAD_LAYER), 0.0, ["Non-finite", f"subD non-finite in layers [{BAD_LAYER}]"]),
     "zero thickness": ("subZ", (BAD_COLUMN, BAD_LAYER), 0.0, ["dt_stab <= 0", f"subZ <= 0 in layers [{BAD_LAYER}]"]),
+    "near-zero thickness": (
+        "subZ",
+        (BAD_COLUMN, BAD_LAYER),
+        1e-9,
+        ["more than 1000000 sub-steps", f"thinnest layer {BAD_LAYER}: subZ="],
+    ),
 }
 
 

@@ -2,16 +2,23 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Input checks of LOOP_SNOW.
+"""Input checks and iteration limits of LOOP_SNOW.
 
 A corrupted column stops the run with a message naming the column, its location and the offending layers, instead of
-spreading silently.
+spreading silently or hanging a loop of the snow and firn model.
 """
 
 import numpy as np
 from numpy.typing import NDArray
 
+from ebfm.core import logging
 from ebfm.core.constants import MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE
+
+logger = logging.getLogger(__name__)
+
+# Iteration limits far above any physical column. A corrupted column stops the run instead of hanging it.
+MAX_HEAT_SUBSTEPS = 1_000_000  # Heat-conduction sub-steps per column and time step, usually about 10
+MAX_SHIFT_PASSES = 1000  # Snowfall or melt grid-shift passes per time step, usually a few
 
 _MAX_REPORTED_COLUMNS = 5
 
@@ -117,3 +124,97 @@ def describe_dt_stab_failure(dt_stab: NDArray[np.float64], OUT, grid) -> str:
     if bad.size > _MAX_REPORTED_COLUMNS:
         lines.append(f"  ... and {bad.size - _MAX_REPORTED_COLUMNS} more columns")
     return "\n".join(lines)
+
+
+def _report_columns(header: str, bad: NDArray[np.intp], grid, describe_column) -> str:
+    """header, then one line per bad column (at most _MAX_REPORTED_COLUMNS) from describe_column(i)."""
+    lines = [header]
+    for i in bad[:_MAX_REPORTED_COLUMNS]:
+        lines.append(f"  {_column_label(grid, i)}: {describe_column(i)}")
+    if bad.size > _MAX_REPORTED_COLUMNS:
+        lines.append(f"  ... and {bad.size - _MAX_REPORTED_COLUMNS} more columns")
+    return "\n".join(lines)
+
+
+def _too_many_heat_substeps(dt_stab: NDArray[np.float64], dt: float) -> NDArray[np.bool_]:
+    """Columns whose dt / dt_stab sub-steps exceed MAX_HEAT_SUBSTEPS. Takes dt_stab > 0."""
+    return dt_stab < dt / MAX_HEAT_SUBSTEPS
+
+
+def _describe_too_many_heat_substeps(dt_stab: NDArray[np.float64], dt: float, OUT, grid) -> str:
+    bad = np.flatnonzero(_too_many_heat_substeps(dt_stab, dt))
+
+    def describe(i):
+        subZ = OUT["subZ"][i, 1:]
+        subD = OUT["subD"][i, 1:]
+        thinnest = int(np.argmin(subZ))
+        lightest = int(np.argmin(subD))
+        return (
+            f"dt_stab={dt_stab[i]:.6g} d ({dt / dt_stab[i]:.3g} sub-steps); "
+            f"thinnest layer {thinnest + 1}: subZ={subZ[thinnest]:.6g} m; "
+            f"lightest layer {lightest + 1}: subD={subD[lightest]:.6g} kg m-3"
+        )
+
+    return _report_columns(
+        f"Heat conduction needs more than {MAX_HEAT_SUBSTEPS} sub-steps in {bad.size} of {dt_stab.size} columns. "
+        "A layer of near-zero thickness or density?",
+        bad,
+        grid,
+        describe,
+    )
+
+
+def assert_dt_stab(dt_stab: NDArray[np.float64], dt: float, OUT, grid) -> None:
+    assert (dt_stab > 0).all(), describe_dt_stab_failure(dt_stab, OUT, grid)
+    assert not _too_many_heat_substeps(dt_stab, dt).any(), _describe_too_many_heat_substeps(dt_stab, dt, OUT, grid)
+
+
+def _too_many_snowfall_passes(shift_tot: NDArray[np.float64], max_subZ: float) -> NDArray[np.bool_]:
+    """Columns whose fresh snow (m) needs more than MAX_SHIFT_PASSES passes of max_subZ, or is NaN."""
+    return ~(shift_tot <= MAX_SHIFT_PASSES * max_subZ)
+
+
+def _describe_too_many_snowfall_passes(shift_tot: NDArray[np.float64], max_subZ: float, OUT, IN, grid) -> str:
+    bad = np.flatnonzero(_too_many_snowfall_passes(shift_tot, max_subZ))
+    return _report_columns(
+        f"Fresh snow is thicker than {MAX_SHIFT_PASSES} top layers of {max_subZ:g} m, or NaN, in {bad.size} of "
+        f"{shift_tot.size} columns. Implausible snowfall, deposition or fresh snow density?",
+        bad,
+        grid,
+        lambda i: (
+            f"fresh snow {shift_tot[i]:.6g} m from snow={IN['snow'][i]:.6g} and "
+            f"moist_deposition={OUT['moist_deposition'][i]:.6g} m w.e., Dfreshsnow={OUT['Dfreshsnow'][i]:.6g} kg m-3"
+        ),
+    )
+
+
+def assert_snowfall_passes(shift_tot: NDArray[np.float64], max_subZ: float, OUT, IN, grid) -> None:
+    assert not _too_many_snowfall_passes(shift_tot, max_subZ).any(), _describe_too_many_snowfall_passes(
+        shift_tot, max_subZ, OUT, IN, grid
+    )
+
+
+def describe_column_melted_away(mass_removed: NDArray[np.float64], mass_layer: NDArray[np.float64], OUT, grid) -> str:
+    bad = np.flatnonzero(mass_removed > 0)
+    return _report_columns(
+        f"Melt and sublimation remove more mass than the whole column holds in {bad.size} of {mass_removed.size} "
+        "columns. Implausible melt or sublimation?",
+        bad,
+        grid,
+        lambda i: (
+            f"melt={OUT['melt'][i]:.6g}, moist_sublimation={OUT['moist_sublimation'][i]:.6g} m w.e., "
+            f"column mass {mass_layer[i].sum():.6g} kg m-2"
+        ),
+    )
+
+
+def describe_too_many_melt_passes(shift_tot: NDArray[np.float64], OUT, grid) -> str:
+    bad = np.flatnonzero(shift_tot < 0)
+    return _report_columns(
+        f"Melt removal did not finish within {MAX_SHIFT_PASSES} grid-shift passes in {bad.size} of {shift_tot.size} "
+        "columns. A layer 1 of near-zero thickness?",
+        bad,
+        grid,
+        lambda i: f"remaining shift {shift_tot[i]:.6g} m, subZ[0]={OUT['subZ'][i, 0]:.6g} m, "
+        f"subZ[1]={OUT['subZ'][i, 1]:.6g} m",
+    )
