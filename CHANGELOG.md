@@ -6,6 +6,7 @@ SPDX-License-Identifier: CC-BY-4.0
 
 # develop
 
+* Fixed snowfall onto a top layer thicker than the maximum top-layer thickness, e.g. after melt has merged a thick deep layer into it. The whole top layer was squeezed into the maximum thickness, which gave densities above ice, negative densities, or an almost massless layer that made the heat conduction need millions of sub-steps. Such a top layer now moves down unchanged and the snow starts a new top layer. https://github.com/EBFMorg/EBFM/pull/222
 * Fixed off-by-one error in grid shifts that can lead to inaccuracies for long-running simulations. https://github.com/EBFMorg/EBFM/pull/164
 * Add a 10-km test case for Greenland forced with CARRA2 meteorological data for May 1990 (`examples/Greenland_CARRA2`). https://github.com/EBFMorg/EBFM/pull/128
     * Add feature to use NetCDF meshes with DEM as input (`--netcdf-mesh`)
