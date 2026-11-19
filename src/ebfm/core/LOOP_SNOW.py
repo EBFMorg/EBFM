@@ -180,9 +180,17 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 OUT["subD"][idx_shift, 2:nl] = subD_old[:, 1 : nl - 1]
                 OUT["subW"][idx_shift, 2:nl] = subW_old[:, 1 : nl - 1]
 
-                OUT["subZ"][idx_shift, 1] = max_subZ
-                OUT["subZ"][idx_shift, 0] = (subZ_old[:, 0] + shift_amount[idx_shift]) - max_subZ
-                subZ_layer1_new = OUT["subZ"][idx_shift, 1]
+                # The former top layer becomes layer 1. A top layer thinner than max_subZ is topped up with fresh
+                # snow to max_subZ first. A thicker one (melt_sublimation can merge a thick deep layer into it)
+                # moves down whole, and all snow of this pass starts the new top layer.
+                oversized_top = subZ_old[:, 0] > max_subZ
+                subZ_layer1_new = np.where(oversized_top, subZ_old[:, 0], max_subZ)
+                OUT["subZ"][idx_shift, 1] = subZ_layer1_new
+                OUT["subZ"][idx_shift, 0] = np.where(
+                    oversized_top,
+                    shift_amount[idx_shift],
+                    (subZ_old[:, 0] + shift_amount[idx_shift]) - max_subZ,
+                )
                 OUT["subT"][idx_shift, 1] = (
                     subT_old[:, 0] * subZ_old[:, 0] / subZ_layer1_new
                     + OUT["Tsurf"][idx_shift] * (subZ_layer1_new - subZ_old[:, 0]) / subZ_layer1_new
