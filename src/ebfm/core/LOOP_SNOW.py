@@ -34,7 +34,32 @@ _SUCCESS = True
 # Adapted from initial commit 42c0113
 _MIN_LAYER_THICKNESS = 1e-17
 
+# Heat-conduction sub-steps (dt / dt_stab) per column and time step, usually about 10
+MAX_HEAT_SUBSTEPS = 1_000_000
+_MAX_REPORTED_COLUMNS = 5
+
 logger = logging.getLogger(__name__)
+
+
+def _describe_too_many_heat_substeps(dt_stab: NDArray[np.float64], dt: float, OUT) -> str:
+    bad = np.flatnonzero(dt_stab < dt / MAX_HEAT_SUBSTEPS)
+    lines = [
+        f"Heat conduction needs more than {MAX_HEAT_SUBSTEPS} sub-steps in {bad.size} of {dt_stab.size} columns. "
+        "A layer of near-zero thickness or density?"
+    ]
+    for i in bad[:_MAX_REPORTED_COLUMNS]:
+        subZ = OUT["subZ"][i, 1:]
+        subD = OUT["subD"][i, 1:]
+        thinnest = int(np.argmin(subZ))
+        lightest = int(np.argmin(subD))
+        lines.append(
+            f"  column {i}: dt_stab={dt_stab[i]:.6g} d ({dt / dt_stab[i]:.3g} sub-steps); "
+            f"thinnest layer {thinnest + 1}: subZ={subZ[thinnest]:.6g} m; "
+            f"lightest layer {lightest + 1}: subD={subD[lightest]:.6g} kg m-3"
+        )
+    if bad.size > _MAX_REPORTED_COLUMNS:
+        lines.append(f"  ... and {bad.size - _MAX_REPORTED_COLUMNS} more columns")
+    return "\n".join(lines)
 
 
 def main(C, OUT, IN, dt: float, grid, phys, column):
@@ -525,6 +550,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 C["dayseconds"],
             )
             assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
+            assert (dt_stab >= dt / MAX_HEAT_SUBSTEPS).all(), _describe_too_many_heat_substeps(dt_stab, dt, OUT)
             _heat_conduction_kernel(
                 OUT["subT"],
                 OUT["Tsurf"],
@@ -561,6 +587,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 / C["dayseconds"]
             )
             assert (dt_stab > 0).all(), "cells with dt_stab <= 0 are forbidden!"
+            assert (dt_stab >= dt / MAX_HEAT_SUBSTEPS).all(), _describe_too_many_heat_substeps(dt_stab, dt, OUT)
 
             # Precompute kk*subZ products and the temperature-update denominators once
             # kk_sz_top: conductivity-thickness product for the top interface
