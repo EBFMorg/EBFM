@@ -97,6 +97,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             OUT["Dfreshsnow"] = OUT["Dfreshsnow_T"] + OUT["Dfreshsnow_W"]
         else:
             OUT["Dfreshsnow"] = np.full_like(IN["snow"], C["Dfreshsnow"])
+        checks.assert_fresh_snow_density(OUT, IN, grid)
 
         # Update layer depths and properties
         shift_snowfall = IN["snow"] * C["Dwater"] / OUT["Dfreshsnow"]

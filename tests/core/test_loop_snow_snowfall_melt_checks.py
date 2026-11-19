@@ -7,8 +7,8 @@
 
 """The checks of snowfall and melt in LOOP_SNOW.
 
-Corrupted input (implausible snowfall or melt, or a layer that melt removal
-cannot get through) must stop the run with a message naming
+Corrupted input (an implausible fresh snow density, snowfall or melt, or a layer
+that melt removal cannot get through) must stop the run with a message naming
 the column and its location, instead of hanging it in a grid-shift loop.
 Extreme but physical input must pass. All backends share this code.
 """
@@ -24,6 +24,14 @@ from test_loop_snow_heat_conduction_checks import BAD_COLUMN, make_case, step
 
 # name: ({(dict, field, index): value}, expected message fragments)
 CORRUPTIONS = {
+    "air temperature far too cold": (
+        {("IN", "T", BAD_COLUMN): 100.0},
+        ["Fresh snow density < 3 kg m-3", "T=100 K"],
+    ),
+    "NaN wind speed": (
+        {("IN", "WS", BAD_COLUMN): np.nan},
+        ["Fresh snow density < 3 kg m-3 or NaN", "WS=nan"],
+    ),
     "huge snowfall": (
         {("IN", "snow", BAD_COLUMN): 1e6},
         ["thicker than 1000 top layers", "snow=1e+06"],
@@ -44,6 +52,8 @@ CORRUPTIONS = {
 
 # name: {(dict, field, index): value}
 EXTREME_BUT_PHYSICAL = {
+    "very cold air": {("IN", "T", BAD_COLUMN): 175.0},
+    "calm cold air": {("IN", "T", BAD_COLUMN): 200.0, ("IN", "WS", BAD_COLUMN): 0.0},
     "heavy snowfall": {("IN", "snow", BAD_COLUMN): 1.0},
     "strong melt": {("OUT", "melt", BAD_COLUMN): 0.1},
 }
