@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ebfm.partitioning.elmer_mesh import partition_elmer_mesh, partitioning_dir
+from ebfm.grid.elmer.partitioning import partition_elmer_mesh, partitioning_dir
 
-ELMER_MESH = Path(__file__).parent / "data" / "elmer_mesh" / "MESH"
+ELMER_MESH = Path(__file__).parents[2] / "data" / "elmer_mesh" / "MESH"
 
 
 def _lines(path: Path) -> list[str]:

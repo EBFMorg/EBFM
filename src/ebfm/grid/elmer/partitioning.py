@@ -11,7 +11,7 @@ lines are copied unchanged, so the partitions carry exactly the coordinates of t
 On n MPI ranks, EBFM runs on <mesh_dir>/partitioning.<n> when given --elmer-mesh <mesh_dir>, and creates it with this
 module if it is missing and --create-partitioning is given. To create it beforehand:
 
-    python -m ebfm.partitioning.elmer_mesh MESH 4
+    python -m ebfm.grid.elmer.partitioning MESH 4
     mpirun -np 4 ebfm --elmer-mesh MESH ...
 
 The partitions are not those of ElmerGrid and carry no boundary or shared-node files, so Elmer/Ice cannot run on

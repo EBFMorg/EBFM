@@ -2,4 +2,4 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Elmer meshes: the mesh, its file parser and readers, and the DEMs read onto it."""
+"""Elmer meshes: the mesh, its file parser and readers, the DEMs read onto it, and its partitioning."""

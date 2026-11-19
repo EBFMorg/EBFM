@@ -27,7 +27,7 @@ from ebfm.core.comm import mpi_available
 from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ, iso8601
 from ebfm.core.grid import GridInputType
 from ebfm.core.logger import log_levels_map
-from ebfm.partitioning.elmer_mesh import partition_elmer_mesh, partitioning_dir
+from ebfm.grid.elmer.partitioning import partition_elmer_mesh, partitioning_dir
 
 # Module-level parser reference, set by parse_cli_args().
 # Allows post-parse validation functions to call parser.error() without
@@ -388,7 +388,7 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
         "--create-partitioning",
         action="store_true",
         help="On N MPI ranks, create MESH/partitioning.N for --elmer-mesh MESH if it does not exist, by splitting "
-        "the mesh into N contiguous blocks of elements (see ebfm.partitioning.elmer_mesh). Later runs reuse it. "
+        "the mesh into N contiguous blocks of elements (see ebfm.grid.elmer.partitioning). Later runs reuse it. "
         "Elmer/Ice cannot run on this partitioning.",
     )
 
