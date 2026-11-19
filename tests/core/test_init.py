@@ -24,7 +24,7 @@ from ebfm.core.config import ColumnDiscretizationConfig, OutputConfig
 from ebfm.core.config.grid import GridConfig
 from ebfm.core.config.time import TimeConfig
 from ebfm.core.restart import PER_COLUMN_VARIABLES, PER_LAYER_VARIABLES, RESTART_VARIABLES
-from ebfm.elmer.mesh import TriangleMesh
+from ebfm.grid.elmer.mesh import TriangleMesh
 
 GPSUM = 5
 NL = 4

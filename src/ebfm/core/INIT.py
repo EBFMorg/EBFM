@@ -13,9 +13,9 @@ from netCDF4 import Dataset, num2date
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
+from ebfm.grid.elmer.reader import read_elmer_mesh, read_dem, read_dem_xios
 
-from ebfm.elmer.mesh import Mesh
+from ebfm.grid.elmer.mesh import Mesh
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, OutputConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
 from .restart import validate_all_variables_present, validate_variable_shape
