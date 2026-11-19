@@ -13,3 +13,6 @@ LATENT_HEAT_OF_FUSION = 0.33e6  # Latent heat of melting/fusion (J kg-1)
 
 # Plausibility bounds: model states outside them stop the run as corrupted input.
 MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE = 200.0  # Lower bound of subsurface layer temperatures (K)
+
+# Plausible ranges (min, max) of fields received from coupled models, in the units of the field definition.
+PLAUSIBLE_SURFACE_TEMPERATURE = (150.0, 350.0)  # Surface temperature (K)
