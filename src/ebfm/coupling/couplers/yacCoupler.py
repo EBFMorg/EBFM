@@ -257,12 +257,26 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             f"'{field.coupled_component.name}', but got {action}."
         )
 
-        data, action = field.field_handle.get()
+        # YAC does not assign target points that the interpolation stack does not reach, and by default receives into
+        # an uninitialized buffer, so these points would carry arbitrary values.
+        # TODO: Workaround until YAC initializes the receive buffer with NaN.
+        handle = field.field_handle
+        buf = np.full((handle.collection_size, handle.size), np.nan)
+        data, action = handle.get(buf)
         logger.debug(f"Receiving field {field.name} from {field.coupled_component.name} complete.")
         assert data.shape[0] == _COLLECTION_SIZE, (
             f"Expected data shape ({_COLLECTION_SIZE}, ...), got {data.shape} for field '{field.name}' "
             f"from component '{field.coupled_component.name}'."
         )
+
+        n_unset = int(np.isnan(data).sum())
+        if n_unset > 0:
+            raise RuntimeError(
+                f"Received {n_unset} of {data.size} target points of field '{field.name}' from component "
+                f"'{field.coupled_component.name}' as NaN: YAC did not interpolate them, or the source is NaN. "
+                "Every EBFM column needs a value, so extend the interpolation stack of this field in the coupling "
+                "configuration, e.g. with nnn or a fixed value as the last method."
+            )
 
         return data[_COLLECTION_SIZE - 1], error
 

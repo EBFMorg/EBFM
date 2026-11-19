@@ -7,6 +7,7 @@ SPDX-License-Identifier: CC-BY-4.0
 # develop
 
 * Heat conduction now stops EBFM with an error naming the affected columns (index, latitude, longitude) and layers if the subsurface state is non-finite, a layer is colder than 200 K (e.g. temperatures in deg C or fill values from forcing, coupling or restart), or the stability time step is not positive (zero layer thickness or density). The 200 K bound is `MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE` in `ebfm/core/constants.py`. Non-finite values previously spread silently with `--with-numba`. With `--with-gpu`, a non-positive stability time step previously made the run hang (negative) or skipped the heat conduction of the column (zero). https://github.com/EBFMorg/EBFM/pull/XXX
+* A field received via YAC now stops EBFM with an error naming the field, the component and the number of points if YAC did not interpolate all points, e.g. because the interpolation stack of the field in the coupling configuration does not reach every EBFM column. These points previously carried arbitrary values from uninitialized memory. https://github.com/EBFMorg/EBFM/pull/XXX
 * Fixed off-by-one error in grid shifts that can lead to inaccuracies for long-running simulations. https://github.com/EBFMorg/EBFM/pull/164
 * Add a 10-km test case for Greenland forced with CARRA2 meteorological data for May 1990 (`examples/Greenland_CARRA2`). https://github.com/EBFMorg/EBFM/pull/128
     * Add feature to use NetCDF meshes with DEM as input (`--netcdf-mesh`)

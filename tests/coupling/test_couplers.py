@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+import dataclasses
 import sys
 import unittest
 from argparse import Namespace
@@ -334,6 +335,55 @@ class TestTemplateCouplerIsUnimplemented(unittest.TestCase):
             with self.subTest(method=name):
                 with self.assertRaises(NotImplementedError):
                     call()
+
+
+@unittest.skipUnless(yac_available, "requires yac (pip install 'ebfm[cpl]')")
+class TestYACCouplerGetUnsetTargetPoints(unittest.TestCase):
+    """
+    YAC leaves target points that the interpolation stack does not reach untouched. _get must report them instead
+    of returning whatever the receive buffer held before.
+    """
+
+    N_POINTS = 4
+
+    def _coupler_receiving(self, received: dict[int, float]):
+        """
+        A coupler with one target field "tas" from "partner", whose YAC get assigns only the points in `received`.
+        """
+        from ebfm.coupling.fields.yacField import YACField
+
+        coupler, components = _bare_yac_coupler(["partner"])
+        coupler.interface = mock.Mock()
+        coupler.interface.get_field_role.return_value = yac.ExchangeType.TARGET
+
+        def get(buf):
+            for index, value in received.items():
+                buf[0, index] = value
+            return buf, yac.Action.COUPLING
+
+        handle = mock.Mock(collection_size=1, size=self.N_POINTS, action=yac.Action.COUPLING)
+        handle.get.side_effect = get
+        field = YACField.from_field(_field("tas", components["partner"]))
+        coupler._fields.add(dataclasses.replace(field, field_handle=handle))
+        return coupler
+
+    def test_all_points_received(self):
+        coupler = self._coupler_receiving({i: 250.0 + i for i in range(self.N_POINTS)})
+
+        data, error = coupler._get("partner", "tas")
+
+        np.testing.assert_array_equal(data, [250.0, 251.0, 252.0, 253.0])
+        self.assertIsNone(error)
+
+    def test_unset_points_are_rejected(self):
+        coupler = self._coupler_receiving({0: 250.0, 2: 252.0})
+
+        with self.assertRaises(RuntimeError) as raised:
+            coupler._get("partner", "tas")
+
+        message = str(raised.exception)
+        self.assertIn("2 of 4 target points of field 'tas' from component 'partner'", message)
+        self.assertIn("interpolation stack", message)
 
 
 if __name__ == "__main__":
