@@ -243,6 +243,33 @@ class TestColumnShift(unittest.TestCase):
         # Dfreshsnow of snowfall_and_deposition for IN["T"] = T0 (between T0 - 15 and T0 + 2) and WS = 4.
         return 50 + 1.7 * 15 ** (3 / 2) + 266.86 * (0.5 * (1 + np.tanh(4.0 / 5))) ** 8.8
 
+    def test_snowfall_hands_oversized_top_layer_down_whole(self):
+        """An oversized top layer moves to index 1 unchanged; the snow starts a new top layer.
+
+        Forcing layer 1 to max_subZ would squeeze the whole mass of the old top layer into
+        it: about 1950 kg m-3 here (a dense top layer), or almost no mass if the old top
+        layer is just lighter than the fresh snow (next test).
+        """
+        grid, OUT, IN = self._oversized_top_case(top_density=600.0)
+        subZ_top, subD_top = OUT["subZ"][:, 0].copy(), OUT["subD"][:, 0].copy()
+        subW_old = OUT["subW"].copy()
+
+        self._step(grid, OUT, IN)
+
+        # Compaction perturbs subZ/subD by ~1e-6 relative over one hourly step at 600 kg m-3.
+        np.testing.assert_allclose(OUT["subZ"][:, 1], subZ_top, rtol=1e-4, err_msg="layer 1 is not the old top layer")
+        np.testing.assert_allclose(OUT["subD"][:, 1], subD_top, rtol=1e-4, err_msg="layer 1 density changed")
+        np.testing.assert_array_equal(OUT["subW"][:, 1], subW_old[:, 0], err_msg="layer 1 water is not the old top's")
+        # The new top layer holds exactly this step's snowfall (compaction preserves subD * subZ).
+        np.testing.assert_allclose(
+            OUT["subD"][:, 0] * OUT["subZ"][:, 0],
+            IN["snow"] * self.C["Dwater"],
+            rtol=1e-10,
+            err_msg="new top layer is not this step's snowfall",
+        )
+        np.testing.assert_allclose(OUT["subW"][:, 2:NL], subW_old[:, 1 : NL - 1], rtol=0, atol=0)
+        self.assertTrue((OUT["subD"] <= self.C["Dice"]).all(), "density above ice density")
+
     def test_snowfall_onto_oversized_top_keeps_heat_conduction_fast(self):
         """A top layer just lighter than the fresh snow does not stall the heat conduction.
 
