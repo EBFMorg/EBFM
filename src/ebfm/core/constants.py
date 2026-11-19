@@ -10,3 +10,6 @@ WATER_DENSITY = 1000.0  # Density of water (kg m-3), used to convert mass fluxes
 
 MELTING_POINT = 273.15  # Melting temperature of ice (K)
 LATENT_HEAT_OF_FUSION = 0.33e6  # Latent heat of melting/fusion (J kg-1)
+
+# Plausibility bounds: model states outside them stop the run as corrupted input.
+MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE = 200.0  # Lower bound of subsurface layer temperatures (K)
