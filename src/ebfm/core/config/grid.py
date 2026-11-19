@@ -9,6 +9,7 @@ This file provides the grid configuration dataclass for EBFM.
 from argparse import Namespace
 
 from ebfm.core.grid import GridInputType
+from ebfm.grid.structured.partitioning import partition_file
 from pathlib import Path
 
 import logging
@@ -27,8 +28,7 @@ class GridConfig:
     is_partitioned: bool  # Whether the grid is partitioned
     is_unstructured: bool  # Whether the grid is unstructured
     partition_id: int | None  # Partition ID (only relevant if is_partitioned is True or num_partitions > 1)
-    # Number of partitions of the grid, one per MPI rank: of the mesh files if is_partitioned is True, else the
-    # number of blocks EBFM splits a MATLAB or NetCDF grid into. 1 for a grid that is not split.
+    # Number of partitions of the grid, one per MPI rank; 1 for a grid that is not partitioned
     num_partitions: int
     elmer_mesh_crs_epsg: int  # EPSG code of Elmer mesh coordinates
     use_shading: bool  # Whether to use shading for the grid
@@ -49,13 +49,12 @@ class GridConfig:
         GridInputType.MATLAB,
     }
 
-    def __init__(self, args: Namespace, num_ranks: int = 1, rank: int = 0):
+    def __init__(self, args: Namespace):
         """
         Initialize grid configuration from command line arguments.
 
-        @param[in] args command line arguments
-        @param[in] num_ranks number of MPI ranks, over which a non-partitioned grid is split
-        @param[in] rank MPI rank of this process, which computes the block rank + 1 of a split grid
+        @param[in] args command line arguments, with args.partitioning set by cli.resolve_partitioning in a run on
+                        several MPI ranks
         """
         selected_primary_grids = [
             grid_type
@@ -70,22 +69,11 @@ class GridConfig:
 
         self.elmer_mesh_crs_epsg = args.elmer_mesh_crs_epsg
 
-        self.is_partitioned = args.is_partitioned_elmer_mesh
+        partitioning = getattr(args, "partitioning", None)
+        self.is_partitioned = args.is_partitioned_elmer_mesh or partitioning is not None
         self.dem_file = None
         self.partition_id = None
         self.num_partitions = 1
-
-        assert (
-            not self.is_partitioned or elmer_mesh is not None
-        ), "Internal error: partitioned grid configuration requires an Elmer mesh input."
-
-        if self.is_partitioned:
-            logger.info("Using partitioned grid...")
-            self.partition_id = args.use_part
-            self.num_partitions = len(list(Path(elmer_mesh).glob("part.*.header")))
-            logger.info(f"{self.partition_id=}")
-        else:
-            logger.info("Using non-partitioned grid...")
 
         if matlab_mesh:
             self.grid_type = GridInputType.MATLAB
@@ -117,11 +105,17 @@ class GridConfig:
             )
             raise Exception("Invalid grid configuration.")
 
-        # An Elmer mesh is only split by its partitioning (see cli.resolve_elmer_mesh_partitioning)
-        if not self.is_unstructured and num_ranks > 1:
-            logger.info(f"Splitting the grid over {num_ranks} MPI ranks...")
-            self.partition_id = rank + 1
-            self.num_partitions = num_ranks
+        if self.is_partitioned:
+            self.partition_id = args.use_part
+            if self.is_unstructured:
+                self.num_partitions = len(list(Path(elmer_mesh).glob("part.*.header")))
+            else:
+                # A partition of a structured grid is a grid file of its own, read instead of the whole grid
+                self.num_partitions = len(list(Path(partitioning).glob(f"part.*{Path(self.mesh_file).suffix}")))
+                self.mesh_file = partition_file(partitioning, self.partition_id, self.mesh_file)
+                if self.grid_type is GridInputType.NETCDF:
+                    self.dem_file = self.mesh_file
+            logger.info(f"Using partition {self.partition_id} of {self.num_partitions}...")
 
         self.use_shading = self._check_shading(args)
         self.fill_missing_elevation = args.fill_missing_elevation

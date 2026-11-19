@@ -27,7 +27,8 @@ from ebfm.core.comm import mpi_available
 from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ, iso8601
 from ebfm.core.grid import GridInputType
 from ebfm.core.logger import log_levels_map
-from ebfm.grid.elmer.partitioning import partition_elmer_mesh, partitioning_dir
+import ebfm.grid.elmer.partitioning as elmer_partitioning
+import ebfm.grid.structured.partitioning as structured_partitioning
 
 # Module-level parser reference, set by parse_cli_args().
 # Allows post-parse validation functions to call parser.error() without
@@ -387,9 +388,10 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     parallel_group.add_argument(
         "--create-partitioning",
         action="store_true",
-        help="On N MPI ranks, create MESH/partitioning.N for --elmer-mesh MESH if it does not exist, by splitting "
-        "the mesh into N contiguous blocks of elements (see ebfm.grid.elmer.partitioning). Later runs reuse it. "
-        "Elmer/Ice cannot run on this partitioning.",
+        help="On N MPI ranks, create the partitioning of the grid into N partitions if it does not exist: "
+        "MESH/partitioning.N for --elmer-mesh MESH, GRID.partitioning.N for --matlab-mesh or --netcdf-mesh "
+        "GRID.mat or GRID.nc. The grid is split into N contiguous blocks of cells (see ebfm.grid.elmer.partitioning "
+        "and ebfm.grid.structured.partitioning). Later runs reuse it. Elmer/Ice cannot run on such a partitioning.",
     )
 
     parallel_group.add_argument(
@@ -681,36 +683,45 @@ def validate_partition_count(args: Namespace, grid_config, comm, logger) -> None
         logger.warning(message)
 
 
-def resolve_elmer_mesh_partitioning(args: Namespace, comm, logger) -> None:
-    """Make a run with a non-partitioned Elmer mesh MESH on N > 1 MPI ranks use MESH/partitioning.N.
+def resolve_partitioning(args: Namespace, comm, logger) -> None:
+    """Make a run on N > 1 MPI ranks use the partitioning of its grid into N partitions.
 
-    If the partitioning does not exist, rank 0 creates it with --create-partitioning, and the run stops with an error
-    otherwise. Sets args.elmer_mesh to the partitioning and args.is_partitioned_elmer_mesh, so must be called before
-    GridConfig is built, on every rank of comm.
+    The partitioning of an Elmer mesh MESH is MESH/partitioning.N, that of a MATLAB or NetCDF grid file GRID.mat or
+    GRID.nc is GRID.partitioning.N. If it does not exist, rank 0 creates it with --create-partitioning, and the run
+    stops with an error otherwise. Sets args.partitioning to it, and for an Elmer mesh also args.elmer_mesh and
+    args.is_partitioned_elmer_mesh, so must be called before GridConfig is built, on every rank of comm.
 
     @param[in,out] args parsed CLI arguments
     @param[in]     comm EBFM's MPI communicator
     @param[in]     logger logger for the partitioning used
     """
-    mesh_dest = GridConfig.mesh_arg_dests[GridInputType.ELMER]
-    mesh_dir = getattr(args, mesh_dest, None)
-    if mesh_dir is None or args.is_partitioned_elmer_mesh or comm.size == 1:
+    args.partitioning = None
+    if comm.size == 1 or args.is_partitioned_elmer_mesh:
         return
 
-    partitioning = partitioning_dir(mesh_dir, comm.size)
+    (grid_type,) = [t for t, dest in GridConfig.mesh_arg_dests.items() if getattr(args, dest, None) is not None]
+    grid_path = getattr(args, GridConfig.mesh_arg_dests[grid_type])
+    if grid_type is GridInputType.ELMER:
+        partitioning = elmer_partitioning.partitioning_dir(grid_path, comm.size)
+        create = elmer_partitioning.partition_elmer_mesh
+        coupling_hint = " When coupling to Elmer/Ice, put the ElmerGrid partitioning of Elmer/Ice there instead."
+    else:
+        partitioning = structured_partitioning.partitioning_dir(grid_path, comm.size)
+        create = structured_partitioning.partition_grid
+        coupling_hint = ""
+
     if not partitioning.is_dir():
         if not args.create_partitioning:
             _cli_error(
-                f"EBFM runs on {comm.size} MPI ranks, so it needs a partitioning of the Elmer mesh {mesh_dir} with one "
+                f"EBFM runs on {comm.size} MPI ranks, so it needs a partitioning of the grid {grid_path} with one "
                 f"partition per rank, {partitioning}, which does not exist. Pass --create-partitioning to let EBFM "
-                "create it there; later runs reuse it. When coupling to Elmer/Ice, put the ElmerGrid partitioning of "
-                "Elmer/Ice there instead."
+                f"create it there; later runs reuse it.{coupling_hint}"
             )
         error = None
         if comm.rank == 0:
-            logger.info(f"Creating the partitioning {partitioning} of the Elmer mesh...")
+            logger.info(f"Creating the partitioning {partitioning} of the grid...")
             try:
-                partition_elmer_mesh(mesh_dir, comm.size)
+                create(grid_path, comm.size)
             except FileExistsError:
                 pass  # created by another run in the meantime
             except (OSError, ValueError) as e:
@@ -720,6 +731,8 @@ def resolve_elmer_mesh_partitioning(args: Namespace, comm, logger) -> None:
             _cli_error(error)
 
     if comm.rank == 0:
-        logger.info(f"Using the partitioning {partitioning} of the Elmer mesh.")
-    setattr(args, mesh_dest, partitioning)
-    args.is_partitioned_elmer_mesh = True
+        logger.info(f"Using the partitioning {partitioning} of the grid.")
+    args.partitioning = partitioning
+    if grid_type is GridInputType.ELMER:
+        args.elmer_mesh = partitioning
+        args.is_partitioned_elmer_mesh = True

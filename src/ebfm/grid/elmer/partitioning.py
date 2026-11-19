@@ -19,14 +19,13 @@ them. When coupling to Elmer/Ice, partition the mesh with ElmerGrid instead.
 """
 
 import argparse
-import os
-import shutil
 import sys
-import tempfile
 from collections import Counter
 from pathlib import Path
 
 import numpy as np
+
+from ebfm.grid.partitioning import write_directory_atomically
 
 
 def partitioning_dir(mesh_dir: Path, n_partitions: int) -> Path:
@@ -34,29 +33,28 @@ def partitioning_dir(mesh_dir: Path, n_partitions: int) -> Path:
     return Path(mesh_dir) / f"partitioning.{n_partitions}"
 
 
+def partition_column_ids(partitioning: Path) -> dict[int, np.ndarray]:
+    """The column ids, i.e. element ids, of every partition of a partitioning of an Elmer mesh, by partition id."""
+    element_files = {int(f.name.split(".")[1]): f for f in Path(partitioning).glob("part.*.elements")}
+    if not element_files or sorted(element_files) != list(range(1, len(element_files) + 1)):
+        raise ValueError(f"{partitioning} holds no partitions part.<i>.elements numbered from 1.")
+    return {
+        partition_id: np.loadtxt(element_files[partition_id], usecols=0, dtype=np.int64, ndmin=1)
+        for partition_id in sorted(element_files)
+    }
+
+
 def partition_elmer_mesh(mesh_dir: Path, n_partitions: int, out_dir: Path | None = None) -> Path:
     """
     Write n_partitions partitions of the Elmer mesh in mesh_dir to out_dir, partitioning_dir() by default.
 
-    The partitions are written to a temporary directory next to out_dir, which then takes its place, so that out_dir
-    never holds a partial partitioning, e.g. after an interrupted run or while another run writes the same one.
+    The partitions are written atomically (see ebfm.grid.partitioning.write_directory_atomically).
 
     @returns out_dir
     @raises FileExistsError if out_dir exists
     """
     out_dir = Path(out_dir) if out_dir is not None else partitioning_dir(mesh_dir, n_partitions)
-    if out_dir.exists():
-        raise FileExistsError(f"{out_dir} already exists.")
-
-    out_dir.parent.mkdir(parents=True, exist_ok=True)
-    tmp_dir = Path(tempfile.mkdtemp(prefix=f".{out_dir.name}.", dir=out_dir.parent))
-    try:
-        _write_partitions(Path(mesh_dir), n_partitions, tmp_dir)
-        os.rename(tmp_dir, out_dir)
-    except BaseException:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
-        raise
-    return out_dir
+    return write_directory_atomically(out_dir, lambda tmp_dir: _write_partitions(Path(mesh_dir), n_partitions, tmp_dir))
 
 
 def _write_partitions(mesh_dir: Path, n_partitions: int, out_dir: Path) -> None:

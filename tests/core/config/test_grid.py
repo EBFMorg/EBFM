@@ -14,7 +14,7 @@ _ELMER = ["--elmer-mesh-crs-epsg", "3413"]
 
 
 class TestNumberOfPartitions(unittest.TestCase):
-    """The number of partitions of the grid: of the mesh files, or of the split over the ranks."""
+    """The number of partitions of the grid: of the mesh files, or of the partitioning of a structured grid."""
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
@@ -40,18 +40,22 @@ class TestNumberOfPartitions(unittest.TestCase):
 
         self.assertEqual(GridConfig(args).num_partitions, 1)
 
-    def test_non_partitioned_elmer_mesh_is_not_split_over_the_ranks(self):
-        args = parse_cli_args(["--elmer-mesh", str(self.mesh), *_ELMER])
-
-        self.assertEqual(GridConfig(args, num_ranks=4).num_partitions, 1)
-
-    def test_matlab_and_netcdf_grids_are_split_over_the_ranks(self):
-        for grid_args in (["--matlab-mesh", "mesh.mat"], ["--netcdf-mesh", "mesh.nc"]):
+    def test_partition_of_a_structured_grid_is_read_from_its_partitioning(self):
+        for grid_args, suffix in ((["--matlab-mesh", "grid.mat"], ".mat"), (["--netcdf-mesh", "grid.nc"], ".nc")):
             with self.subTest(grid_args[0]):
-                grid_config = GridConfig(parse_cli_args(grid_args), num_ranks=4, rank=2)
+                partitioning = Path(self.tmpdir.name) / f"grid{suffix}.partitioning.4"
+                partitioning.mkdir()
+                for partition_id in range(1, 5):
+                    (partitioning / f"part.{partition_id}{suffix}").touch()
+                args = parse_cli_args(grid_args)
+                args.partitioning, args.use_part = partitioning, 3
 
+                grid_config = GridConfig(args)
+
+                self.assertTrue(grid_config.is_partitioned)
                 self.assertEqual(grid_config.num_partitions, 4)
                 self.assertEqual(grid_config.partition_id, 3)
+                self.assertEqual(grid_config.mesh_file, partitioning / f"part.3{suffix}")
 
 
 if __name__ == "__main__":

@@ -4,13 +4,11 @@
 
 """A run on several MPI ranks gives exactly the results of a run on a single rank.
 
-Each case runs EBFM once on a single rank and once per rank count under mpirun, and requires equal --dump-reference
-snapshots and equal output: a byte-identical output file for a MATLAB grid, which rank 0 writes, and for an Elmer mesh,
-which runs on the partitioning EBFM creates with --create-partitioning, the output files of the partitions merged by
-ebfm.io.merge.
+Each case runs EBFM once on a single rank and once per rank count under mpirun, on the partitioning of the grid that
+EBFM creates with --create-partitioning, and requires equal --dump-reference snapshots and equal output, once the
+output files of the partitions are merged by ebfm.io.merge.
 """
 
-import filecmp
 import importlib.util
 import os
 import shutil
@@ -80,34 +78,41 @@ def _log_tails(workdir: Path, n_lines: int = 15) -> str:
     return "\n".join(tails) or "(no log files)"
 
 
-def _tool(module: str, *args) -> None:
+def tool(module: str, *args) -> None:
     """Run a module of ebfm.io standalone."""
     cmd = [sys.executable, "-m", f"ebfm.io.{module}", *map(str, args)]
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT)
     assert result.returncode == 0, f"{' '.join(cmd)} failed:\n{result.stdout}\n{result.stderr}"
 
 
-def _with_mesh_copy(args: list[str], tmp_path: Path) -> list[str]:
-    """args with the Elmer mesh replaced by a copy in tmp_path, in which EBFM may create a partitioning."""
-    mesh = tmp_path / "MESH"
-    if not mesh.exists():
-        shutil.copytree(ELMER_MESH, mesh)
-    args = list(args)
-    args[args.index("--elmer-mesh") + 1] = str(mesh)
-    return args
+def parallel_args(case: str, tmp_path: Path) -> list[str]:
+    """
+    The arguments of case for a run on several ranks: on a copy of its grid in tmp_path, whose partitioning for the
+    number of ranks EBFM creates with --create-partitioning if it does not exist yet.
+    """
+    args = list(CASES[case])
+    for option, source in (("--elmer-mesh", ELMER_MESH), ("--matlab-mesh", MATLAB_MESH)):
+        if option in args:
+            copy = tmp_path / "grid" / source.name
+            if not copy.exists():
+                copy.parent.mkdir(exist_ok=True)
+                (shutil.copytree if source.is_dir() else shutil.copy)(source, copy)
+            args[args.index(option) + 1] = str(copy)
+    return [*args, "--create-partitioning"]
+
+
+def assert_same_variables(expected_file: Path, actual_file: Path) -> None:
+    """Every variable of expected_file is in actual_file, with the same values."""
+    with Dataset(expected_file) as expected, Dataset(actual_file) as actual:
+        for name, var in expected.variables.items():
+            np.testing.assert_array_equal(actual[name][:], var[:], err_msg=name)
 
 
 def _assert_same_results(serial: Path, parallel: Path) -> None:
     (output_file,) = (serial / "Output").glob("output_*.nc")
-    parallel_output = parallel / "Output" / output_file.stem
-    if parallel_output.is_dir():
-        merged = parallel / "merged.nc"
-        _tool("merge", parallel_output, "-o", merged)
-        with Dataset(output_file) as expected, Dataset(merged) as actual:
-            for name, var in expected.variables.items():
-                np.testing.assert_array_equal(actual[name][:], var[:], err_msg=name)
-    else:
-        assert filecmp.cmp(output_file, parallel / "Output" / output_file.name, shallow=False)
+    merged = parallel / "merged.nc"
+    tool("merge", parallel / "Output" / output_file.stem, "-o", merged)
+    assert_same_variables(output_file, merged)
 
     with np.load(serial / "reference.npz") as expected, np.load(parallel / "reference.npz") as actual:
         assert sorted(actual.files) == sorted(expected.files)
@@ -130,9 +135,6 @@ def _assert_same_results(serial: Path, parallel: Path) -> None:
 )
 def test_parallel_run_equals_serial_run(tmp_path, case, n_ranks):
     serial = _run(CASES[case], 1, tmp_path / "serial")
-    parallel_args = CASES[case]
-    if "--elmer-mesh" in parallel_args:
-        parallel_args = [*_with_mesh_copy(parallel_args, tmp_path), "--create-partitioning"]
-    parallel = _run(parallel_args, n_ranks, tmp_path / f"np{n_ranks}")
+    parallel = _run(parallel_args(case, tmp_path), n_ranks, tmp_path / f"np{n_ranks}")
 
     _assert_same_results(serial, parallel)

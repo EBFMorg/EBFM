@@ -83,7 +83,7 @@ jobs:
         if: ${{ matrix.run_mpi }}
         timeout-minutes: 5
         run: |
-          mpirun -np 4 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading --output-dir Output/mpi
+          mpirun -np 4 .venv/bin/ebfm --matlab-mesh examples/dem_and_mask.mat --create-partitioning --no-shading --output-dir Output/mpi
           mpirun -np 4 .venv/bin/ebfm --elmer-mesh examples/greenland_mesh_v0/MESH --create-partitioning --elmer-mesh-crs-epsg 3413 --couple-to-icon-atmo --couple-to-icon-land --couple-to-elmer-ice --fake-coupling --no-shading --output-dir Output/mpi-greenland
 
   # LFS checkout is expensive (downloads all tracked binary files).

@@ -4,6 +4,7 @@
 #
 # This file was generated with the help of AI tools.
 
+import shutil
 import unittest
 import tempfile
 from pathlib import Path
@@ -17,6 +18,7 @@ from pyproj import Geod, Transformer
 
 from ebfm.core import INIT
 from ebfm.core.INIT import init_config, init_grid, init_initial_conditions
+from ebfm.grid.structured.partitioning import partition_grid
 from ebfm.core.FINAL_create_restart_file import main as write_restart_file
 from ebfm.core.cli import parse_cli_args
 from ebfm.core.comm import defaultComm
@@ -552,35 +554,40 @@ class TestMatlabShadingLookupTable(unittest.TestCase):
             INIT._precompute_shading_matlab({"is_parallel_run": True}, mask_2D=None)
 
 
-class TestMatlabGridSplit(unittest.TestCase):
-    """Split over several MPI ranks, a MATLAB grid gives each rank a contiguous block of the serial columns."""
+class TestMatlabGridPartitions(unittest.TestCase):
+    """The partitions of a MATLAB grid hold contiguous blocks of the serial columns, with their serial geometry."""
 
-    N_RANKS = 3
+    N_PARTITIONS = 3
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
+        self.grid_file = Path(self.tmpdir.name) / _MATLAB_MESH.name
+        shutil.copy(_MATLAB_MESH, self.grid_file)
+        self.partitioning = partition_grid(self.grid_file, self.N_PARTITIONS)
 
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def _init_grid(self, num_ranks, rank):
-        args = parse_cli_args(["--matlab-mesh", str(_MATLAB_MESH), "--no-shading"])
-        grid_config = GridConfig(args, num_ranks, rank)
+    def _init_grid(self, partition_id=None):
+        args = parse_cli_args(["--matlab-mesh", str(self.grid_file), "--no-shading"])
+        if partition_id is not None:
+            args.partitioning, args.use_part = self.partitioning, partition_id
+        grid_config = GridConfig(args)
         grid, _, _, _ = init_config(TimeConfig(args), grid_config, OutputConfig(args), Path(self.tmpdir.name), False)
         return init_grid(grid, grid_config, defaultComm)
 
-    def test_blocks_of_all_ranks_make_up_the_serial_grid(self):
-        serial = self._init_grid(num_ranks=1, rank=0)
-        blocks = [self._init_grid(self.N_RANKS, rank) for rank in range(self.N_RANKS)]
+    def test_partitions_make_up_the_serial_grid(self):
+        serial = self._init_grid()
+        partitions = [self._init_grid(partition_id) for partition_id in range(1, self.N_PARTITIONS + 1)]
 
         self.assertEqual(
-            [len(block["mask"]) for block in blocks],
-            [len(b) for b in np.array_split(serial["mask"], self.N_RANKS)],
+            [len(partition["mask"]) for partition in partitions],
+            [len(b) for b in np.array_split(serial["mask"], self.N_PARTITIONS)],
         )
         for key in ("column_id", "x", "y", "z", "lat", "lon", "slope_beta", "slope_gamma"):
             with self.subTest(key=key):
-                np.testing.assert_array_equal(np.concatenate([block[key] for block in blocks]), serial[key])
-        np.testing.assert_array_equal(np.concatenate([block["ind"][0] for block in blocks]), serial["ind"][0])
+                np.testing.assert_array_equal(np.concatenate([p[key] for p in partitions]), serial[key])
+        np.testing.assert_array_equal(np.concatenate([p["ind"][0] for p in partitions]), serial["ind"][0])
 
 
 class TestElmerGridCoordinates(unittest.TestCase):

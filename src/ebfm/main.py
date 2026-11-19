@@ -31,7 +31,7 @@ from ebfm.core.cli import (
     validate_partition_count,
     validate_shading_parallel_compat,
     validate_output_frequency_time_step_compat,
-    resolve_elmer_mesh_partitioning,
+    resolve_partitioning,
 )
 
 import ebfm.coupling
@@ -203,8 +203,8 @@ def _main_impl():
         # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
         args.use_part = ebfm_comm.rank + 1
 
-    # On several ranks, an Elmer mesh runs on its partitioning with one partition per rank
-    resolve_elmer_mesh_partitioning(args, ebfm_comm, logger)
+    # On several ranks, the grid is read from its partitioning with one partition per rank
+    resolve_partitioning(args, ebfm_comm, logger)
 
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
     if args.with_numba:
@@ -230,7 +230,7 @@ def _main_impl():
     logger.debug("Reading configuration and checking for consistency.")
 
     # TODO consider introducing an ebfm_adapter_config.yaml to be parsed alternatively/additionally to command line args
-    grid_config = GridConfig(args, ebfm_comm.size, ebfm_comm.rank)
+    grid_config = GridConfig(args)
 
     # Ensure shading routine is only used in uncoupled runs.
     # See https://github.com/EBFMorg/EBFM/issues/11 for details.

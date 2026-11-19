@@ -25,7 +25,7 @@ from ebfm.core.cli import (
     validate_shading_coupling_compat,
     validate_shading_parallel_compat,
     validate_use_part_parallel_compat,
-    resolve_elmer_mesh_partitioning,
+    resolve_partitioning,
 )
 
 from ebfm.core.comm import mpi_available
@@ -535,61 +535,87 @@ class TestValidatePartitionCount(unittest.TestCase):
         self.logger.warning.assert_not_called()
 
 
-class TestResolveElmerMeshPartitioning(unittest.TestCase):
-    """On N MPI ranks, a run with --elmer-mesh MESH uses MESH/partitioning.N, created with --create-partitioning."""
+class TestResolvePartitioning(unittest.TestCase):
+    """On N MPI ranks, a run uses the partitioning of its grid into N partitions, created with --create-partitioning.
+
+    The partitioning of an Elmer mesh MESH is MESH/partitioning.N, that of a MATLAB grid GRID.mat is
+    GRID.partitioning.N.
+    """
 
     ELMER_MESH = Path(__file__).parents[1] / "data" / "elmer_mesh" / "MESH"
+    MATLAB_GRID = Path(__file__).parents[2] / "examples" / "dem_and_mask.mat"
 
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         self.mesh = Path(self.tmpdir.name) / "MESH"
         shutil.copytree(self.ELMER_MESH, self.mesh)
+        self.grid_file = Path(self.tmpdir.name) / "grid.mat"
+        shutil.copy(self.MATLAB_GRID, self.grid_file)
+        self.cases = {
+            "Elmer mesh": (
+                ["--elmer-mesh", str(self.mesh), "--elmer-mesh-crs-epsg", "3413"],
+                self.mesh / "partitioning.3",
+            ),
+            "MATLAB grid": (["--matlab-mesh", str(self.grid_file)], Path(self.tmpdir.name) / "grid.partitioning.3"),
+        }
         self.logger = MagicMock()
 
     def tearDown(self):
         self.tmpdir.cleanup()
 
-    def _resolve(self, *extra_args, comm_size=3):
-        args = parse_cli_args(["--elmer-mesh", str(self.mesh), "--elmer-mesh-crs-epsg", "3413", *extra_args])
+    def _resolve(self, grid_args, *extra_args, comm_size=3):
+        args = parse_cli_args([*grid_args, *extra_args])
         comm = MagicMock(size=comm_size, rank=0, bcast=lambda value, root: value)
-        resolve_elmer_mesh_partitioning(args, comm, self.logger)
+        resolve_partitioning(args, comm, self.logger)
         return args
 
     def test_missing_partitioning_rejected_with_a_pointer_to_create_partitioning(self):
-        with self.assertRaises(SystemExit) as ctx, redirect_stderr(io.StringIO()) as stderr:
-            self._resolve()
-        self.assertEqual(ctx.exception.code, 2)
-        self.assertIn(str(self.mesh / "partitioning.3"), stderr.getvalue())
-        self.assertIn("--create-partitioning", stderr.getvalue())
-        self.assertFalse((self.mesh / "partitioning.3").exists())
+        for name, (grid_args, partitioning) in self.cases.items():
+            with self.subTest(name), self.assertRaises(SystemExit) as ctx, redirect_stderr(io.StringIO()) as stderr:
+                self._resolve(grid_args)
+            self.assertEqual(ctx.exception.code, 2)
+            self.assertIn(str(partitioning), stderr.getvalue())
+            self.assertIn("--create-partitioning", stderr.getvalue())
+            self.assertFalse(partitioning.exists())
 
     def test_existing_partitioning_is_used(self):
-        (self.mesh / "partitioning.3").mkdir()
+        for name, (grid_args, partitioning) in self.cases.items():
+            with self.subTest(name):
+                partitioning.mkdir()
 
-        args = self._resolve()
+                args = self._resolve(grid_args)
 
-        self.assertEqual(args.elmer_mesh, self.mesh / "partitioning.3")
-        self.assertTrue(args.is_partitioned_elmer_mesh)
-        self.assertEqual(list((self.mesh / "partitioning.3").iterdir()), [])
+                self.assertEqual(args.partitioning, partitioning)
+                self.assertEqual(list(partitioning.iterdir()), [])
 
     def test_missing_partitioning_is_created_with_create_partitioning(self):
-        args = self._resolve("--create-partitioning")
+        suffixes = {"Elmer mesh": ("header", "nodes", "elements"), "MATLAB grid": ("mat",)}
+        for name, (grid_args, partitioning) in self.cases.items():
+            with self.subTest(name):
+                args = self._resolve(grid_args, "--create-partitioning")
+
+                self.assertEqual(args.partitioning, partitioning)
+                for partition_id in (1, 2, 3):
+                    for suffix in suffixes[name]:
+                        self.assertTrue((partitioning / f"part.{partition_id}.{suffix}").is_file())
+
+    def test_elmer_mesh_is_replaced_by_its_partitioning(self):
+        (self.mesh / "partitioning.3").mkdir()
+
+        args = self._resolve(self.cases["Elmer mesh"][0])
 
         self.assertEqual(args.elmer_mesh, self.mesh / "partitioning.3")
         self.assertTrue(args.is_partitioned_elmer_mesh)
-        for partition_id in (1, 2, 3):
-            for suffix in ("header", "nodes", "elements"):
-                self.assertTrue((self.mesh / "partitioning.3" / f"part.{partition_id}.{suffix}").is_file())
 
-    def test_unchanged(self):
+    def test_unpartitioned(self):
         cases = {
-            "single rank": dict(comm_size=1),
-            "partitioned mesh": dict(extra_args=["--is-partitioned-elmer-mesh"]),
+            "single rank": (self.cases["MATLAB grid"][0], [], 1),
+            "partitioned mesh": (self.cases["Elmer mesh"][0], ["--is-partitioned-elmer-mesh"], 3),
         }
-        for name, kwargs in cases.items():
+        for name, (grid_args, extra_args, comm_size) in cases.items():
             with self.subTest(name):
-                args = self._resolve(*kwargs.get("extra_args", []), comm_size=kwargs.get("comm_size", 3))
-                self.assertEqual(args.elmer_mesh, self.mesh)
+                args = self._resolve(grid_args, *extra_args, comm_size=comm_size)
+                self.assertIsNone(args.partitioning)
 
 
 class TestCliCalendarArgument(unittest.TestCase):

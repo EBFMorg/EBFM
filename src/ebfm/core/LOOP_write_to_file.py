@@ -114,10 +114,21 @@ def _write_unstructured_grid(nc_file, grid, with_ids: bool = False):
     cell_vertices.description = "Zero-based local vertex indices for each unstructured cell"
 
 
-def _write_structured_grid(nc_file, grid):
-    """Write structured grid dimensions and coordinates to an open NetCDF file."""
+def _write_structured_grid(nc_file, grid, with_ids: bool = False):
+    """
+    Write structured grid dimensions and coordinates to an open NetCDF file.
+
+    @param[in] with_ids also write the column ids of the columns, the flat indices of their cells in the 2-D fields,
+                        with which the files of the partitions of a partitioned grid are merged
+    """
     nc_file.createDimension("y", grid["x_2D"].shape[0])
     nc_file.createDimension("x", grid["x_2D"].shape[1])
+
+    if with_ids:
+        nc_file.createDimension("column", len(grid["column_id"]))
+        column_id = nc_file.createVariable("column_id", np.int64, ("column",))
+        column_id[:] = grid["column_id"]
+        column_id.description = "Flat index into the (y, x) fields of the cell of each column of this file"
 
     x = nc_file.createVariable("x", np.float64, ("y", "x"))
     y = nc_file.createVariable("y", np.float64, ("y", "x"))
@@ -188,8 +199,8 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
     (time, cell), with optional mesh topology if grid["mesh"] is available.
 
     Collective over gather.comm: each rank accumulates its own columns, the root rank gathers the columns of
-    all ranks and writes them to a single file. With a gather over a single rank, as on a partitioned mesh, every
-    rank writes a file of its own columns, which also holds their column ids and vertex ids.
+    all ranks and writes them to a single file. With a gather over a single rank, as on a partitioned grid, every
+    rank writes a file of its own columns, which also holds their column ids (and vertex ids of a mesh).
     """
     # Specify variables to be written
     if is_first_time_step(t):
@@ -279,10 +290,11 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
         io["nc_file"] = Dataset(io["outfile"], "w", format="NETCDF4")
         io["nc_file"].createDimension("time", None)  # Unlimited time dimension
 
+        with_ids = bool(grid.get("is_partitioned"))
         if io["output_grid"]["is_unstructured"]:
-            _write_unstructured_grid(io["nc_file"], io["output_grid"], with_ids=bool(grid.get("is_partitioned")))
+            _write_unstructured_grid(io["nc_file"], io["output_grid"], with_ids=with_ids)
         else:
-            _write_structured_grid(io["nc_file"], io["output_grid"])
+            _write_structured_grid(io["nc_file"], io["output_grid"], with_ids=with_ids)
 
         io["nc_file"].createDimension("nl", column.nl)  # Vertical layers for `sub` variables
 

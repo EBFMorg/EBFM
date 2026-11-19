@@ -335,17 +335,17 @@ python -m ebfm.io.split_restart examples/restart/restart_1979-01-02T00:00:00Z.nc
 EBFM runs on several MPI ranks (requires `pip install 'ebfm[mpi]'`):
 
 ```sh
-mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --no-shading
+mpirun -np 4 ebfm --matlab-mesh examples/dem_and_mask.mat --create-partitioning --no-shading
 ```
 
-* MATLAB and NetCDF grids are split into contiguous blocks of columns, the
-  first block on rank 0. Rank 0 writes the output file, the restart file and
-  `--dump-reference` for all ranks, and reads the restart file. They are
-  identical to those of a run on a single rank.
-* An Elmer mesh runs on its partitioning with one partition per rank, which
-  `--create-partitioning` creates if needed (see above). Every rank writes the
-  output and restart files of its own partition, and `ebfm.io.merge`
-  merges them.
+* On N ranks, EBFM reads the grid from its partitioning into N partitions, one
+  per rank: `MESH/partitioning.N` of an Elmer mesh `MESH` (see above), and
+  `GRID.partitioning.N` next to a MATLAB or NetCDF grid file `GRID.mat` or
+  `GRID.nc`. `--create-partitioning` creates it if it does not exist, by
+  splitting the grid into N contiguous blocks of columns.
+* Every rank writes the output and restart files of its own partition, and
+  `python -m ebfm.io.merge` merges them into the file of a run on a single
+  rank.
 * Not supported on several ranks, and rejected with an error: shading and
   `--forcing-dir`.
 * `--no-check-grid-distribution` skips the start-up check that every column is

@@ -361,12 +361,9 @@ def init_grid(grid: GridDict, config: GridConfig, comm):
             grid["lon_2D"] = input_data["lon"]
             grid["lat_2D"] = input_data["lat"]
 
-        # Columns as flat indices into the 2-D fields; in a run on several MPI ranks a contiguous block of them,
-        # the first block on rank 0. The 2-D fields stay whole: the output writer places all columns into them.
+        # Columns as flat indices into the 2-D fields. A partition of the grid has the 2-D fields of the whole grid,
+        # with only its own cells active.
         ind = np.flatnonzero(mask_2D == 1)
-        if config.num_partitions > 1:
-            assert 1 <= config.partition_id <= config.num_partitions, f"Invalid partition id {config.partition_id}."
-            ind = np.array_split(ind, config.num_partitions)[config.partition_id - 1]
         grid["ind"] = (ind,)
         grid["column_id"] = ind
 

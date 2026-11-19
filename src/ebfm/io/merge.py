@@ -2,14 +2,14 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Merge the per-partition files of an EBFM run on a partitioned Elmer mesh into one file.
+"""Merge the per-partition files of an EBFM run on a partitioned grid into one file.
 
-A run on a partitioned Elmer mesh (--is-partitioned-elmer-mesh) writes a directory instead of a file, with
-part.<n>.nc for every partition n:
+A run on several MPI ranks writes a directory instead of a file, with part.<n>.nc for every partition n:
 
-* output_<time>/: output files. The merged file holds the cells of all partitions, ordered by column id, and every
-  vertex once, ordered by vertex id.
-* restart_<time>/: restart files. The merged file is a restart file of the whole mesh, ordered by column id, which
+* output_<time>/: output files. For an Elmer mesh, the merged file holds the cells of all partitions, ordered by
+  column id, and every vertex once, ordered by vertex id. For a MATLAB or NetCDF grid, it holds the (y, x) fields
+  with the values of all partitions.
+* restart_<time>/: restart files. The merged file is a restart file of the whole grid, ordered by column id, which
   every run can start from.
 
 python -m ebfm.io.split_restart is the inverse for restart files.
@@ -121,12 +121,53 @@ def merge_output_files(files: list[Path], directory: Path) -> tuple[dict, dict, 
     return dims, merged, attributes, global_attributes
 
 
+def merge_structured_output_files(files: list[Path], directory: Path) -> tuple[dict, dict, dict, dict]:
+    """
+    Combine the output files of the partitions of a structured grid, whose (y, x) fields hold values only at the
+    cells of their own columns: each partition contributes the values at its columns, the grid fields and the time
+    axis are those of the first file.
+    """
+    parts = [_read(f) for f in files]
+    first_dims, first_variables, attributes, global_attributes = parts[0]
+    part_variables = [variables for _, variables, _, _ in parts]
+    for f, variables in zip(files, part_variables):
+        if COLUMN_ID_VARIABLE not in variables:
+            raise ValueError(f"{f} has no '{COLUMN_ID_VARIABLE}' variable; it was not written on a partitioned grid.")
+
+    column_ids = np.concatenate([variables[COLUMN_ID_VARIABLE][1] for variables in part_variables])
+    _check_ids(column_ids, "column", directory)
+
+    dims = dict(first_dims)
+    dims["column"] = len(column_ids)
+    merged = {}
+    for name, (var_dims, values) in first_variables.items():
+        if name == COLUMN_ID_VARIABLE:
+            values = np.sort(column_ids)
+        elif "time" in var_dims and "y" in var_dims and var_dims[var_dims.index("y") + 1 :][:1] == ("x",):
+            # Index the cells of the (y, x) plane by their flat index, the column id
+            axis = var_dims.index("y")
+            values = values.copy()
+            flat = values.reshape(values.shape[:axis] + (-1,) + values.shape[axis + 2 :])
+            for variables in part_variables:
+                part_values = variables[name][1]
+                part_flat = part_values.reshape(part_values.shape[:axis] + (-1,) + part_values.shape[axis + 2 :])
+                at_columns = (slice(None),) * axis + (variables[COLUMN_ID_VARIABLE][1],)
+                flat[at_columns] = part_flat[at_columns]
+        merged[name] = (var_dims, values)
+    return dims, merged, attributes, global_attributes
+
+
 def merge_partition_files(directory: Path, out_file: Path) -> None:
     """Merge the part.<n>.nc files of directory, output or restart files, into out_file."""
     files = partition_files(directory)
     with Dataset(files[0], "r") as nc:
-        is_output = "cell" in nc.dimensions
-    merge = merge_output_files if is_output else merge_restart_files
+        dimensions = set(nc.dimensions)
+    if "cell" in dimensions:
+        merge = merge_output_files
+    elif {"time", "y", "x"} <= dimensions:
+        merge = merge_structured_output_files
+    else:
+        merge = merge_restart_files
     dims, variables, attributes, global_attributes = merge(files, directory)
 
     with Dataset(out_file, "w", format="NETCDF4") as dst:
