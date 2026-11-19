@@ -225,7 +225,15 @@ On several MPI ranks, `--use-part` is not allowed: rank i computes the partition
 mpirun -n 4 ebfm --elmer-mesh examples/greenland_mesh_v0/MESH/partitioning.128/ --netcdf-dem-mesh examples/BedMachineGreenland-v5_lo.nc --is-partitioned-elmer-mesh --elmer-mesh-crs-epsg 3413 --allow-partition-mismatch
 ```
 
-Rank 0 writes the output of all ranks to a single file, with the cells ordered by their Elmer element id.
+Every rank writes the output of its own partition, e.g.
+`Output/output_1979-01-01T00:00:00Z/part.42.nc`, with the column ids of its
+cells and the ids of its vertices. `ebfm.partitioning.merge` merges the files
+of all partitions into one, with the cells ordered by their Elmer element id
+and every vertex once:
+
+```sh
+python -m ebfm.partitioning.merge Output/output_1979-01-01T00:00:00Z
+```
 
 Besides a partitioned mesh, MATLAB and NetCDF grids and a non-partitioned Elmer mesh run on several MPI ranks (see [Running on several MPI ranks](#running-on-several-mpi-ranks)).
 
@@ -295,6 +303,18 @@ A restart file holds the columns of the whole grid together with their ids
 (`column_id`), so a run may continue from it on any number of MPI ranks and on
 a partitioned mesh. A restart file without `column_id`, written by an older
 version of EBFM, holds the columns in the order of a run on a single rank.
+
+A run on a partitioned Elmer mesh writes a directory of restart files instead,
+one per partition, e.g. `examples/restart/restart_1979-01-02T00:00:00Z/part.1.nc`,
+and every rank reads its own file from such a directory. It also continues from
+a single restart file, which rank 0 reads. To convert between the two:
+
+```sh
+# One restart file from the files of all partitions, for any other run
+python -m ebfm.partitioning.merge examples/restart/restart_1979-01-02T00:00:00Z
+# One restart file per partition of a partitioned mesh
+python -m ebfm.partitioning.split_restart examples/restart/restart_1979-01-02T00:00:00Z.nc path/to/MESH/partitioning.128
+```
 
 ### Running on several MPI ranks
 

@@ -66,8 +66,13 @@ def _gather_grid(gather: ColumnGather, grid):
     return output_grid
 
 
-def _write_unstructured_grid(nc_file, grid):
-    """Write unstructured mesh coordinates and topology to an open NetCDF file."""
+def _write_unstructured_grid(nc_file, grid, with_ids: bool = False):
+    """
+    Write unstructured mesh coordinates and topology to an open NetCDF file.
+
+    @param[in] with_ids also write the column ids of the cells and the ids of the vertices, with which the files of the
+                        partitions of a partitioned mesh are merged
+    """
     n_cells = grid["x"].shape[0]
 
     nc_file.createDimension("cell", n_cells)
@@ -96,6 +101,11 @@ def _write_unstructured_grid(nc_file, grid):
     lon.description = "Cell-center longitude"
     lat.description = "Cell-center latitude"
 
+    if with_ids:
+        column_id = nc_file.createVariable("column_id", np.int64, ("cell",))
+        column_id[:] = grid["column_id"]
+        column_id.description = "Column id of the cell"
+
     mesh = grid.get("mesh")
     if mesh is None:
         return
@@ -119,6 +129,11 @@ def _write_unstructured_grid(nc_file, grid):
     vlon[:] = np.degrees(mesh.lon_vertices)
     vlat[:] = np.degrees(mesh.lat_vertices)
     cell_vertices[:, :] = mesh.cell_to_vertex.astype(np.int32)
+
+    if with_ids:
+        vertex_id = nc_file.createVariable("vertex_id", np.int64, ("vertex",))
+        vertex_id[:] = mesh.vertex_ids
+        vertex_id.description = "Global id of the vertex"
 
     vx.units = "m"
     vy.units = "m"
@@ -203,7 +218,8 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
     (time, cell), with optional mesh topology if grid["mesh"] is available.
 
     Collective over gather.comm: each rank accumulates its own columns, the root rank gathers the columns of
-    all ranks and writes them to a single file.
+    all ranks and writes them to a single file. With a gather over a single rank, as on a partitioned mesh, every
+    rank writes a file of its own columns, which also holds their column ids and vertex ids.
     """
     # Specify variables to be written
     if is_first_time_step(t):
@@ -294,7 +310,7 @@ def main(OUTFILE, io, OUT, grid, t, time, column, gather: ColumnGather):
         io["nc_file"].createDimension("time", None)  # Unlimited time dimension
 
         if io["output_grid"]["is_unstructured"]:
-            _write_unstructured_grid(io["nc_file"], io["output_grid"])
+            _write_unstructured_grid(io["nc_file"], io["output_grid"], with_ids=bool(grid.get("is_partitioned")))
         else:
             _write_structured_grid(io["nc_file"], io["output_grid"])
 

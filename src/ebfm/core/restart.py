@@ -10,6 +10,10 @@ drift apart.
 A restart file holds the columns of the whole domain, in the order of their ids, and their ids in the variable
 `column_id`. A run on several MPI ranks reads and writes it on rank 0, which matches the rows to the columns by id,
 so the file does not depend on how the columns are distributed over the ranks.
+
+A run on a partitioned Elmer mesh writes a directory of restart files instead, `part.<n>.nc` for partition n, each
+with the columns of its partition, and reads its own from such a directory on every rank. The modules
+ebfm.partitioning.split_restart and ebfm.partitioning.merge convert between the two.
 """
 
 import logging
@@ -42,6 +46,11 @@ PER_LAYER_VARIABLES = ("subZ", "subW", "subD", "subS", "subT", "subTmean")
 
 # Every variable a restart file carries. The order is the order they are written in.
 RESTART_VARIABLES = PER_LAYER_VARIABLES + PER_COLUMN_VARIABLES
+
+
+def partition_file_name(partition_id: int) -> str:
+    """Name of the file of one partition in a directory of per-partition output or restart files."""
+    return f"part.{partition_id}.nc"
 
 
 def expected_shape(var_name: str, gpsum: int, nl: int) -> tuple[int, ...] | None:
@@ -124,9 +133,12 @@ def validate_all_variables_present(var_names, source: Path) -> None:
         raise ValueError(f"Restart file {source} is missing the required variable(s): {', '.join(missing)}.")
 
 
-def read_restart_file(path: Path, nl: int, gather: ColumnGather, grid) -> dict:
+def read_restart_file(path: Path, nl: int, gather: ColumnGather, grid, partition_id: int | None = None) -> dict:
     """
     Read a restart file on the root rank of gather and give every rank the rows of its columns.
+
+    For a directory of per-partition restart files, every rank instead reads the file of its own partition, without
+    communication.
 
     Collective over gather.comm. The rows of a file with a `column_id` variable are matched to the columns by id. A
     file without one holds the columns in the order of a run on a single rank, which, for a grid that EBFM splits
@@ -138,6 +150,7 @@ def read_restart_file(path: Path, nl: int, gather: ColumnGather, grid) -> dict:
         nl (int): Number of layers per column
         gather (ColumnGather): The columns of all ranks
         grid (dict): This rank's part of the grid
+        partition_id (int | None): Partition of a partitioned mesh that this rank computes; None for other grids
 
     Returns:
         dict: every variable of the file except `column_id`, with the rows of this rank's columns
@@ -145,6 +158,14 @@ def read_restart_file(path: Path, nl: int, gather: ColumnGather, grid) -> dict:
     Raises:
         ValueError: on the root rank, if the file does not match the columns of all ranks
     """
+    if path.is_dir():
+        if partition_id is None:
+            raise ValueError(
+                f"{path} is a directory of per-partition restart files, which only a run on a partitioned Elmer mesh "
+                "reads. Merge them into one restart file with python -m ebfm.partitioning.merge."
+            )
+        return _read_partition_file(path / partition_file_name(partition_id), nl, grid["column_id"])
+
     is_parallel_run = gather.comm.size > 1
 
     variables, is_ordered_by_id = None, None
@@ -182,6 +203,30 @@ def read_restart_file(path: Path, nl: int, gather: ColumnGather, grid) -> dict:
     if is_parallel_run and not is_ordered_by_id:
         _check_coordinates(local, grid, path)
     return local
+
+
+def _read_partition_file(path: Path, nl: int, column_ids) -> dict:
+    """Read the restart file of one partition, with the rows in the order of column_ids."""
+    if not path.exists():
+        raise ValueError(
+            f"There is no restart file {path} for this partition. The restart directory was written for a mesh with "
+            "fewer partitions; merge it into one restart file with python -m ebfm.partitioning.merge."
+        )
+
+    with Dataset(path, "r") as ncfile:
+        if COLUMN_ID_VARIABLE not in ncfile.variables:
+            raise ValueError(f"Restart file {path} of a partition has no '{COLUMN_ID_VARIABLE}' variable.")
+        n_file_columns = len(ncfile.variables[COLUMN_ID_VARIABLE])
+    if n_file_columns != len(column_ids):
+        raise ValueError(
+            f"Restart file {path} holds {n_file_columns} columns, but this partition has {len(column_ids)}. It was "
+            "written for a different partitioning; merge the directory into one restart file with 'python -m "
+            "ebfm.partitioning.merge', which any run can start from."
+        )
+
+    variables = _read_variables(path, len(column_ids), nl)
+    rows = _rows_by_column_id(variables.pop(COLUMN_ID_VARIABLE), column_ids, path)
+    return {name: values[rows] if np.ndim(values) else values for name, values in variables.items()}
 
 
 def _read_variables(path: Path, n_columns: int, nl: int) -> dict:

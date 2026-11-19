@@ -15,18 +15,18 @@ from .restart import COLUMN_ID_VARIABLE, RESTART_VARIABLES
 logger = logging.getLogger(__name__)
 
 
-def main(OUT, io, restartdir: Path, gather: ColumnGather):
+def main(OUT, io, gather: ColumnGather):
     """
     Write the restart file (boot file) if io["writebootfile"] is set.
 
     Collective over gather.comm: the root rank gathers the columns of all ranks one variable at a time and writes
-    them, ordered by column id, together with their ids. Sets OUT["timelastsnow_netCDF"] on every rank, also when no
-    restart file is written.
+    them, ordered by column id, together with their ids. A gather over a single rank writes that rank's columns in
+    their own order, which is how every rank of a run on a partitioned mesh writes the file of its partition. Sets
+    OUT["timelastsnow_netCDF"] on every rank, also when no restart file is written.
 
     @param[in] OUT model state of this rank's columns
-    @param[in] io I/O settings: writebootfile and bootfileout
-    @param[in] restartdir directory of the restart files, created if it does not exist
-    @param[in] gather the columns of all ranks
+    @param[in] io I/O settings: writebootfile and bootfileout, whose directory is created if it does not exist
+    @param[in] gather the columns written to the file
     """
     # float64 even if all times are whole days, for which date2num returns integers
     OUT["timelastsnow_netCDF"] = np.asarray(
@@ -43,8 +43,7 @@ def main(OUT, io, restartdir: Path, gather: ColumnGather):
 
     ncfile = None
     if gather.is_root:
-        if restartdir:
-            os.makedirs(restartdir, exist_ok=True)
+        os.makedirs(Path(io["bootfileout"]).parent, exist_ok=True)
         ncfile = Dataset(io["bootfileout"], "w", format="NETCDF4")
 
     try:

@@ -20,7 +20,10 @@ try:
 
     mpi_available = True
     defaultComm: Comm = _MPI.COMM_WORLD
+    # The calling rank alone
+    selfComm: Comm = _MPI.COMM_SELF
 except ImportError as e:
     mpi_available = False
     mpi_import_error = e
     defaultComm: Comm = _SerialComm()
+    selfComm: Comm = _SerialComm()

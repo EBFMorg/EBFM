@@ -73,7 +73,7 @@ def _single_rank_gather() -> ColumnGather:
 
 def _write_restart_file(path: Path, with_missing_value: bool = False) -> None:
     io = {"writebootfile": True, "bootfileout": path}
-    write_restart_file(_build_out_dict(), io, restartdir=path.parent, gather=_single_rank_gather())
+    write_restart_file(_build_out_dict(), io, gather=_single_rank_gather())
 
     if with_missing_value:
         # Restart files produced by EBFM are always fully populated. To
@@ -225,7 +225,6 @@ class TestRestartFileShapeValidation(unittest.TestCase):
         write_restart_file(
             out,
             {"writebootfile": True, "bootfileout": bootfile},
-            restartdir=bootfile.parent,
             gather=_single_rank_gather(),
         )
         return bootfile
@@ -332,7 +331,6 @@ class TestRestartColumnIds(unittest.TestCase):
         write_restart_file(
             out,
             {"writebootfile": True, "bootfileout": self.bootfile},
-            restartdir=self.bootfile.parent,
             gather=_single_rank_gather(),
         )
 
@@ -363,6 +361,50 @@ class TestRestartColumnIds(unittest.TestCase):
         OUT = self._load(bootfile, np.arange(GPSUM)[::-1])
 
         np.testing.assert_array_equal(OUT["Tsurf"], 250.0 + np.arange(GPSUM))
+
+
+class TestRestartPartitionFiles(unittest.TestCase):
+    """On a partitioned mesh, every rank reads the restart file of its partition from a directory of them."""
+
+    COLUMN_IDS = 10 + np.arange(GPSUM)
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.restart_dir = Path(self.tmpdir.name) / "restart_test"
+        out = _build_out_dict()
+        out["Tsurf"] = 250.0 + np.arange(GPSUM)
+        write_restart_file(
+            out,
+            {"writebootfile": True, "bootfileout": self.restart_dir / "part.2.nc"},
+            gather=ColumnGather(defaultComm, self.COLUMN_IDS),
+        )
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _load(self, column_ids, partition_id):
+        grid = {**_make_grid(len(column_ids)), "column_id": column_ids}
+        io = {"bootfilein": self.restart_dir, "partition_id": partition_id}
+        OUT, _, _ = init_initial_conditions({"alb_ice": 0.5}, grid, io, {}, _make_column(), init_with_restart_file=True)
+        return OUT
+
+    def test_rows_of_the_partition_file_follow_the_column_ids_of_the_grid(self):
+        OUT = self._load(self.COLUMN_IDS[::-1], partition_id=2)
+
+        np.testing.assert_array_equal(OUT["Tsurf"], 250.0 + np.arange(GPSUM)[::-1])
+        self.assertNotIn(COLUMN_ID_VARIABLE, OUT)
+
+    def test_grid_that_is_not_partitioned_needs_a_merged_file(self):
+        with self.assertRaisesRegex(ValueError, r"ebfm\.partitioning\.merge"):
+            self._load(self.COLUMN_IDS, partition_id=None)
+
+    def test_missing_partition_file_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, r"no restart file .*part\.3\.nc"):
+            self._load(self.COLUMN_IDS, partition_id=3)
+
+    def test_partition_file_of_another_partitioning_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, r"holds 5 columns, but this partition has 4.*different partitioning"):
+            self._load(self.COLUMN_IDS[:4], partition_id=2)
 
 
 class TestRestartVariableManifest(unittest.TestCase):
