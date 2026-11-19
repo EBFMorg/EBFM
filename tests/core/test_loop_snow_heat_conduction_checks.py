@@ -19,7 +19,7 @@ import warnings
 
 import numpy as np
 
-from ebfm.core import INIT, LOOP_SNOW, compute_backend
+from ebfm.core import INIT, LOOP_SNOW, LOOP_SNOW_checks, compute_backend
 from ebfm.core.config import ColumnDiscretizationConfig
 
 from test_loop_snow_layer_shift import _make_case
@@ -109,13 +109,13 @@ class TestHeatConductionChecks(unittest.TestCase):
         grid, OUT, _ = make_case(self.C)
         OUT["subD"][BAD_COLUMN, BAD_LAYER] = -1.0
         dt_stab = np.array([1e-3, -1e-3])
-        message = LOOP_SNOW._describe_dt_stab_failure(dt_stab, OUT, grid)
+        message = LOOP_SNOW_checks.describe_dt_stab_failure(dt_stab, OUT, grid)
         self.assertIn(f"subD <= 0 in layers [{BAD_LAYER}], min -1", message)
 
     def test_ghost_layer_temperature_is_not_checked(self):
         grid, OUT, _ = make_case(self.C)
         OUT["subT"][:, 0] = np.nan
-        self.assertTrue(LOOP_SNOW._heat_conduction_inputs_finite(OUT))
+        self.assertTrue(LOOP_SNOW_checks.heat_conduction_inputs_finite(OUT))
 
 
 if __name__ == "__main__":
