@@ -92,8 +92,8 @@ class Mesh:
         """
         Derive the lon/lat coordinates of the vertices and the coordinates of the cell centers.
 
-        Transforming the vertices is the expensive part of setting up a mesh. Call this once the mesh holds the cells
-        it will be used with, e.g. after get_partition, so that only those are transformed.
+        Transforming the vertices is the expensive part of setting up a mesh, so it is done once, before the geometry
+        is first used.
         """
         transformer = pyproj.Transformer.from_crs(self.source_crs_epsg, 4326, always_xy=True)
         self.lon_vertices, self.lat_vertices = transformer.transform(self.x_vertices, self.y_vertices, radians=True)
@@ -105,36 +105,6 @@ class Mesh:
 
         inverse_transformer = pyproj.Transformer.from_crs(4326, self.source_crs_epsg, always_xy=True)
         self.x_cells, self.y_cells = inverse_transformer.transform(self.lon_cells, self.lat_cells, radians=True)
-
-    def get_partition(self, partition_id: int, n_partitions: int) -> "Mesh":
-        """
-        The part of this mesh that one of `n_partitions` partitions holds.
-
-        The cells are split into `n_partitions` contiguous blocks in their current order, and partition 1 holds the
-        first block. A partition keeps the vertices its cells use, so a vertex on the border between two partitions
-        belongs to both.
-
-        @param[in] partition_id id of the partition, from 1 to n_partitions
-        @param[in] n_partitions number of partitions
-
-        @returns a mesh of the same type with the cells of the partition, including their z_cells
-        """
-        assert 1 <= partition_id <= n_partitions, f"Partition id {partition_id} is not in 1..{n_partitions}."
-
-        cells = np.array_split(np.arange(len(self.cell_ids)), n_partitions)[partition_id - 1]
-        vertices, cell_to_vertex = np.unique(self.cell_to_vertex[cells], return_inverse=True)
-
-        partition = type(self)(
-            x_vertices=self.x_vertices[vertices],
-            y_vertices=self.y_vertices[vertices],
-            z_vertices=self.z_vertices[vertices],
-            cell_to_vertex=cell_to_vertex.reshape(len(cells), -1),
-            vertex_ids=self.vertex_ids[vertices],
-            cell_ids=self.cell_ids[cells],
-            source_crs_epsg=self.source_crs_epsg,
-        )
-        partition.z_cells = self.z_cells[cells]
-        return partition
 
     def vertex_surface_gradient(self) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """

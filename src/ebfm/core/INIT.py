@@ -287,22 +287,7 @@ def init_grid(grid: GridDict, config: GridConfig, comm):
         assert (
             config.grid_type in grid_input_type_supporting_dem
         ), f"Additional DEM file can only be specified for {grid_input_type_supporting_dem}."
-        if config.is_partitioned:
-            mesh: Mesh = read_elmer_mesh(
-                mesh_root=config.mesh_file,
-                is_partitioned=config.is_partitioned,
-                partition_id=config.partition_id,
-                source_crs_epsg=config.elmer_mesh_crs_epsg,
-            )
-        else:
-            mesh: Mesh = read_elmer_mesh(
-                mesh_root=config.mesh_file,
-                source_crs_epsg=config.elmer_mesh_crs_epsg,
-            )
-
-            if config.num_partitions > 1:
-                mesh = mesh.get_partition(config.partition_id, config.num_partitions)
-
+        mesh = _read_elmer_mesh(config)
         mesh.compute_geometry()
 
         grid["column_id"] = mesh.cell_ids
@@ -332,14 +317,7 @@ def init_grid(grid: GridDict, config: GridConfig, comm):
         # TODO later add slope
         # dzdx, dzdy = mesh.dzdy, mesh.dzdy
     elif config.grid_type is GridInputType.ELMER:  # Read grid and elevations from Elmer
-        mesh: Mesh = read_elmer_mesh(
-            mesh_root=config.mesh_file,
-            source_crs_epsg=config.elmer_mesh_crs_epsg,
-        )
-
-        if config.num_partitions > 1:
-            mesh = mesh.get_partition(config.partition_id, config.num_partitions)
-
+        mesh = _read_elmer_mesh(config)
         mesh.compute_geometry()
 
         # assuming mesh.nodes contains DEM data in the z component
@@ -472,6 +450,18 @@ def init_grid(grid: GridDict, config: GridConfig, comm):
     validate_grid(grid)
 
     return grid
+
+
+def _read_elmer_mesh(config: GridConfig) -> Mesh:
+    """The Elmer mesh of this rank: its partition of a partitioned mesh, else the whole mesh."""
+    if config.is_partitioned:
+        return read_elmer_mesh(
+            mesh_root=config.mesh_file,
+            is_partitioned=True,
+            partition_id=config.partition_id,
+            source_crs_epsg=config.elmer_mesh_crs_epsg,
+        )
+    return read_elmer_mesh(mesh_root=config.mesh_file, source_crs_epsg=config.elmer_mesh_crs_epsg)
 
 
 def slope_azimuth(slope_x: np.ndarray, slope_y: np.ndarray) -> np.ndarray:

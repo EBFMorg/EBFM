@@ -31,7 +31,7 @@ from ebfm.core.cli import (
     validate_partition_count,
     validate_shading_parallel_compat,
     validate_output_frequency_time_step_compat,
-    warn_non_partitioned_mesh_parallel,
+    resolve_elmer_mesh_partitioning,
 )
 
 import ebfm.coupling
@@ -203,6 +203,9 @@ def _main_impl():
         # If not provided via command line option --use-part, set to rank + 1 (assuming partition IDs start at 1).
         args.use_part = ebfm_comm.rank + 1
 
+    # On several ranks, an Elmer mesh runs on its partitioning with one partition per rank
+    resolve_elmer_mesh_partitioning(args, ebfm_comm, logger)
+
     # Numba is opt-in: only activate when --with-numba is explicitly passed.
     if args.with_numba:
         from ebfm.core.compute_backend import init_numba
@@ -244,7 +247,6 @@ def _main_impl():
 
     # Each rank computes exactly one partition of a partitioned mesh
     validate_partition_count(args, grid_config, ebfm_comm, logger)
-    warn_non_partitioned_mesh_parallel(grid_config, ebfm_comm, logger)
 
     logger.debug("Successfully completed consistency checks.")
 

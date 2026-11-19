@@ -136,21 +136,6 @@ def _unstructured_grid_with_mesh():
     return {**_unstructured_grid(), "mesh": _mesh()}
 
 
-def _local_mesh(mesh, columns):
-    """The mesh of the given cells only, with their vertices in reverse id order."""
-    vertices = np.unique(mesh.cell_to_vertex[columns])[::-1]
-    local_index = {vertex: i for i, vertex in enumerate(vertices)}
-    return SimpleNamespace(
-        vertex_ids=mesh.vertex_ids[vertices],
-        x_vertices=mesh.x_vertices[vertices],
-        y_vertices=mesh.y_vertices[vertices],
-        z_vertices=mesh.z_vertices[vertices],
-        lon_vertices=mesh.lon_vertices[vertices],
-        lat_vertices=mesh.lat_vertices[vertices],
-        cell_to_vertex=np.array([[local_index[v] for v in cell] for cell in mesh.cell_to_vertex[columns]]),
-    )
-
-
 def _local_share(grid, out, columns):
     """
     The grid and OUT that an MPI rank holding only the given columns sees.
@@ -161,8 +146,6 @@ def _local_share(grid, out, columns):
     for key in ("column_id", "x", "y", "z", "lon", "lat", "ind"):
         if key in grid:
             local_grid[key] = grid[key][columns]
-    if "mesh" in grid:
-        local_grid["mesh"] = _local_mesh(grid["mesh"], columns)
     local_out = {key: values[columns] for key, values in out.items()}
     return local_grid, local_out
 

@@ -19,7 +19,7 @@ import pytest
 from ebfm.core.comm import defaultComm
 from ebfm.core.comm.gather import ColumnGather
 from ebfm.core.grid import domain_mean, validate_grid_distribution
-from test_loop_write_to_file import _structured_grid, _unstructured_grid_with_mesh, _write_single_step
+from test_loop_write_to_file import _structured_grid, _write_single_step
 
 COMM_TESTS = Path(__file__).resolve().parent / "comm"
 TIMEOUT = 120
@@ -109,13 +109,9 @@ def test_grid_distribution_on_three_ranks(mode, expected):
 
 @requires_mpirun
 @pytest.mark.parametrize("n_ranks", [2, 3])
-@pytest.mark.parametrize(
-    "grid_kind, make_grid",
-    [("structured", _structured_grid), ("unstructured", _unstructured_grid_with_mesh)],
-)
-def test_parallel_output_file_equals_serial_one(tmp_path, n_ranks, grid_kind, make_grid):
-    serial_file, _, _ = _write_single_step(tmp_path / "serial", make_grid())
-    result = _mpirun(n_ranks, "write_output_on_ranks.py", grid_kind, str(tmp_path / "parallel"))
+def test_parallel_output_file_equals_serial_one(tmp_path, n_ranks):
+    serial_file, _, _ = _write_single_step(tmp_path / "serial", _structured_grid())
+    result = _mpirun(n_ranks, "write_output_on_ranks.py", str(tmp_path / "parallel"))
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert filecmp.cmp(serial_file, tmp_path / "parallel" / serial_file.name, shallow=False)

@@ -27,6 +27,7 @@ from ebfm.core.comm import mpi_available
 from ebfm.core.config import Calendar, FieldValidationLevel, GridConfig, DEFAULT_TZ, iso8601
 from ebfm.core.grid import GridInputType
 from ebfm.core.logger import log_levels_map
+from ebfm.partitioning.elmer_mesh import partition_elmer_mesh, partitioning_dir
 
 # Module-level parser reference, set by parse_cli_args().
 # Allows post-parse validation functions to call parser.error() without
@@ -379,7 +380,16 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     parallel_group.add_argument(
         partitioned_elmer_mesh_opt,
         action="store_true",
-        help="Indicate if the provided Elmer mesh is partitioned for parallel runs.",
+        help="Indicate that the provided Elmer mesh directory is a partitioning (part.<i>.* files), e.g. "
+        "MESH/partitioning.128. Without it, a run on N MPI ranks uses MESH/partitioning.N.",
+    )
+
+    parallel_group.add_argument(
+        "--create-partitioning",
+        action="store_true",
+        help="On N MPI ranks, create MESH/partitioning.N for --elmer-mesh MESH if it does not exist, by splitting "
+        "the mesh into N contiguous blocks of elements (see ebfm.partitioning.elmer_mesh). Later runs reuse it. "
+        "Elmer/Ice cannot run on this partitioning.",
     )
 
     parallel_group.add_argument(
@@ -509,9 +519,6 @@ def parse_cli_args(args: list[str] | None = None) -> Namespace:
     # Option compatibility checks — all user-facing, produce actionable error messages.
     if args.is_partitioned_elmer_mesh and getattr(args, GridConfig.mesh_arg_dests[GridInputType.ELMER], None) is None:
         parser.error(f"{partitioned_elmer_mesh_opt} requires {mesh_opts[GridInputType.ELMER]}")
-
-    if args.is_partitioned_elmer_mesh and args.netcdf_dem_mesh is None:
-        parser.error(f"{partitioned_elmer_mesh_opt} requires {netcdf_dem_mesh_opt}")
 
     if args.fill_missing_elevation and getattr(args, GridConfig.mesh_arg_dests[GridInputType.NETCDF], None) is None:
         parser.error(f"{fill_missing_elevation_opt} requires {mesh_opts[GridInputType.NETCDF]}")
@@ -674,26 +681,45 @@ def validate_partition_count(args: Namespace, grid_config, comm, logger) -> None
         logger.warning(message)
 
 
-def warn_non_partitioned_mesh_parallel(grid_config, comm, logger) -> None:
-    """Warn that every MPI rank reads the whole mesh when a non-partitioned Elmer mesh is split over several ranks.
+def resolve_elmer_mesh_partitioning(args: Namespace, comm, logger) -> None:
+    """Make a run with a non-partitioned Elmer mesh MESH on N > 1 MPI ranks use MESH/partitioning.N.
 
-    Must be called on every rank of comm. Warns on rank 0 only.
+    If the partitioning does not exist, rank 0 creates it with --create-partitioning, and the run stops with an error
+    otherwise. Sets args.elmer_mesh to the partitioning and args.is_partitioned_elmer_mesh, so must be called before
+    GridConfig is built, on every rank of comm.
 
-    @param[in] grid_config resolved GridConfig
-    @param[in] comm        EBFM's MPI communicator
-    @param[in] logger      logger for the warning
+    @param[in,out] args parsed CLI arguments
+    @param[in]     comm EBFM's MPI communicator
+    @param[in]     logger logger for the partitioning used
     """
-    is_elmer_mesh = grid_config.grid_type in (GridInputType.ELMER, GridInputType.CUSTOM, GridInputType.ELMERXIOS)
-    if not is_elmer_mesh or grid_config.is_partitioned or comm.size == 1 or comm.rank != 0:
+    mesh_dest = GridConfig.mesh_arg_dests[GridInputType.ELMER]
+    mesh_dir = getattr(args, mesh_dest, None)
+    if mesh_dir is None or args.is_partitioned_elmer_mesh or comm.size == 1:
         return
 
-    message = (
-        f"EBFM runs on {comm.size} MPI ranks with a non-partitioned Elmer mesh, so every rank reads the whole mesh."
-    )
-    # A partitioned mesh only takes its DEM from --netcdf-dem-mesh, so it is no alternative for an XIOS DEM
-    if grid_config.grid_type is not GridInputType.ELMERXIOS:
-        message += (
-            " For large meshes, use a mesh with one partition per rank (--is-partitioned-elmer-mesh, which requires "
-            "--netcdf-dem-mesh)."
-        )
-    logger.warning(message)
+    partitioning = partitioning_dir(mesh_dir, comm.size)
+    if not partitioning.is_dir():
+        if not args.create_partitioning:
+            _cli_error(
+                f"EBFM runs on {comm.size} MPI ranks, so it needs a partitioning of the Elmer mesh {mesh_dir} with one "
+                f"partition per rank, {partitioning}, which does not exist. Pass --create-partitioning to let EBFM "
+                "create it there; later runs reuse it. When coupling to Elmer/Ice, put the ElmerGrid partitioning of "
+                "Elmer/Ice there instead."
+            )
+        error = None
+        if comm.rank == 0:
+            logger.info(f"Creating the partitioning {partitioning} of the Elmer mesh...")
+            try:
+                partition_elmer_mesh(mesh_dir, comm.size)
+            except FileExistsError:
+                pass  # created by another run in the meantime
+            except (OSError, ValueError) as e:
+                error = f"Could not create the partitioning {partitioning}: {e}"
+        error = comm.bcast(error, root=0)
+        if error:
+            _cli_error(error)
+
+    if comm.rank == 0:
+        logger.info(f"Using the partitioning {partitioning} of the Elmer mesh.")
+    setattr(args, mesh_dest, partitioning)
+    args.is_partitioned_elmer_mesh = True

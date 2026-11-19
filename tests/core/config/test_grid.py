@@ -40,10 +40,10 @@ class TestNumberOfPartitions(unittest.TestCase):
 
         self.assertEqual(GridConfig(args).num_partitions, 1)
 
-    def test_non_partitioned_elmer_mesh_is_split_over_the_ranks(self):
+    def test_non_partitioned_elmer_mesh_is_not_split_over_the_ranks(self):
         args = parse_cli_args(["--elmer-mesh", str(self.mesh), *_ELMER])
 
-        self.assertEqual(GridConfig(args, num_ranks=4).num_partitions, 4)
+        self.assertEqual(GridConfig(args, num_ranks=4).num_partitions, 1)
 
     def test_matlab_and_netcdf_grids_are_split_over_the_ranks(self):
         for grid_args in (["--matlab-mesh", "mesh.mat"], ["--netcdf-mesh", "mesh.nc"]):

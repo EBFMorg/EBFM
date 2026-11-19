@@ -5,7 +5,8 @@
 """A restart chain on several MPI ranks gives exactly the results of a restart chain on a single rank.
 
 Each chain runs two days: the first writes a restart file, the second starts from it. The restart files and the
-results of the second day must not depend on the number of ranks of either leg.
+results of the second day must not depend on the number of ranks of either leg. Restart files of a partitioned Elmer
+mesh are tested in test_partitioned_mesh_run.
 """
 
 import filecmp
@@ -27,7 +28,7 @@ def _leg(case: str, leg: list[str], n_ranks: int, chain: Path) -> Path:
 
 
 @requires_mpirun
-@pytest.mark.parametrize("case, n_ranks_per_leg", [("matlab", (4, 3)), ("elmer", (3, 2))], ids=str)
+@pytest.mark.parametrize("case, n_ranks_per_leg", [("matlab", (4, 3))], ids=str)
 def test_parallel_restart_chain_equals_serial_chain(tmp_path, case, n_ranks_per_leg):
     for leg in (_LEG_1, _LEG_2):
         _leg(case, leg, 1, tmp_path / "serial")

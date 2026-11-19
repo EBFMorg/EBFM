@@ -34,40 +34,17 @@ def _strip_mesh() -> TriangleMesh:
     return mesh
 
 
-class TestGetPartition(unittest.TestCase):
-    """Splitting a mesh into partitions keeps every cell, in order, with its geometry and its vertices."""
-
-    def setUp(self):
-        self.mesh = _strip_mesh()
-        self.partitions = [self.mesh.get_partition(p, N_PARTITIONS) for p in range(1, N_PARTITIONS + 1)]
-        for mesh in (self.mesh, *self.partitions):
-            mesh.compute_geometry()
-
-    def test_partitions_hold_contiguous_blocks_with_the_first_block_in_partition_1(self):
-        self.assertEqual([len(p.cell_ids) for p in self.partitions], [4, 3, 3])
-        np.testing.assert_array_equal(np.concatenate([p.cell_ids for p in self.partitions]), self.mesh.cell_ids)
-
-    def test_cell_centres_and_elevations_equal_those_of_the_whole_mesh(self):
-        for name in ("x_cells", "y_cells", "lon_cells", "lat_cells", "z_cells"):
-            with self.subTest(name=name):
-                combined = np.concatenate([getattr(p, name) for p in self.partitions])
-                np.testing.assert_array_equal(combined, getattr(self.mesh, name))
-
-    def test_cells_keep_their_vertices(self):
-        whole = self.mesh.vertex_ids[self.mesh.cell_to_vertex]
-        combined = np.concatenate([p.vertex_ids[p.cell_to_vertex] for p in self.partitions])
-        np.testing.assert_array_equal(combined, whole)
-
-    def test_partition_holds_only_the_vertices_of_its_cells(self):
-        for partition in self.partitions:
-            with self.subTest(first_cell=partition.cell_ids[0]):
-                self.assertEqual(len(partition.vertex_ids), len(np.unique(partition.cell_to_vertex)))
-                self.assertEqual(len(partition.vertex_ids), len(partition.x_vertices))
-
-    def test_partition_id_out_of_range_is_rejected(self):
-        for partition_id in (0, N_PARTITIONS + 1):
-            with self.subTest(partition_id=partition_id), self.assertRaises(AssertionError):
-                self.mesh.get_partition(partition_id, N_PARTITIONS)
+def _block(mesh: TriangleMesh, cells: np.ndarray) -> TriangleMesh:
+    """The part of mesh with the given cells and the vertices they use, as a partition of an Elmer mesh holds."""
+    vertices, cell_to_vertex = np.unique(mesh.cell_to_vertex[cells], return_inverse=True)
+    return TriangleMesh(
+        x_vertices=mesh.x_vertices[vertices],
+        y_vertices=mesh.y_vertices[vertices],
+        z_vertices=mesh.z_vertices[vertices],
+        cell_to_vertex=cell_to_vertex.reshape(len(cells), -1),
+        vertex_ids=mesh.vertex_ids[vertices],
+        cell_ids=mesh.cell_ids[cells],
+    )
 
 
 def _write_xios_dem(path: Path, n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
@@ -126,7 +103,8 @@ class TestReadDemXiosByNodeId(unittest.TestCase):
     def test_partitions_get_the_cells_of_the_whole_mesh(self):
         expected = read_dem_xios(self.dem_file, self.mesh)
 
-        parts = [read_dem_xios(self.dem_file, self.mesh.get_partition(p, N_PARTITIONS)) for p in (1, 2, 3)]
+        blocks = np.array_split(np.arange(N_CELLS), N_PARTITIONS)
+        parts = [read_dem_xios(self.dem_file, _block(self.mesh, cells)) for cells in blocks]
         for field, wanted in enumerate(expected):
             np.testing.assert_array_equal(np.concatenate([part[field] for part in parts]), wanted)
 

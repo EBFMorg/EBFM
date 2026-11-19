@@ -7,6 +7,8 @@
 import unittest
 import io
 import os
+import shutil
+import tempfile
 from contextlib import redirect_stderr, redirect_stdout
 from datetime import timedelta
 from pathlib import Path
@@ -23,11 +25,10 @@ from ebfm.core.cli import (
     validate_shading_coupling_compat,
     validate_shading_parallel_compat,
     validate_use_part_parallel_compat,
-    warn_non_partitioned_mesh_parallel,
+    resolve_elmer_mesh_partitioning,
 )
 
 from ebfm.core.comm import mpi_available
-from ebfm.core.grid import GridInputType
 from ebfm.core.config import FieldValidationLevel, Calendar, TimeConfig, iso8601
 
 # Minimal valid args for each primary grid type.
@@ -115,33 +116,24 @@ class TestElmerMeshConstraints(unittest.TestCase):
 
 
 class TestPartitionedMeshConstraints(unittest.TestCase):
-    """--is-partitioned-elmer-mesh requires both --elmer-mesh and --netcdf-dem-mesh."""
+    """--is-partitioned-elmer-mesh requires --elmer-mesh, with elevations from any source."""
 
     def test_partitioned_without_elmer_mesh_rejected(self):
         with self.assertRaises(SystemExit) as ctx:
             parse_cli_args(_MATLAB + ["--is-partitioned-elmer-mesh"])
         self.assertEqual(ctx.exception.code, 2)
 
-    def test_partitioned_without_netcdf_dem_mesh_rejected(self):
-        with self.assertRaises(SystemExit) as ctx:
-            parse_cli_args(["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413", "--is-partitioned-elmer-mesh"])
-        self.assertEqual(ctx.exception.code, 2)
-
     @unittest.skipUnless(mpi_available, "requires MPI (pip install 'ebfm[mpi]')")
-    def test_partitioned_with_elmer_and_netcdf_dem_accepted(self):
-        args = parse_cli_args(
-            [
-                "--elmer-mesh",
-                "mesh/",
-                "--elmer-mesh-crs-epsg",
-                "3413",
-                "--netcdf-dem-mesh",
-                "mesh.nc",
-                "--is-partitioned-elmer-mesh",
-            ]
-        )
-        self.assertTrue(args.is_partitioned_elmer_mesh)
-        self.assertEqual(args.netcdf_dem_mesh, Path("mesh.nc"))
+    def test_partitioned_elmer_mesh_accepted_with_every_elevation_source(self):
+        elmer = ["--elmer-mesh", "mesh/", "--elmer-mesh-crs-epsg", "3413", "--is-partitioned-elmer-mesh"]
+        cases = {
+            "mesh nodes": [],
+            "--netcdf-dem-mesh": ["--netcdf-dem-mesh", "mesh.nc"],
+            "--netcdf-dem-mesh-unstructured": ["--netcdf-dem-mesh-unstructured", "xios.nc"],
+        }
+        for name, dem_args in cases.items():
+            with self.subTest(name):
+                self.assertTrue(parse_cli_args(elmer + dem_args).is_partitioned_elmer_mesh)
 
 
 class TestDefaults(unittest.TestCase):
@@ -543,44 +535,61 @@ class TestValidatePartitionCount(unittest.TestCase):
         self.logger.warning.assert_not_called()
 
 
-class TestWarnNonPartitionedMeshParallel(unittest.TestCase):
-    """Splitting a non-partitioned Elmer mesh over several MPI ranks warns once, on rank 0."""
+class TestResolveElmerMeshPartitioning(unittest.TestCase):
+    """On N MPI ranks, a run with --elmer-mesh MESH uses MESH/partitioning.N, created with --create-partitioning."""
+
+    ELMER_MESH = Path(__file__).parents[1] / "data" / "elmer_mesh" / "MESH"
 
     def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.mesh = Path(self.tmpdir.name) / "MESH"
+        shutil.copytree(self.ELMER_MESH, self.mesh)
         self.logger = MagicMock()
 
-    def _warn(self, grid_type=GridInputType.CUSTOM, is_partitioned=False, comm_size=4, rank=0):
-        grid_config = MagicMock(grid_type=grid_type, is_partitioned=is_partitioned)
-        warn_non_partitioned_mesh_parallel(grid_config, MagicMock(size=comm_size, rank=rank), self.logger)
+    def tearDown(self):
+        self.tmpdir.cleanup()
 
-    def test_non_partitioned_elmer_mesh_on_several_ranks_warns_on_rank_0(self):
-        for grid_type in (GridInputType.ELMER, GridInputType.CUSTOM, GridInputType.ELMERXIOS):
-            with self.subTest(grid_type=grid_type):
-                self.logger.reset_mock()
-                self._warn(grid_type=grid_type)
-                self.logger.warning.assert_called_once()
+    def _resolve(self, *extra_args, comm_size=3):
+        args = parse_cli_args(["--elmer-mesh", str(self.mesh), "--elmer-mesh-crs-epsg", "3413", *extra_args])
+        comm = MagicMock(size=comm_size, rank=0, bcast=lambda value, root: value)
+        resolve_elmer_mesh_partitioning(args, comm, self.logger)
+        return args
 
-    def test_partitioned_mesh_is_suggested_unless_the_dem_is_from_xios(self):
-        cases = {GridInputType.ELMER: True, GridInputType.CUSTOM: True, GridInputType.ELMERXIOS: False}
-        for grid_type, is_suggested in cases.items():
-            with self.subTest(grid_type=grid_type):
-                self.logger.reset_mock()
-                self._warn(grid_type=grid_type)
-                message = self.logger.warning.call_args.args[0]
-                self.assertEqual("--is-partitioned-elmer-mesh" in message, is_suggested)
+    def test_missing_partitioning_rejected_with_a_pointer_to_create_partitioning(self):
+        with self.assertRaises(SystemExit) as ctx, redirect_stderr(io.StringIO()) as stderr:
+            self._resolve()
+        self.assertEqual(ctx.exception.code, 2)
+        self.assertIn(str(self.mesh / "partitioning.3"), stderr.getvalue())
+        self.assertIn("--create-partitioning", stderr.getvalue())
+        self.assertFalse((self.mesh / "partitioning.3").exists())
 
-    def test_no_warning(self):
+    def test_existing_partitioning_is_used(self):
+        (self.mesh / "partitioning.3").mkdir()
+
+        args = self._resolve()
+
+        self.assertEqual(args.elmer_mesh, self.mesh / "partitioning.3")
+        self.assertTrue(args.is_partitioned_elmer_mesh)
+        self.assertEqual(list((self.mesh / "partitioning.3").iterdir()), [])
+
+    def test_missing_partitioning_is_created_with_create_partitioning(self):
+        args = self._resolve("--create-partitioning")
+
+        self.assertEqual(args.elmer_mesh, self.mesh / "partitioning.3")
+        self.assertTrue(args.is_partitioned_elmer_mesh)
+        for partition_id in (1, 2, 3):
+            for suffix in ("header", "nodes", "elements"):
+                self.assertTrue((self.mesh / "partitioning.3" / f"part.{partition_id}.{suffix}").is_file())
+
+    def test_unchanged(self):
         cases = {
-            "rank 1": dict(rank=1),
             "single rank": dict(comm_size=1),
-            "partitioned mesh": dict(is_partitioned=True),
-            "MATLAB grid": dict(grid_type=GridInputType.MATLAB),
+            "partitioned mesh": dict(extra_args=["--is-partitioned-elmer-mesh"]),
         }
         for name, kwargs in cases.items():
             with self.subTest(name):
-                self.logger.reset_mock()
-                self._warn(**kwargs)
-                self.logger.warning.assert_not_called()
+                args = self._resolve(*kwargs.get("extra_args", []), comm_size=kwargs.get("comm_size", 3))
+                self.assertEqual(args.elmer_mesh, self.mesh)
 
 
 class TestCliCalendarArgument(unittest.TestCase):
