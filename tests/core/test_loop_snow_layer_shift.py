@@ -297,6 +297,36 @@ class TestColumnShift(unittest.TestCase):
         mass_after = np.sum(OUT["subD"] * OUT["subZ"], axis=1)
         np.testing.assert_allclose(mass_after - mass_before, mass_added - mass_left, atol=1e-6)
 
+    def test_snowfall_onto_oversized_top_keeps_heat_conduction_fast(self):
+        """A top layer just lighter than the fresh snow does not stall the heat conduction.
+
+        Its density is chosen so that squeezing the old top layer into a layer 1 of
+        max_subZ would leave layer 1 with 0.001 kg m-3. Compaction keeps that tiny mass
+        and densifies the layer to micrometres, and the heat conduction would need more
+        than MAX_HEAT_SUBSTEPS sub-steps: the run stops, or hangs without that limit.
+        """
+        from ebfm.core import LOOP_SNOW_checks, compute_backend
+
+        squeezed_density = 1e-3
+        Dfresh = self._fresh_snow_density()
+        ratio = 4.4  # top layer thickness / max_subZ, see _oversized_top_case
+        top_density = (squeezed_density + (ratio - 1) * Dfresh) / ratio
+
+        backends = [compute_backend.ComputeBackend.NUMPY]
+        if compute_backend._NUMBA_AVAILABLE:
+            backends.append(compute_backend.ComputeBackend.NUMBA)
+        try:
+            for backend in backends:
+                with self.subTest(backend=backend.name):
+                    compute_backend._backend = backend
+                    grid, OUT, IN = self._oversized_top_case(top_density=top_density)
+                    with self.assertNoLogs(LOOP_SNOW_checks.logger, "WARNING"):
+                        self._step(grid, OUT, IN)
+                    # Compaction densifies the old top layer by a few percent in one hourly step.
+                    np.testing.assert_allclose(OUT["subD"][:, 1], top_density, rtol=5e-2)
+        finally:
+            compute_backend._backend = compute_backend.ComputeBackend.NUMPY
+
     def test_water_credited_to_deep_runoff_actually_leaves(self):
         """runoff_irr_deep must be credited the water that really left the column.
 
