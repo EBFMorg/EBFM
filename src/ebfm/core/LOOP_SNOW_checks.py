@@ -20,6 +20,9 @@ logger = logging.getLogger(__name__)
 MAX_HEAT_SUBSTEPS = 1_000_000  # Heat-conduction sub-steps per column and time step, usually about 10
 MAX_SHIFT_PASSES = 1000  # Snowfall or melt grid-shift passes per time step, usually a few
 
+# Heat-conduction stability time steps below this get a warning; usually they are a minute or more.
+WARN_DT_STAB_SECONDS = 1.0
+
 _MAX_REPORTED_COLUMNS = 5
 
 
@@ -167,6 +170,26 @@ def _describe_too_many_heat_substeps(dt_stab: NDArray[np.float64], dt: float, OU
 def assert_dt_stab(dt_stab: NDArray[np.float64], dt: float, OUT, grid) -> None:
     assert (dt_stab > 0).all(), describe_dt_stab_failure(dt_stab, OUT, grid)
     assert not _too_many_heat_substeps(dt_stab, dt).any(), _describe_too_many_heat_substeps(dt_stab, dt, OUT, grid)
+
+
+def warn_small_dt_stab(dt_stab: NDArray[np.float64], dt: float, dayseconds: float, OUT, grid) -> None:
+    """Warn if dt_stab (d) of a column is below WARN_DT_STAB_SECONDS. Takes dt_stab > 0."""
+    small = dt_stab < WARN_DT_STAB_SECONDS / dayseconds
+    if not small.any():
+        return
+    i = int(np.argmin(dt_stab))
+    subZ = OUT["subZ"][i, 1:]
+    subD = OUT["subD"][i, 1:]
+    thinnest = int(np.argmin(subZ))
+    lightest = int(np.argmin(subD))
+    logger.warning(
+        f"Heat conduction stability time step below {WARN_DT_STAB_SECONDS:g} s in {int(small.sum())} of "
+        f"{dt_stab.size} columns, so the solve needs many sub-steps and runs slowly. Smallest in "
+        f"{_column_label(grid, i)}: dt_stab={dt_stab[i] * dayseconds:.3g} s ({dt / dt_stab[i]:.3g} sub-steps); "
+        f"thinnest layer {thinnest + 1}: subZ={subZ[thinnest]:.6g} m; "
+        f"lightest layer {lightest + 1}: subD={subD[lightest]:.6g} kg m-3. "
+        f"More than {MAX_HEAT_SUBSTEPS} sub-steps stop the run."
+    )
 
 
 def _describe_implausible_fresh_snow_density(OUT, IN, grid) -> str:
