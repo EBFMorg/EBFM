@@ -177,7 +177,7 @@ def test_restart_files_of_partitioned_and_serial_runs(tmp_path):
         "Output_partitioned",
     )
     (restart_file,) = (tmp_path / "serial").glob("restart_*.nc")
-    restart_dir = tmp_path / "partitioned" / restart_file.stem
+    restart_dir = tmp_path / "partitioned" / restart_file.stem / "partitioning.3"
     assert sorted(f.name for f in restart_dir.iterdir()) == [f"part.{n}.nc" for n in (1, 2, 3)]
 
     _tool("merge", restart_dir, "-o", tmp_path / "merged.nc")
@@ -203,5 +203,5 @@ def test_restart_files_of_partitioned_and_serial_runs(tmp_path):
     _assert_same_references(from_serial, serial)
 
     (written,) = [f for f in (tmp_path / "serial").glob("restart_*.nc") if f != restart_file]
-    _tool("merge", tmp_path / "partitioned" / written.stem, "-o", tmp_path / "merged_2.nc")
+    _tool("merge", tmp_path / "partitioned" / written.stem / "partitioning.3", "-o", tmp_path / "merged_2.nc")
     _assert_same_variables(written, tmp_path / "merged_2.nc")

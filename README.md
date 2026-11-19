@@ -318,15 +318,25 @@ A restart file holds the columns of the whole grid together with their ids
 a partitioned mesh. A restart file without `column_id`, written by an older
 version of EBFM, holds the columns in the order of a run on a single rank.
 
-A run on a partitioned Elmer mesh writes a directory of restart files instead,
-one per partition, e.g. `examples/restart/restart_1979-01-02T00:00:00Z/part.1.nc`,
-and every rank reads its own file from such a directory. It also continues from
-a single restart file, which rank 0 reads. To convert between the two:
+A run on N MPI ranks writes a directory of restart files instead, one per
+partition, e.g.
+`examples/restart/restart_1979-01-02T00:00:00Z/partitioning.4/part.1.nc`, and
+every rank reads its own file from such a directory. It also continues from a
+single restart file, which rank 0 reads.
+
+To merge the restart files of the partitions into a single restart file,
+`examples/restart/restart_1979-01-02T00:00:00Z.nc`, from which any run can
+start, run:
 
 ```sh
-# One restart file from the files of all partitions, for any other run
-python -m ebfm.io.merge examples/restart/restart_1979-01-02T00:00:00Z
-# One restart file per partition of a partitioned mesh
+python -m ebfm.io.merge examples/restart/restart_1979-01-02T00:00:00Z/partitioning.4
+```
+
+To split a single restart file into the restart files of the partitions of a
+partitioning, here `examples/restart/restart_1979-01-02T00:00:00Z/partitioning.128`
+for an Elmer mesh partitioned into 128 partitions, run:
+
+```sh
 python -m ebfm.io.split_restart examples/restart/restart_1979-01-02T00:00:00Z.nc path/to/MESH/partitioning.128
 ```
 

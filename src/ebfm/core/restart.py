@@ -11,8 +11,8 @@ A restart file holds the columns of the whole domain, in the order of their ids,
 `column_id`. A run on several MPI ranks reads and writes it on rank 0, which matches the rows to the columns by id,
 so the file does not depend on how the columns are distributed over the ranks.
 
-A run on a partitioned Elmer mesh writes a directory of restart files instead, `part.<n>.nc` for partition n, each
-with the columns of its partition, and reads its own from such a directory on every rank. The modules
+A run on N MPI ranks writes a directory of restart files instead, `restart_<time>/partitioning.N/part.<n>.nc` for
+partition n, each with the columns of its partition, and reads its own from such a directory on every rank. The modules
 ebfm.io.split_restart and ebfm.io.merge convert between the two.
 """
 
@@ -46,6 +46,11 @@ PER_LAYER_VARIABLES = ("subZ", "subW", "subD", "subS", "subT", "subTmean")
 
 # Every variable a restart file carries. The order is the order they are written in.
 RESTART_VARIABLES = PER_LAYER_VARIABLES + PER_COLUMN_VARIABLES
+
+
+def partitioning_name(n_partitions: int) -> str:
+    """Name of the directory of the files of the partitions of a partitioning into n_partitions."""
+    return f"partitioning.{n_partitions}"
 
 
 def partition_file_name(partition_id: int) -> str:
@@ -137,8 +142,8 @@ def read_restart_file(path: Path, nl: int, gather: ColumnGather, grid, partition
     """
     Read a restart file on the root rank of gather and give every rank the rows of its columns.
 
-    For a directory of per-partition restart files, every rank instead reads the file of its own partition, without
-    communication.
+    For a directory of the restart files of the partitions of a partitioning, restart_<time>/partitioning.N, every rank
+    instead reads the file of its own partition, without communication.
 
     Collective over gather.comm. The rows of a file with a `column_id` variable are matched to the columns by id. A
     file without one holds the columns in the order of a run on a single rank, which, for a grid that EBFM splits
@@ -161,8 +166,8 @@ def read_restart_file(path: Path, nl: int, gather: ColumnGather, grid, partition
     if path.is_dir():
         if partition_id is None:
             raise ValueError(
-                f"{path} is a directory of per-partition restart files, which only a run on a partitioned Elmer mesh "
-                "reads. Merge them into one restart file with python -m ebfm.io.merge."
+                f"{path} is a directory of per-partition restart files, which only a run on several MPI ranks reads. "
+                "Merge them into one restart file with python -m ebfm.io.merge."
             )
         return _read_partition_file(path / partition_file_name(partition_id), nl, grid["column_id"])
 
@@ -209,8 +214,8 @@ def _read_partition_file(path: Path, nl: int, column_ids) -> dict:
     """Read the restart file of one partition, with the rows in the order of column_ids."""
     if not path.exists():
         raise ValueError(
-            f"There is no restart file {path} for this partition. The restart directory was written for a mesh with "
-            "fewer partitions; merge it into one restart file with python -m ebfm.io.merge."
+            f"There is no restart file {path} for this partition, so the files of the partitioning in {path.parent} "
+            "are incomplete."
         )
 
     with Dataset(path, "r") as ncfile:

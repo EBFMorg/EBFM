@@ -4,10 +4,10 @@
 
 """Split an EBFM restart file into one restart file per partition of a partitioned grid.
 
-A run on several MPI ranks reads its restart state from a directory restart_<time>/ that holds part.<n>.nc for every
-partition n, each with the columns of its partition. This script writes such a directory from a restart file of the
-whole grid, matching the rows of the file to the columns of the partitions by the `column_id` variable. The
-partitioning is that of an Elmer mesh (part.<n>.elements) or of a MATLAB or NetCDF grid (part.<n>.mat or .nc).
+A run on N MPI ranks reads its restart state from a directory restart_<time>/partitioning.N/ that holds part.<n>.nc
+for every partition n, each with the columns of its partition. This script writes such a directory from a restart
+file of the whole grid, matching the rows of the file to the columns of the partitions by the `column_id` variable.
+The partitioning is that of an Elmer mesh (part.<n>.elements) or of a MATLAB or NetCDF grid (part.<n>.mat or .nc).
 
 python -m ebfm.io.merge is the inverse.
 """
@@ -33,11 +33,15 @@ def partition_column_ids(partitioning: Path) -> dict[int, np.ndarray]:
     return structured_partitioning.partition_column_ids(partitioning)
 
 
-def split_restart_file(restart_file: Path, partitioning: Path, out_dir: Path) -> None:
+def split_restart_file(restart_file: Path, partitioning: Path, out_dir: Path | None = None) -> Path:
     """
     Write out_dir/part.<n>.nc for every partition n of partitioning, with the rows of restart_file for its cells.
 
     Every variable of the file has the columns along its first axis.
+
+    @param[in] out_dir by default restart_<time>/partitioning.<N> next to restart_file restart_<time>.nc, where a run
+                       on N ranks reads it
+    @returns out_dir
     """
     with Dataset(restart_file, "r") as src:
         if COLUMN_ID_VARIABLE not in src.variables:
@@ -57,6 +61,9 @@ def split_restart_file(restart_file: Path, partitioning: Path, out_dir: Path) ->
             f"{restart_file} holds {len(file_column_ids)} columns, but {partitioning} has {n_cells} columns."
         )
 
+    if out_dir is None:
+        out_dir = Path(restart_file).with_suffix("") / f"partitioning.{len(partitions)}"
+    out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     for partition_id, partition_ids in partitions.items():
         positions = np.minimum(np.searchsorted(file_column_ids, partition_ids, sorter=sorter), len(sorter) - 1)
@@ -84,7 +91,7 @@ def _write_variable(ncfile: Dataset, name: str, values: np.ndarray) -> None:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("restart_file", type=Path, help="restart file of the whole mesh, restart_<time>.nc")
+    parser.add_argument("restart_file", type=Path, help="restart file of the whole grid, restart_<time>.nc")
     parser.add_argument(
         "partitioning", type=Path, help="partitioning of the grid, e.g. MESH/partitioning.4 or GRID.partitioning.4"
     )
@@ -92,13 +99,12 @@ def main(argv=None) -> int:
         "-o",
         "--output",
         type=Path,
-        help="directory to write part.<n>.nc to (default: the restart file's path without .nc, restart_<time>/)",
+        help="directory to write part.<n>.nc to (default: restart_<time>/partitioning.<N> next to restart_<time>.nc)",
     )
     args = parser.parse_args(argv)
 
-    out_dir = args.output or args.restart_file.with_suffix("")
     try:
-        split_restart_file(args.restart_file, args.partitioning, out_dir)
+        out_dir = split_restart_file(args.restart_file, args.partitioning, args.output)
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

@@ -9,8 +9,8 @@ A run on several MPI ranks writes a directory instead of a file, with part.<n>.n
 * output_<time>/: output files. For an Elmer mesh, the merged file holds the cells of all partitions, ordered by
   column id, and every vertex once, ordered by vertex id. For a MATLAB or NetCDF grid, it holds the (y, x) fields
   with the values of all partitions.
-* restart_<time>/: restart files. The merged file is a restart file of the whole grid, ordered by column id, which
-  every run can start from.
+* restart_<time>/partitioning.<N>/: restart files. The merged file is a restart file of the whole grid,
+  restart_<time>.nc, ordered by column id, which every run can start from.
 
 python -m ebfm.io.split_restart is the inverse for restart files.
 """
@@ -185,18 +185,22 @@ def merge_partition_files(directory: Path, out_file: Path) -> None:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
-        "directory", type=Path, help="directory of part.<n>.nc files, output_<time>/ or restart_<time>/"
+        "directory",
+        type=Path,
+        help="directory of part.<n>.nc files, output_<time>/ or restart_<time>/partitioning.<N>/",
     )
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
-        help="file to write (default: the directory's path with .nc, output_<time>.nc or restart_<time>.nc)",
+        help="file to write (default: output_<time>.nc or restart_<time>.nc next to the directory)",
     )
     args = parser.parse_args(argv)
 
     directory = args.directory.resolve()
-    out_file = args.output or directory.with_name(directory.name + ".nc")
+    # restart_<time>/partitioning.<N> merges into restart_<time>.nc, output_<time> into output_<time>.nc
+    named_directory = directory.parent if directory.name.startswith("partitioning.") else directory
+    out_file = args.output or named_directory.with_name(named_directory.name + ".nc")
     try:
         merge_partition_files(directory, out_file)
     except ValueError as e:

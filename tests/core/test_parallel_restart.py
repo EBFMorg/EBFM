@@ -48,16 +48,22 @@ def test_restart_chain_on_4_then_3_ranks_equals_serial_chain(tmp_path):
     args = parallel_args("matlab", tmp_path)
 
     _leg(args, _LEG_1, 4, tmp_path / "np4")
-    restart_1 = tmp_path / "np4" / "restart" / Path(RESTART_FILES[0]).stem
+    restart_1 = tmp_path / "np4" / "restart" / Path(RESTART_FILES[0]).stem / "partitioning.4"
     tool("merge", restart_1, "-o", tmp_path / "merged_1.nc")
     assert_same_variables(serial / "restart" / RESTART_FILES[0], tmp_path / "merged_1.nc")
 
     grid_file = Path(args[args.index("--matlab-mesh") + 1])
     partitioning = partition_grid(grid_file, 3)
-    tool("split_restart", tmp_path / "merged_1.nc", partitioning, "-o", tmp_path / "np3" / "restart" / restart_1.name)
+    tool(
+        "split_restart",
+        tmp_path / "merged_1.nc",
+        partitioning,
+        "-o",
+        tmp_path / "np3" / "restart" / restart_1.parent.name / "partitioning.3",
+    )
     _leg(args, _LEG_2, 3, tmp_path / "np3")
 
-    restart_2 = tmp_path / "np3" / "restart" / Path(RESTART_FILES[1]).stem
+    restart_2 = tmp_path / "np3" / "restart" / Path(RESTART_FILES[1]).stem / "partitioning.3"
     tool("merge", restart_2, "-o", tmp_path / "merged_2.nc")
     assert_same_variables(serial / "restart" / RESTART_FILES[1], tmp_path / "merged_2.nc")
     _assert_same_results(serial / "leg2", tmp_path / "np3" / "leg2")

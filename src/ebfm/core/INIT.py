@@ -19,7 +19,7 @@ from .comm import defaultComm
 from .comm.gather import ColumnGather
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, OutputConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
-from .restart import partition_file_name, read_restart_file
+from .restart import partition_file_name, partitioning_name, read_restart_file
 
 from .constants import DAYS_PER_YEAR, LATENT_HEAT_OF_FUSION, MELTING_POINT, SECONDS_PER_DAY, WATER_DENSITY
 
@@ -43,7 +43,8 @@ def create_restart_file_name(time: datetime) -> str:
 
 def create_restart_dir_name(time: datetime) -> str:
     """
-    Name of the directory that holds the restart files of the partitions of a partitioned mesh, one per partition.
+    Name of the directory that holds the restart files of the partitions of a partitioned grid, in a directory per
+    partitioning.
 
     Parameters:
         time (datetime): The time to include in the directory name.
@@ -80,18 +81,33 @@ def create_output_dir_name(time: datetime) -> str:
     return "output_" + iso8601(time)
 
 
-def _restart_file_to_read(restartdir: Path, time: datetime, is_partitioned: bool) -> Path:
+def _restart_file_to_read(restartdir: Path, time: datetime, n_partitions: int | None) -> Path:
     """
-    The restart file, or the directory of per-partition restart files, to start from at time.
+    The restart file to start from at time, or for a run on a partitioned grid, the directory of the restart files
+    of the partitions of its partitioning, restart_<time>/partitioning.<n_partitions>.
 
-    Both may exist; a run on a partitioned mesh prefers the directory, any other run the file.
+    A run on a partitioned grid prefers the directory to the file if both exist.
     """
     file = restartdir / create_restart_file_name(time)
-    directory = restartdir / create_restart_dir_name(time)
-    for candidate in (directory, file) if is_partitioned else (file, directory):
+    candidates = [file]
+    if n_partitions is not None:
+        candidates.insert(0, restartdir / create_restart_dir_name(time) / partitioning_name(n_partitions))
+    for candidate in candidates:
         if candidate.exists():
             return candidate
-    raise AssertionError(f"Restart file {file} does not exist, nor does a directory {directory} of partition files!")
+
+    message = f"Restart file {file} does not exist"
+    if n_partitions is not None:
+        message += f", nor do the restart files of this partitioning, {candidates[0]}"
+    other = sorted((restartdir / create_restart_dir_name(time)).glob("partitioning.*"))
+    if other:
+        message += (
+            f". There are restart files of other partitionings: {', '.join(map(str, other))}. Merge them into "
+            f"{file.name} with 'python -m ebfm.io.merge {other[0]}'"
+        )
+        if n_partitions is not None:
+            message += " and split that for this partitioning with 'python -m ebfm.io.split_restart'"
+    raise AssertionError(message + ".")
 
 
 def init_config(
@@ -146,6 +162,7 @@ def init_config(
     io["homedir"] = Path(os.getcwd())  # Home directory
     # With a partitioned mesh, every rank writes the output and restart file of its own partition
     partition_id = grid_config.partition_id if grid_config.is_partitioned else None
+    n_partitions = grid_config.num_partitions if grid_config.is_partitioned else None
     io["partition_id"] = partition_id
     if partition_id is None:
         io["outfile"] = output_config.output_dir / create_output_file_name(time_config.start_time)
@@ -168,13 +185,16 @@ def init_config(
         write_restart_file = True
 
         if initialize_from_restart_file:
-            io["bootfilein"] = _restart_file_to_read(restartdir, time_config.start_time, partition_id is not None)
+            io["bootfilein"] = _restart_file_to_read(restartdir, time_config.start_time, n_partitions)
 
         if partition_id is None:
             io["bootfileout"] = restartdir / create_restart_file_name(time_config.end_time)
         else:
             io["bootfileout"] = (
-                restartdir / create_restart_dir_name(time_config.end_time) / partition_file_name(partition_id)
+                restartdir
+                / create_restart_dir_name(time_config.end_time)
+                / partitioning_name(n_partitions)
+                / partition_file_name(partition_id)
             )
         assert not io["bootfileout"].exists(), (
             f"Restart file {io['bootfileout']} already exists! Please choose a different restart directory or end "
