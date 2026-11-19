@@ -22,6 +22,8 @@ from ebfm.coupling.fields import FieldSet, GenericExchangeType
 
 logger = logging.getLogger(__name__)
 
+_MAX_REPORTED_COLUMNS = 5
+
 CouplerExchangeType = TypeVar("CouplerExchangeType")
 """Backend-specific exchange type used by a concrete coupler implementation.
 
@@ -85,6 +87,9 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
 
         self._fields: FieldSet = FieldSet()
         self._ebfm_time: TimeConfig | None = None  # will be set in setup()
+        # Generic field definitions and grid, for checking received data. Will be set in setup().
+        self._field_definitions: FieldSet = FieldSet()
+        self._grid: GridDict | None = None
 
     @staticmethod
     @abstractmethod
@@ -137,6 +142,8 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
             component.prepare_grid(grid)
             field_definitions |= component.get_field_definitions()
 
+        self._field_definitions = field_definitions
+        self._grid = grid
         self._setup(grid, field_definitions)
 
     @abstractmethod
@@ -228,7 +235,50 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
                 f"{sorted(self._registered_field_names(component_name))}."
             )
             return None, CouplerExitCode.UNREGISTERED_FIELD
-        return self._get(component_name, field_name)
+        data, error = self._get(component_name, field_name)
+        if data is not None:
+            self._check_received(component_name, field_name, data)
+        return data, error
+
+    def _valid_range(self, component_name: str, field_name: str) -> tuple[float, float] | None:
+        fields = self._field_definitions.filter(
+            lambda f: f.coupled_component.name == component_name and f.name == field_name
+        ).all()
+        return next(iter(fields)).valid_range if fields else None
+
+    def _describe_columns(self, data: np.ndarray, bad: np.ndarray) -> str:
+        lines = []
+        for i in np.flatnonzero(bad)[:_MAX_REPORTED_COLUMNS]:
+            location = ""
+            if self._grid is not None and "lat" in self._grid and "lon" in self._grid:
+                location = f" (lat={self._grid['lat'][i]:.4f}, lon={self._grid['lon'][i]:.4f})"
+            lines.append(f"  column {i}{location}: {data[i]:.6g}")
+        n_bad = int(bad.sum())
+        if n_bad > _MAX_REPORTED_COLUMNS:
+            lines.append(f"  ... and {n_bad - _MAX_REPORTED_COLUMNS} more columns")
+        return "\n".join(lines)
+
+    def _check_received(self, component_name: str, field_name: str, data: np.ndarray):
+        """
+        Reject received data outside the valid range of its field definition.
+
+        @param[in] component_name name of the component the data was received from
+        @param[in] field_name name of the received field
+        @param[in] data received data, one value per column, in the units of the field definition
+
+        @raises RuntimeError if a value is outside the valid range
+        """
+        valid_range = self._valid_range(component_name, field_name)
+        if valid_range is None:
+            return
+        low, high = valid_range
+        outside = (data < low) | (data > high)
+        if outside.any():
+            raise RuntimeError(
+                f"Received {int(outside.sum())} of {data.size} values of field '{field_name}' from component "
+                f"'{component_name}' outside its valid range [{low:g}, {high:g}], e.g. a fill value of the coupling "
+                "configuration or wrong units.\n" + self._describe_columns(data, outside)
+            )
 
     @abstractmethod
     def _get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
