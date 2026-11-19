@@ -78,7 +78,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
 
         # Fresh snow density calculations
         if phys["snow_compaction"] == "firn+snow":
-            OUT["Dfreshsnow_T"] = np.zeros_like(IN["T"])
+            OUT["Dfreshsnow_T"] = np.full_like(IN["T"], np.nan, dtype=float)
 
             temp_above = IN["T"] > C["T0"] + 2
             temp_between = (IN["T"] <= C["T0"] + 2) & (IN["T"] > C["T0"] - 15)
@@ -89,6 +89,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             OUT["Dfreshsnow_T"][temp_below] = (
                 -3.8328 * (IN["T"][temp_below] - C["T0"]) - 0.0333 * (IN["T"][temp_below] - C["T0"]) ** 2
             )
+            assert not np.isnan(OUT["Dfreshsnow_T"]).any(), "Dfreshsnow_T: some entries were never set"
 
             OUT["Dfreshsnow_W"] = 266.86 * (0.5 * (1 + np.tanh(IN["WS"] / 5))) ** 8.8
             OUT["Dfreshsnow"] = OUT["Dfreshsnow_T"] + OUT["Dfreshsnow_W"]
@@ -766,12 +767,10 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             carrot *= avail_W[:, np.newaxis]  # Distribute water input among layers
 
             # ------ Refreezing and Irreducible Water Storage Iteration ------
-            # RP reused across calls: same check-and-fill pattern as Dens_* in compaction
+            # RP reused across calls; the layer loop below writes every entry
             _rp_shape = OUT["subZ"].shape
             if "_perc_RP" not in OUT or OUT["_perc_RP"].shape != _rp_shape:
-                OUT["_perc_RP"] = np.zeros(_rp_shape)
-            else:
-                OUT["_perc_RP"].fill(0.0)
+                OUT["_perc_RP"] = np.empty(_rp_shape)
             RP = OUT["_perc_RP"]
 
             avail_W_loc = np.zeros(gpsum)  # Available water per layer
@@ -823,13 +822,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             avail_S = 1.0 / (1.0 + dt / C["Trunoff"]) * avail_S
             avail_S[avail_S < 1e-25] = 0.0  # Set near-zero available slush to zero
 
-            # Initialize slush water in all layers (reusing arrays)
-            if "subS" not in OUT or OUT["subS"].shape != (gpsum, nl):
-                OUT["subS"] = np.zeros((gpsum, nl))
-            else:
-                OUT["subS"].fill(0.0)
-
-            # Bottom-up filling of pore space with slush water
+            # Bottom-up filling of pore space with slush water, overwriting every layer of OUT["subS"]
             # Each layer takes min(available, pore space), no branching needed
             for n in range(nl - 1, -1, -1):  # Loop from bottom (nl) to top (1)
                 np.minimum(avail_S, slushspace[:, n], out=OUT["subS"][:, n])
@@ -1045,6 +1038,8 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
         compaction()
         heat_conduction()
         percolation_refreezing_and_storage()
+    assert not np.isnan(OUT["subK"]).any(), "subK: some entries were never set"
+    assert not np.isnan(OUT["subCeff"]).any(), "subCeff: some entries were never set"
     layer_merging_and_splitting()
     runoff()
     OUT["T_ice"] = OUT["subT"][:, -1]

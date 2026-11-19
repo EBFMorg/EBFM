@@ -137,17 +137,18 @@ def icon_atmo_fallback_values(IN) -> dict[str, np.ndarray]:
     """
     Fallback values for the fields received from the ICON atmosphere if no data is received, taken from EBFM's
     current forcing IN. Mapping them with IconAtmo.map_forcing_to_ebfm gives the forcing they were taken from.
+    Before the first exchange IN is still NaN, and a plausible initial value is used instead.
     """
     return {
-        "rlds": IN["LWin"],
-        "clt": IN["C"],
-        "sfcwind": IN["WS"],
-        "huss": IN["q"],
-        "sfcpres": IN["Pres"],
-        "tas": IN["T"],
-        "rsds": IN["SWin"],
-        "pr": IN["rain"],
-        "pr_snow": IN["snow"],
+        "rlds": np.where(np.isnan(IN["LWin"]), 0.0, IN["LWin"]),  # TODO: 0 W m-2 is not plausible
+        "clt": np.where(np.isnan(IN["C"]), 0.0, IN["C"]),
+        "sfcwind": np.where(np.isnan(IN["WS"]), 0.0, IN["WS"]),
+        "huss": np.where(np.isnan(IN["q"]), 0.0, IN["q"]),  # TODO: 0 g kg-1 is not plausible
+        "sfcpres": np.where(np.isnan(IN["Pres"]), 101500.0, IN["Pres"]),
+        "tas": np.where(np.isnan(IN["T"]), 270.0, IN["T"]),
+        "rsds": np.where(np.isnan(IN["SWin"]), 0.0, IN["SWin"]),
+        "pr": np.where(np.isnan(IN["rain"]), 0.0, IN["rain"]),
+        "pr_snow": np.where(np.isnan(IN["snow"]), 0.0, IN["snow"]),
     }
 
 
@@ -323,6 +324,8 @@ def _main_impl():
             logger.debug(f"Received the following data from ICON: {data_from_icon_atmo}")
 
             IN.update(icon_atmo.map_forcing_to_ebfm(data_from_icon_atmo))
+            assert not np.isnan(IN["SWin"]).any(), "SWin: NaN received from ICON"
+            assert not np.isnan(IN["LWin"]).any(), "LWin: NaN received from ICON"
 
         # Read/set meteorological forcing
         IN, OUT = LOOP_climate_forcing.main(C, grid, IN, t, time, OUT, forcing_config, column_gather)
