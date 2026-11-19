@@ -499,13 +499,20 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             # GPU: the prep / solve / boundary-clip kernels run on the resident
             # device arrays. Host precompute and post-clip below are done
             # on-device (subK / subCeff are returned in download()).
-            invalid_state = gpu.heat_conduction(
-                dt, C, MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE, dt / checks.MAX_HEAT_SUBSTEPS
+            flagged = gpu.heat_conduction(
+                dt,
+                C,
+                MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE,
+                dt / checks.MAX_HEAT_SUBSTEPS,
+                checks.WARN_DT_STAB_SECONDS / C["dayseconds"],
             )
-            if invalid_state is not None:
-                checks.assert_heat_conduction_inputs(invalid_state, grid)
-                checks.assert_dt_stab(invalid_state["dt_stab"], dt, invalid_state, grid)
+            if flagged is None:
+                return _SUCCESS
+            if flagged["invalid"]:
+                checks.assert_heat_conduction_inputs(flagged, grid)
+                checks.assert_dt_stab(flagged["dt_stab"], dt, flagged, grid)
                 raise AssertionError("The GPU heat conduction check flagged columns that pass the host checks.")
+            checks.warn_small_dt_stab(flagged["dt_stab"], dt, C["dayseconds"], flagged, grid)
             return _SUCCESS
 
         checks.assert_heat_conduction_inputs(OUT, grid)
@@ -541,6 +548,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 C["dayseconds"],
             )
             checks.assert_dt_stab(dt_stab, dt, OUT, grid)
+            checks.warn_small_dt_stab(dt_stab, dt, C["dayseconds"], OUT, grid)
             _heat_conduction_kernel(
                 OUT["subT"],
                 OUT["Tsurf"],
@@ -577,6 +585,7 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
                 / C["dayseconds"]
             )
             checks.assert_dt_stab(dt_stab, dt, OUT, grid)
+            checks.warn_small_dt_stab(dt_stab, dt, C["dayseconds"], OUT, grid)
 
             # Precompute kk*subZ products and the temperature-update denominators once
             # kk_sz_top: conductivity-thickness product for the top interface

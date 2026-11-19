@@ -83,6 +83,27 @@ def assert_corruption_reported(test, C, field, index, value, fragments):
         test.assertIn(fragment, message)
 
 
+# Gives dt_stab of about 0.1 s: below the warning threshold, far above the sub-step limit.
+THIN_LAYER = 5e-4
+
+
+def assert_small_step_warned(test, C):
+    grid, OUT, IN = make_case(C)
+    OUT["subZ"][BAD_COLUMN, BAD_LAYER] = THIN_LAYER
+    with test.assertLogs(LOOP_SNOW_checks.logger, "WARNING") as logged:
+        step(C, grid, OUT, IN)
+    message = "\n".join(logged.output)
+    test.assertIn("stability time step below 1 s in 1 of 2 columns", message)
+    test.assertIn("column 1 (lat=71.0000, lon=321.0000)", message)
+    test.assertIn(f"thinnest layer {BAD_LAYER}: subZ=", message)
+
+
+def assert_healthy_step_not_warned(test, C):
+    grid, OUT, IN = make_case(C)
+    with test.assertNoLogs(LOOP_SNOW_checks.logger, "WARNING"):
+        step(C, grid, OUT, IN)
+
+
 class TestHeatConductionChecks(unittest.TestCase):
     def setUp(self):
         self.C = INIT.init_constants()
@@ -111,6 +132,18 @@ class TestHeatConductionChecks(unittest.TestCase):
                 grid, OUT, IN = make_case(self.C)
                 OUT["subT"][:, 1:] = 210.0
                 step(self.C, grid, OUT, IN)
+
+    def test_small_step_is_warned(self):
+        for backend in self._backends():
+            with self.subTest(backend=backend.name):
+                compute_backend._backend = backend
+                assert_small_step_warned(self, self.C)
+
+    def test_healthy_step_is_not_warned(self):
+        for backend in self._backends():
+            with self.subTest(backend=backend.name):
+                compute_backend._backend = backend
+                assert_healthy_step_not_warned(self, self.C)
 
     def test_negative_density_is_named(self):
         grid, OUT, _ = make_case(self.C)

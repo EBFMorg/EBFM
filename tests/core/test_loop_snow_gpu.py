@@ -283,3 +283,13 @@ class TestLoopSnowGPUChecksHeatConductionInputs(unittest.TestCase):
         grid, OUT, IN = make_case(self.C)
         OUT["subT"][:, 1:] = 210.0
         step(self.C, grid, OUT, IN)
+
+    def test_small_step_is_warned(self):
+        from test_loop_snow_heat_conduction_checks import assert_small_step_warned
+
+        assert_small_step_warned(self, self.C)
+
+    def test_healthy_step_is_not_warned(self):
+        from test_loop_snow_heat_conduction_checks import assert_healthy_step_not_warned
+
+        assert_healthy_step_not_warned(self, self.C)
