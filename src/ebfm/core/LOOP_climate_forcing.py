@@ -84,6 +84,9 @@ def main(C, grid, IN, t, time, OUT, config: ForcingConfig, gather: ColumnGather)
     # Air density
     IN["Dair"] = IN["Pres"] / (C["Rd"] * IN["T"])
 
+    for name in ("T", "P", "snow", "rain", "C", "WS", "RH", "q", "VP", "Dair", "Pres", "yearsnow", "logyearsnow"):
+        assert not np.isnan(IN[name]).any(), f"{name}: NaN after reading the forcing (never set, or NaN in the input)"
+
     # Time since last snowfall event
     snowfall_mask = (IN["snow"] / (time["dt"] * C["dayseconds"])) > C["Pthres"]
     OUT["timelastsnow"][snowfall_mask] = time["TCUR"]
