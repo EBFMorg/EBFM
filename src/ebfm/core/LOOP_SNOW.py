@@ -109,6 +109,11 @@ def _describe_implausible_subT(OUT, grid) -> str:
     return "\n".join(lines)
 
 
+def _assert_heat_conduction_inputs(OUT, grid) -> None:
+    assert _heat_conduction_inputs_finite(OUT), _describe_nonfinite_heat_conduction_inputs(OUT, grid)
+    assert (OUT["subT"][:, 1:] >= MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE).all(), _describe_implausible_subT(OUT, grid)
+
+
 def _describe_dt_stab_failure(dt_stab: NDArray[np.float64], OUT, grid) -> str:
     """Explain the columns where dt_stab is not > 0, using the layers 1..nl-1 that enter it."""
     bad = np.flatnonzero(~(dt_stab > 0))
@@ -591,11 +596,13 @@ def main(C, OUT, IN, dt: float, grid, phys, column):
             # GPU: the prep / solve / boundary-clip kernels run on the resident
             # device arrays. Host precompute and post-clip below are done
             # on-device (subK / subCeff are returned in download()).
-            gpu.heat_conduction(dt, C)
+            invalid_state = gpu.heat_conduction(dt, C, MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE)
+            if invalid_state is not None:
+                _assert_heat_conduction_inputs(invalid_state, grid)
+                raise AssertionError(_describe_dt_stab_failure(invalid_state["dt_stab"], invalid_state, grid))
             return _SUCCESS
 
-        assert _heat_conduction_inputs_finite(OUT), _describe_nonfinite_heat_conduction_inputs(OUT, grid)
-        assert (OUT["subT"][:, 1:] >= MIN_PLAUSIBLE_SUBSURFACE_TEMPERATURE).all(), _describe_implausible_subT(OUT, grid)
+        _assert_heat_conduction_inputs(OUT, grid)
 
         # ------ Heat Conduction Loop ------
         if get_backend() == ComputeBackend.NUMBA:

@@ -246,3 +246,40 @@ class TestLoopSnowGPUMatchesNumPy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(_NUMBA and _CUDASIM, "requires numba with NUMBA_ENABLE_CUDASIM=1")
+class TestLoopSnowGPUChecksHeatConductionInputs(unittest.TestCase):
+    """The GPU backend must report a corrupted column like the NumPy backend.
+
+    Without the checks, a negative dt_stab never ends the solve loop of the
+    column, and a zero one skips its heat conduction.
+    """
+
+    def setUp(self):
+        from ebfm.core import INIT, compute_backend
+
+        self.compute_backend = compute_backend
+        self.C = INIT.init_constants()
+        warnings.filterwarnings("ignore", category=RuntimeWarning)
+        compute_backend._backend = compute_backend.ComputeBackend.GPU
+
+    def tearDown(self):
+        self.compute_backend._backend = self.compute_backend.ComputeBackend.NUMPY
+
+    def test_corrupted_column_is_reported(self):
+        from test_loop_snow_heat_conduction_checks import CORRUPTIONS, assert_corruption_reported
+
+        for name, (field, index, value, fragments) in CORRUPTIONS.items():
+            if name == "zero density":
+                # _fmin in the GPU compaction kernel turns the resulting NaN density into Dice.
+                continue
+            with self.subTest(case=name):
+                assert_corruption_reported(self, self.C, field, index, value, fragments)
+
+    def test_cold_physical_column_passes(self):
+        from test_loop_snow_heat_conduction_checks import make_case, step
+
+        grid, OUT, IN = make_case(self.C)
+        OUT["subT"][:, 1:] = 210.0
+        step(self.C, grid, OUT, IN)
