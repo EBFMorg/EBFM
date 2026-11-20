@@ -8,7 +8,7 @@ from enum import Enum
 
 from ebfm.core.grid import GridDict
 
-from ebfm.elmer.mesh import Mesh as Grid  # for now use an alias
+from ebfm.grid.elmer.mesh import Mesh as Grid  # for now use an alias
 
 # from ebfm.core.geometry import Grid  # TODO: consider introducing a new data structure native to EBFM?
 from ebfm.core.config import CouplingConfig, TimeConfig

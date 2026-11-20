@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 from netCDF4 import Dataset
 
-from ebfm.elmer.mesh import TriangleMesh
-from ebfm.reader import read_dem_xios
+from ebfm.grid.elmer.mesh import TriangleMesh
+from ebfm.grid.elmer.reader import read_dem_xios
 
 
 def _make_mesh() -> TriangleMesh:

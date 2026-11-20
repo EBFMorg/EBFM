@@ -3,19 +3,18 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 import os
-from typing import Any
 import numpy as np
-from numpy import ndarray, dtype
-import scipy.io as sio
 from pyproj import Transformer
 from netCDF4 import Dataset, num2date
 
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from ebfm.reader import read_elmer_mesh, read_dem, read_dem_xios
+from ebfm.grid.elmer.reader import read_elmer_mesh, read_dem, read_dem_xios
 
-from ebfm.elmer.mesh import Mesh
+from ebfm.grid.elmer.mesh import Mesh
+from ebfm.grid.structured.matlab import read_MATLAB_fields
+from ebfm.grid.structured.netcdf import read_NETCDF_grid
 from .config import TimeConfig, GridConfig, ColumnDiscretizationConfig, OutputConfig, iso8601
 from .grid import GridInputType, GridDict, ShadingMethod, domain_mean, number_of_columns, validate_grid
 from .restart import validate_all_variables_present, validate_variable_shape
@@ -297,28 +296,9 @@ def init_grid(grid: GridDict, io, config: GridConfig, comm):
         # ---------------------------------------------------------------------
         # Read grid data
         if config.grid_type is GridInputType.MATLAB:
-            input_data = read_MATLAB_grid(config.mesh_file)
-
-            grid["x_2D"] = input_data["x"][0][0]
-            grid["y_2D"] = input_data["y"][0][0]
-            grid["z_2D"] = input_data["z"][0][0]
-            mask_2D = input_data["mask"][0][0]
-
-            # Flip grid E-W or N-S when needed
-            fy, _ = np.gradient(grid["y_2D"])
-
-            if fy[0, 0] < 0:
-                grid["x_2D"] = np.flipud(grid["x_2D"])
-                grid["y_2D"] = np.flipud(grid["y_2D"])
-                grid["z_2D"] = np.flipud(grid["z_2D"])
-                mask_2D = np.flipud(mask_2D)
-
-            _, fx = np.gradient(grid["x_2D"])
-            if fx[0, 0] < 0:
-                grid["x_2D"] = np.fliplr(grid["x_2D"])
-                grid["y_2D"] = np.fliplr(grid["y_2D"])
-                grid["z_2D"] = np.fliplr(grid["z_2D"])
-                mask_2D = np.fliplr(mask_2D)
+            fields = read_MATLAB_fields(config.mesh_file)
+            grid["x_2D"], grid["y_2D"], grid["z_2D"] = fields["x"], fields["y"], fields["z"]
+            mask_2D = fields["mask"]
 
             # Calculate latitude & longitude fields (from the original UTM coordinates)
             utm_to_latlon = Transformer.from_crs(f"EPSG:{32600 + config.utmzone}", "EPSG:4326", always_xy=True)
@@ -560,143 +540,6 @@ def calculate_step_sizes(az):
     ddy[is_walk_to_S] = 1.0
 
     return ddx, ddy
-
-
-def read_MATLAB_grid(gridfile: Path):
-    """
-    Provides grid information by reading from a .mat file or allowing user input.
-
-    Parameters:
-        gridfile: Path to the .mat file containing grid data.
-
-    Returns:
-        dict: A dictionary named `input_data` containing:
-            - 'x': 2D NumPy array of UTM easting coordinates (m).
-            - 'y': 2D NumPy array of UTM northing coordinates (m).
-            - 'z': 2D NumPy array of elevation (m).
-            - 'mask': 2D NumPy array of glacier mask (0 = no glacier, 1 = glacier).
-    """
-
-    logger.info("EBFM: Reading grid data from MATLAB file...")
-    input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
-
-    try:
-        # Load MATLAB file
-        mat_file = sio.loadmat(str(gridfile))
-        grid_svalbard = mat_file.get("grid_svalbard", None)
-
-        if grid_svalbard is None:
-            raise ValueError("`grid_svalbard` not found in the .mat file!")
-
-        # Extract data from the MATLAB structure
-        input_data["x"] = grid_svalbard["x"]
-        input_data["y"] = grid_svalbard["y"]
-        input_data["z"] = grid_svalbard["z"]
-        input_data["mask"] = grid_svalbard["mask"]
-
-    except FileNotFoundError:
-        logger.info(f"File not found: {gridfile}")
-        raise
-    except KeyError as e:
-        logger.info(f"Missing field in .mat file: {e}")
-        raise
-
-    return input_data
-
-
-def read_NETCDF_grid(gridfile: Path, fill_missing_elevation: bool = False):
-    """
-    Read grid information from an NetCDF (.nc) file with DEM.
-
-    Cells with missing orography are always inactive. Their elevation is NaN, or 0 m if `fill_missing_elevation`.
-
-    Parameters:
-        gridfile: Path to NetCDF file (.nc).
-        fill_missing_elevation: Set missing elevations to 0 m instead of NaN.
-
-    Returns:
-        dict: A dictionary named `input_data` containing:
-            - 'x': 2D NumPy array of UTM zone 24N easting coordinates (m).
-            - 'y': 2D NumPy array of UTM zone 24N northing coordinates (m).
-            - 'z': 2D NumPy array of orography/elevation.
-            - 'mask': 2D NumPy array of fractional glacier mask values.
-            - 'lon': 2D NumPy array of longitude coordinates in degrees East.
-            - 'lat': 2D NumPy array of latitude coordinates.
-    """
-
-    logger.info("EBFM: Reading grid data from NetCDF file...")
-    input_data: dict[str, ndarray[tuple[int, ...], dtype[Any]]] = {}
-
-    try:
-        with Dataset(gridfile, "r") as ncfile:
-            if "orography" in ncfile.variables:
-                raw_orography = ncfile.variables["orography"][:]
-            elif "orog" in ncfile.variables:
-                raw_orography = ncfile.variables["orog"][:]
-            else:
-                raise KeyError(f"Neither `orography` nor `orog` found in NetCDF grid file {gridfile}.")
-
-            if "mask" not in ncfile.variables:
-                raise KeyError(f"Missing `mask` in in NetCDF grid file {gridfile}.")
-
-            raw_mask = ncfile.variables["mask"][:]
-            latitude = np.asarray(ncfile.variables["latitude"][:])
-            longitude = np.asarray(ncfile.variables["longitude"][:])
-
-            orography = np.asarray(raw_orography)
-            mask = np.asarray(raw_mask, dtype=np.float32)
-
-            orography = np.squeeze(orography)
-            mask = np.squeeze(mask)
-            latitude = np.squeeze(latitude)
-            longitude = np.squeeze(longitude)
-
-            if np.ma.isMaskedArray(raw_orography):
-                valid_orography = ~np.squeeze(np.ma.getmaskarray(raw_orography))
-            else:
-                valid_orography = np.isfinite(orography)
-
-            if latitude.ndim == 1 and longitude.ndim == 1:
-                longitude, latitude = np.meshgrid(longitude, latitude)
-
-            if orography.shape != mask.shape or orography.shape != latitude.shape or orography.shape != longitude.shape:
-                raise ValueError(
-                    "`orography`/`orog`, `mask`, `latitude`, and `longitude` must have matching 2D shapes. "
-                    f"Got orography={orography.shape}, mask={mask.shape}, "
-                    f"latitude={latitude.shape}, longitude={longitude.shape}."
-                )
-
-            mask = np.where(valid_orography & (mask > 0.0), 1.0, 0.0).astype(np.float32)
-            if fill_missing_elevation:
-                n_missing = int((~valid_orography).sum())
-                if n_missing > 0:
-                    logger.warning(f"Setting {n_missing} missing elevations in {gridfile} to 0 m.")
-                orography = np.where(valid_orography, orography, 0.0)
-            else:
-                orography = np.where(valid_orography, orography, np.nan)
-            longitude = np.mod(longitude, 360.0)
-
-            if not np.any(mask > 0.0):
-                raise ValueError(f"Mask of {gridfile} contains no active cells with `mask > 0`.")
-
-            lonlat_to_utm24n = Transformer.from_crs("EPSG:4326", "EPSG:32624", always_xy=True)
-            x, y = lonlat_to_utm24n.transform(longitude, latitude)
-
-            input_data["x"] = x
-            input_data["y"] = y
-            input_data["z"] = orography
-            input_data["lat"] = latitude
-            input_data["lon"] = longitude
-            input_data["mask"] = mask
-
-    except FileNotFoundError:
-        logger.info(f"File not found: {gridfile}")
-        raise
-    except KeyError as e:
-        logger.info(f"Missing field in NetCDF file {gridfile}: {e}")
-        raise
-
-    return input_data
 
 
 def init_initial_conditions(

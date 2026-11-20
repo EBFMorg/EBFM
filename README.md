@@ -246,14 +246,14 @@ Once available, you can either copy or symlink the required files into the
 using the CLI arguments shown above.
 
 
-### Using `reader.py` to amend elevation data to `examples/greenland_mesh_v0`
+### Using `ebfm.grid.elmer.reader` to amend elevation data to `examples/greenland_mesh_v0`
 
-The helper script `reader.py` can be used to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
+The module `ebfm.grid.elmer.reader` can be run standalone to combine an existing Elmer mesh with a DEM NetCDF file by replacing the z‑coordinates in `mesh.nodes` ahead of time. This can be useful if you want to preprocess a mesh once and reuse it for multiple EBFM runs.
 
 Assuming the example data has been copied into the `examples/` directory as described above, you can run the following command from the repository root:
 
 ```sh
-python3 src/ebfm/reader.py examples/greenland_mesh_v0/MESH examples/BedMachineGreenland-v5.nc --outpath examples/greenland_mesh_v0_with_DEM/MESH --elmer-mesh-crs-epsg 3413
+python -m ebfm.grid.elmer.reader examples/greenland_mesh_v0/MESH examples/BedMachineGreenland-v5.nc --outpath examples/greenland_mesh_v0_with_DEM/MESH --elmer-mesh-crs-epsg 3413
 ```
 
 This will write the updated mesh to a new directory. The path `examples/greenland_mesh_v0_with_DEM` should not already exist. The original `examples/greenland_mesh_v0/MESH` directory is copied and left unchanged.
@@ -261,7 +261,7 @@ This will write the updated mesh to a new directory. The path `examples/greenlan
 Alternatively, you can modify the mesh directly in place, which overwrites `mesh.nodes`:
 
 ```sh
-python3 src/ebfm/reader.py examples/greenland_mesh_v0/MESH examples/BedMachineGreenland-v5_lo.nc --in-place --elmer-mesh-crs-epsg 3413
+python -m ebfm.grid.elmer.reader examples/greenland_mesh_v0/MESH examples/BedMachineGreenland-v5_lo.nc --in-place --elmer-mesh-crs-epsg 3413
 ```
 
 The resulting mesh can then be used directly with EBFM similar to the example with the MATLAB file from above:
