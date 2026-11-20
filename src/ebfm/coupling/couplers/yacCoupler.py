@@ -11,7 +11,7 @@ from .base import Coupler, Grid, GridDict, CouplingConfig, CouplerExitCode
 
 # from coupling import Field  # TODO: rather use generic Field from coupling
 from ebfm.coupling.fields import FieldSet, Field, GenericExchangeType
-from ebfm.coupling.fields import YACField
+from ebfm.coupling.fields.yacField import YACField
 
 from ebfm.core.config import Calendar, iso8601
 

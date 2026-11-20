@@ -29,6 +29,12 @@ class FieldValidationLevel(Enum):
     SILENT = "SILENT"  # Only log at debug level on mismatch
 
 
+class CouplingLibrary(Enum):
+    """Coupling library a coupled run uses."""
+
+    YAC = "yac"
+
+
 class ComponentId(Enum):
     """
     Enumeration of component identifiers for EBFM coupling.

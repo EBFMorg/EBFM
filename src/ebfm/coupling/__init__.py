@@ -2,37 +2,59 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-from .couplers.helpers import coupling_supported
-from .couplers.helpers import coupling_supported_import_error  # noqa: F401
+import importlib
 
 from .couplers import Coupler, DummyCoupler, FakeCoupler  # noqa: F401
+from ebfm.core.config import CouplingLibrary
 
-if coupling_supported:
-    from .couplers.yacCoupler import YACCoupler  # noqa: F401
-    from .couplers.oasisCoupler import OASISCoupler  # noqa: F401
+# The coupler of each coupling library: module, class, and how to install the library. A module is only imported when
+# a run selects its library, so a run never loads a coupling library it does not use.
+_COUPLERS: dict[CouplingLibrary, tuple[str, str, str]] = {
+    CouplingLibrary.YAC: (
+        ".couplers.yacCoupler",
+        "YACCoupler",
+        "install YAC and its python bindings as described under "
+        "https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html",
+    ),
+}
+
+
+def _import_coupler_class(library: CouplingLibrary) -> type[Coupler]:
+    """Import the coupler of a coupling library, which imports the library itself.
+
+    @param[in] library coupling library
+    @returns Coupler subclass for the library
+    @raises RuntimeError if the library or its python bindings cannot be imported
+    """
+    module_name, class_name, install_hint = _COUPLERS[library]
+    try:
+        module = importlib.import_module(module_name, __name__)
+    except ImportError as e:
+        raise RuntimeError(f"""
+Coupling with {library.value} requires its python bindings, which could not be imported due to the following error:
+
+{e}
+
+Hint: {install_hint}
+""") from e
+    return getattr(module, class_name)
 
 
 def check_coupling_requirements(coupling_config, active_coupling_features: list[str]) -> None:
-    """Raise RuntimeError if real coupling is requested but no backend is available.
+    """Raise RuntimeError if real coupling is requested but the coupling library is not available.
 
     @param[in] coupling_config CouplingConfig holding coupling flags
     @param[in] active_coupling_features list of active coupling CLI flags (used in the error message)
-    @raises RuntimeError if coupling is requested, fake mode is off, and YAC could not be imported
+    @raises RuntimeError if coupling is requested, fake mode is off, and the coupling library could not be imported
     """
     if coupling_config.use_fake_coupling:
         return  # Fake coupling bypasses requirements for real coupling backends
 
-    coupling_used = len(active_coupling_features) > 0
-    if coupling_used and not coupling_supported:
-        raise RuntimeError(f"""
-Coupling requested via command line argument(s) {active_coupling_features}, but the 'coupling' module could not be
-imported due to the following error:
-
-{coupling_supported_import_error}
-
-Hint: If you are missing 'yac', please install YAC and the python bindings as described under
-https://dkrz-sw.gitlab-pages.dkrz.de/yac/d1/d9f/installing_yac.html"
-""")
+    if active_coupling_features:
+        try:
+            _import_coupler_class(CouplingLibrary.YAC)
+        except RuntimeError as e:
+            raise RuntimeError(f"Coupling requested via command line argument(s) {active_coupling_features}.{e}") from e
 
 
 def select_coupler_class(coupling_config) -> type[Coupler]:
@@ -49,8 +71,6 @@ def select_coupler_class(coupling_config) -> type[Coupler]:
     if coupling_config.defines_coupling():
         if coupling_config.use_fake_coupling:
             return FakeCoupler
-        if not coupling_supported:
-            raise RuntimeError("Coupling is requested but no supported coupling backend is available.")
-        return YACCoupler
+        return _import_coupler_class(CouplingLibrary.YAC)
 
     return DummyCoupler
