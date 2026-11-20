@@ -5,7 +5,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from collections.abc import Collection, Mapping, Callable
+from collections.abc import Collection, Mapping
 from collections.abc import Set as AbstractSet  # set-like types (set, frozenset, dict keys), not the set builtin
 import numpy as np
 
@@ -16,20 +16,9 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ebfm.coupling.couplers.base import Coupler
-    from ebfm.coupling.fields.base import FieldSet
+    from ebfm.coupling.fields.base import Field, FieldSet
     from ebfm.core.config import TimeConfig
     from ebfm.core.grid import GridDict
-
-
-def identity(x: np.ndarray) -> np.ndarray:
-    """
-    Identity function for default transform.
-
-    @param[in] x input data
-
-    @returns the input data unchanged
-    """
-    return x
 
 
 @dataclass(frozen=True)
@@ -122,18 +111,15 @@ class Component(ABC):
         """
         return self._coupler.__class__.__name__ == coupler_class_type
 
-    def _put_if_coupled(
-        self, field_name: str, data_to_exchange: Mapping[str, np.ndarray], transform: Callable = identity
-    ):
+    def _put_if_coupled(self, field_name: str, data_to_exchange: Mapping[str, np.ndarray]):
         """
-        Put a source field if it is coupled.
+        Put a source field if it is coupled, converted by the unit_conversion of its field definition.
 
         @note Only call this for the source keys of the requested key set. The caller of exchange is required
               to provide the data for those keys, which exchange checks before anything is communicated.
 
         @param[in] field_name field name
         @param[in] data_to_exchange dictionary containing data to send
-        @param[in] transform optional function to apply to the data before sending (e.g. for unit conversion)
         """
         from ebfm.coupling.fields.base import ExchangeType
 
@@ -141,26 +127,25 @@ class Component(ABC):
             assert (
                 field_name in data_to_exchange
             ), f"Field '{field_name}' is missing in data_to_exchange for component '{self.name}'."
-            logger.debug(f"Putting data for field '{field_name}' to coupler: {data_to_exchange[field_name]}")
-            err = self._coupler.put(self.name, field_name, transform(data_to_exchange[field_name]))
+            data = self.get_field_definition(field_name).unit_conversion(data_to_exchange[field_name])
+            logger.debug(f"Putting data for field '{field_name}' to coupler: {data}")
+            err = self._coupler.put(self.name, field_name, data)
             if err:
                 logger.warning(
                     f"Put for {field_name=} returned unexpected exit code ({err=}). "
                     "Please report this to the developers."
                 )
 
-    def _get_if_coupled(
-        self, field_name: str, transform: Callable = identity, fallback_values: Mapping[str, np.ndarray] = {}
-    ) -> np.ndarray | None:
+    def _get_if_coupled(self, field_name: str, fallback_values: Mapping[str, np.ndarray] = {}) -> np.ndarray | None:
         """
-        Get a target field from the coupler if it is coupled.
+        Get a target field from the coupler if it is coupled, converted by the unit_conversion of its field definition.
 
         @note Only call this for the target keys of the exchange that is currently performed. Which keys those
               are is determined by the key set that the caller of exchange requested.
 
         @param[in] field_name field name
-        @param[in] transform optional function to apply to the received data (e.g. for unit conversion)
-        @param[in] fallback_values optional dictionary of fallback values to use if get fails
+        @param[in] fallback_values optional dictionary of fallback values to use if get fails. Fallback values are
+                   in EBFM's units and are returned without conversion.
 
         @returns received field data if coupled, otherwise None
         """
@@ -188,7 +173,7 @@ class Component(ABC):
 
         assert data is not None, f"Received data for field '{field_name}' is None. {err}"
         logger.debug(f"Received data for field '{field_name}' from coupler: {data}")
-        return transform(data)
+        return self.get_field_definition(field_name).unit_conversion(data)
 
     def _map_mass_flux_to_ebfm(self, mass_flux: np.ndarray) -> np.ndarray:
         """
@@ -366,6 +351,18 @@ class Component(ABC):
         @returns Set of Field objects for this component
         """
         pass
+
+    def get_field_definition(self, field_name: str) -> "Field":
+        """
+        Get the definition of one field of this component.
+
+        @param[in] field_name name of the field
+
+        @returns Field object of this name
+
+        @raises KeyError if this component defines no field of this name
+        """
+        return self.get_field_definitions().get(field_name)
 
     def prepare_grid(self, grid: "GridDict"):
         """

@@ -12,6 +12,7 @@ from ebfm.core.constants import WATER_DENSITY
 from ebfm.coupling.components import Component, ElmerIce, ExchangeKeySet
 from ebfm.coupling.components.icon_land import partition_evapotrans
 from ebfm.coupling.fields import Field, FieldSet, GenericExchangeType, Timestep
+from ebfm.coupling.fields.base import no_conversion
 from ebfm.coupling.couplers import FakeCoupler
 from ebfm.coupling.couplers.base import CouplerExitCode
 from ebfm.coupling.couplers.fakeCoupler import FakeFieldConfig
@@ -741,6 +742,63 @@ class TestSplitExchange(unittest.TestCase):
 
         self.assertEqual(coupler.put_fields, [])
         self.assertEqual(coupler.get_fields, [])
+
+
+class UnitConvertingComponent(SurfaceEnergyBalanceComponent):
+    """
+    Test component that declares a unit conversion for one source and one target field.
+    """
+
+    UNIT_CONVERSIONS = {"albedo": lambda x: 2 * x, "melt": lambda x: x + 1}
+
+    def get_field_definitions(self) -> FieldSet:
+        timestep = Timestep(value="PT1H")
+
+        return FieldSet(
+            [
+                Field(
+                    name=name,
+                    coupled_component=self,
+                    timestep=timestep,
+                    exchange_type=exchange_type,
+                    unit_conversion=self.UNIT_CONVERSIONS.get(name, no_conversion),
+                )
+                for names, exchange_type in (
+                    (self.SOURCE_FIELDS, GenericExchangeType.SOURCE),
+                    (self.TARGET_FIELDS, GenericExchangeType.TARGET),
+                )
+                for name in names
+            ]
+        )
+
+
+class TestUnitConversions(unittest.TestCase):
+    """
+    Test that a component converts exactly the fields whose definition declares a unit conversion.
+    """
+
+    def setUp(self):
+        self.component = UnitConvertingComponent(coupler=None, name="unit_converting")
+        self.data = np.array([1.0, 2.0])
+
+    def _convert(self, field_name: str) -> np.ndarray:
+        return self.component.get_field_definition(field_name).unit_conversion(self.data)
+
+    def test_declared_source_field_is_converted(self):
+        np.testing.assert_array_equal(self._convert("albedo"), [2.0, 4.0])
+
+    def test_undeclared_source_field_is_unchanged(self):
+        np.testing.assert_array_equal(self._convert("icefract"), self.data)
+
+    def test_declared_target_field_is_converted(self):
+        np.testing.assert_array_equal(self._convert("melt"), [2.0, 3.0])
+
+    def test_undeclared_target_field_is_unchanged(self):
+        np.testing.assert_array_equal(self._convert("t_srf"), self.data)
+
+    def test_unknown_field_is_rejected(self):
+        with self.assertRaises(KeyError):
+            self.component.get_field_definition("no_such_field")
 
 
 class TestIconLandComponent(unittest.TestCase):

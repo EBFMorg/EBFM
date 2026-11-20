@@ -46,6 +46,7 @@ class IconAtmo(Component):
                     timestep=timestep,
                     metadata="Precipitation rate of rain (in kg m-2 s-1)",
                     exchange_type=ExchangeType.TARGET,
+                    unit_conversion=self._map_mass_flux_to_ebfm,
                 ),
                 Field(
                     name="pr_snow",
@@ -53,6 +54,7 @@ class IconAtmo(Component):
                     timestep=timestep,
                     metadata="Precipitation rate of snow (in kg m-2 s-1)",
                     exchange_type=ExchangeType.TARGET,
+                    unit_conversion=self._map_mass_flux_to_ebfm,
                 ),
                 Field(
                     name="rsds",
@@ -129,13 +131,11 @@ class IconAtmo(Component):
         # Put data to IconAtmo: nothing (surface fields like albedo and ice fraction go to IconLand)
 
         # Get data from IconAtmo
-        pr = self._get_if_coupled("pr", transform=self._map_mass_flux_to_ebfm, fallback_values=fallback_values)
+        pr = self._get_if_coupled("pr", fallback_values=fallback_values)
         if pr is not None:
             received_data["pr"] = pr
 
-        pr_snow = self._get_if_coupled(
-            "pr_snow", transform=self._map_mass_flux_to_ebfm, fallback_values=fallback_values
-        )
+        pr_snow = self._get_if_coupled("pr_snow", fallback_values=fallback_values)
         if pr_snow is not None:
             received_data["pr_snow"] = pr_snow
 

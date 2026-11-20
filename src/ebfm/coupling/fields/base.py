@@ -6,6 +6,7 @@ from ebfm.coupling.components.base import Component
 from dataclasses import dataclass, field
 from collections.abc import Callable, Iterable
 from enum import Enum
+import numpy as np
 
 
 class ExchangeType(Enum):
@@ -33,6 +34,13 @@ class Timestep:
     value: str
 
 
+def no_conversion(data: np.ndarray) -> np.ndarray:
+    """
+    Unit conversion of a field whose units agree in EBFM and the coupled component.
+    """
+    return data
+
+
 @dataclass(frozen=True)
 class Field:
     """
@@ -50,6 +58,9 @@ class Field:
     metadata: str | None = field(default=None, compare=False)  # optional metadata
     # Plausible (min, max) of received values, in the units of the field. Coupler.get rejects values outside.
     valid_range: tuple[float, float] | None = field(default=None, compare=False)
+    # Conversion between EBFM's units and the units of the coupled component: from EBFM's units for a source field,
+    # to EBFM's units for a target field.
+    unit_conversion: Callable[[np.ndarray], np.ndarray] = field(default=no_conversion, compare=False)
 
 
 class FieldSet:

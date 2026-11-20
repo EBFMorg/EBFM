@@ -141,6 +141,7 @@ class IconLand(Component):
                     timestep=timestep,
                     metadata="Runoff from the firn column (kg m-2 s-1)",
                     exchange_type=ExchangeType.SOURCE,
+                    unit_conversion=self._map_mass_flux_from_ebfm,
                 ),
                 Field(
                     name="smb_to_icon_land",
@@ -148,6 +149,7 @@ class IconLand(Component):
                     timestep=timestep,
                     metadata="Climatic surface mass balance (kg m-2 s-1)",
                     exchange_type=ExchangeType.SOURCE,
+                    unit_conversion=self._map_mass_flux_from_ebfm,
                 ),
                 Field(
                     name="snowmass",
@@ -155,6 +157,7 @@ class IconLand(Component):
                     timestep=timestep,
                     metadata="Snow mass on top of the ice (kg m-2)",
                     exchange_type=ExchangeType.SOURCE,
+                    unit_conversion=self._map_mass_from_ebfm,
                 ),
                 # Fields received from ICON-Land (glacier tile, averaged over the EBFM time step)
                 Field(
@@ -170,6 +173,7 @@ class IconLand(Component):
                     timestep=timestep,
                     metadata="Snow/ice melt on the glacier tile (kg m-2 s-1)",
                     exchange_type=ExchangeType.TARGET,
+                    unit_conversion=self._map_mass_flux_to_ebfm,
                 ),
                 Field(
                     name="evapotrans",
@@ -177,9 +181,16 @@ class IconLand(Component):
                     timestep=timestep,
                     metadata="Evapotranspiration incl. sublimation, negative upward (kg m-2 s-1)",
                     exchange_type=ExchangeType.TARGET,
+                    unit_conversion=self._map_mass_flux_to_ebfm,
                 ),
             ]
         )
+
+    def _map_mass_from_ebfm(self, mwe: np.ndarray) -> np.ndarray:
+        """
+        Convert an amount in m w.e. to a mass per area in kg m-2.
+        """
+        return mwe * WATER_DENSITY
 
     def _exchange(
         self,
@@ -202,25 +213,21 @@ class IconLand(Component):
         received_data: dict[str, np.ndarray] = {}
 
         if requested_key_set == self.surface_state:
-            from ebfm.core.constants import WATER_DENSITY
-
             self._put_if_coupled("icefract", data_to_exchange)
             self._put_if_coupled("albedo", data_to_exchange)
             self._put_if_coupled("t_sub", data_to_exchange)
             self._put_if_coupled("ghf_cond", data_to_exchange)
             self._put_if_coupled("hcap_sub", data_to_exchange)
-            self._put_if_coupled("runoff_to_icon_land", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
-            self._put_if_coupled("smb_to_icon_land", data_to_exchange, transform=self._map_mass_flux_from_ebfm)
-            self._put_if_coupled("snowmass", data_to_exchange, transform=lambda x: x * WATER_DENSITY)
+            self._put_if_coupled("runoff_to_icon_land", data_to_exchange)
+            self._put_if_coupled("smb_to_icon_land", data_to_exchange)
+            self._put_if_coupled("snowmass", data_to_exchange)
         elif requested_key_set == self.energy_balance:
             t_srf = self._get_if_coupled("t_srf", fallback_values=fallback_values)
             if t_srf is not None:
                 received_data["t_srf"] = t_srf
 
             for name in ("melt", "evapotrans"):
-                data = self._get_if_coupled(
-                    name, transform=self._map_mass_flux_to_ebfm, fallback_values=fallback_values
-                )
+                data = self._get_if_coupled(name, fallback_values=fallback_values)
                 if data is not None:
                     received_data[name] = data
         else:

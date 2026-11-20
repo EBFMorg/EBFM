@@ -63,6 +63,7 @@ class ElmerIce(Component):
                     timestep=timestep,
                     metadata="Surface mass balance",
                     exchange_type=ExchangeType.SOURCE,
+                    unit_conversion=self._map_per_timestep_to_per_year,
                 ),
                 Field(
                     name="runoff_to_elmer",
@@ -70,6 +71,7 @@ class ElmerIce(Component):
                     timestep=timestep,
                     metadata="Runoff",
                     exchange_type=ExchangeType.SOURCE,
+                    unit_conversion=self._map_per_timestep_to_per_year,
                 ),
                 Field(
                     name="surface_elevation",
@@ -144,6 +146,13 @@ class ElmerIce(Component):
 
         grid["z"] = surface_elevation
 
+    def _map_per_timestep_to_per_year(self, x_per_timestep: np.ndarray) -> np.ndarray:
+        """
+        Convert a rate per EBFM time step to a rate per year, which Elmer/Ice expects.
+        """
+        x_per_day = x_per_timestep / self.ebfm_time.time_step_in_days()
+        return x_per_day * DAYS_PER_YEAR
+
     def _exchange(
         self,
         data_to_exchange: Mapping[str, np.ndarray],
@@ -164,17 +173,10 @@ class ElmerIce(Component):
         """
         received_data: dict[str, np.ndarray] = {}
 
-        # For fields representing rates (e.g. SMB, runoff), we need to convert them from per timestep to per year
-        # before sending to Elmer/Ice, which expects annual values.
-        def map_per_timestep_to_per_year(x_per_timestep: np.ndarray) -> np.ndarray:
-            x_per_day = x_per_timestep / self.ebfm_time.time_step_in_days()
-            x_per_year = x_per_day * DAYS_PER_YEAR
-            return x_per_year
-
         # Put data to Elmer/Ice
         self._put_if_coupled("T_ice", data_to_exchange)
-        self._put_if_coupled("smb_to_elmer", data_to_exchange, transform=map_per_timestep_to_per_year)
-        self._put_if_coupled("runoff_to_elmer", data_to_exchange, transform=map_per_timestep_to_per_year)
+        self._put_if_coupled("smb_to_elmer", data_to_exchange)
+        self._put_if_coupled("runoff_to_elmer", data_to_exchange)
 
         # Get data from Elmer/Ice
         surface_elevation = self._get_if_coupled("surface_elevation", fallback_values=fallback_values)
