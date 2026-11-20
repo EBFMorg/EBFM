@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 
 from .base import Field, ExchangeType, Timestep
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 import yac
@@ -64,14 +64,16 @@ EXCHANGE_TYPE_MAP: dict[ExchangeType, yac.ExchangeType] = {
 class YACField:
     """
     Object for definition of a field to be exchanged via YAC.
+
+    Identified by its name and the component it couples to, like Field.
     """
 
     name: str
     coupled_component: "Component"
-    timestep: YACTimestep  # YAC-specific timestep representation
-    exchange_type: yac.ExchangeType  # YAC-specific exchange role
-    metadata: str | None  # optional metadata
-    field_handle: yac.Field | None  # optional if YAC field has been created
+    timestep: YACTimestep = field(compare=False)  # YAC-specific timestep representation
+    exchange_type: yac.ExchangeType = field(compare=False)  # YAC-specific exchange role
+    metadata: str | None = field(compare=False)  # optional metadata
+    field_handle: yac.Field | None = field(compare=False)  # optional if YAC field has been created
 
     @staticmethod
     def map_exchange_type(exchange_type: ExchangeType) -> yac.ExchangeType:

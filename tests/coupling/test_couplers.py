@@ -72,6 +72,54 @@ def _bare_yac_coupler(component_names: list[str]) -> tuple["YACCoupler", dict[st
     return coupler, components
 
 
+class TestFieldSetGet(unittest.TestCase):
+    def setUp(self):
+        self.atmo = _StubComponent(coupler=None, name="atmo")
+        self.land = _StubComponent(coupler=None, name="land")
+        self.atmo_tas = _field("tas", self.atmo)
+        self.land_tas = _field("tas", self.land)
+        self.atmo_pr = _field("pr", self.atmo)
+        self.fields = FieldSet([self.atmo_tas, self.land_tas, self.atmo_pr])
+
+    def test_field_is_found_by_name(self):
+        self.assertIs(self.fields.get("pr"), self.atmo_pr)
+
+    def test_field_is_found_by_name_and_component(self):
+        self.assertIs(self.fields.get("tas", "land"), self.land_tas)
+
+    def test_missing_field_is_rejected(self):
+        with self.assertRaises(KeyError):
+            self.fields.get("pr", "land")
+
+    def test_ambiguous_field_is_rejected(self):
+        with self.assertRaises(KeyError):
+            self.fields.get("tas")
+
+
+class TestFieldSetRejectsDuplicates(unittest.TestCase):
+    def setUp(self):
+        self.atmo = _StubComponent(coupler=None, name="atmo")
+        self.land = _StubComponent(coupler=None, name="land")
+        self.tas_source = _field("tas", self.atmo, exchange_type=GenericExchangeType.SOURCE)
+        self.tas_target = _field("tas", self.atmo, exchange_type=GenericExchangeType.TARGET)
+
+    def test_same_name_of_different_components_is_accepted(self):
+        fields = FieldSet([_field("tas", self.atmo), _field("tas", self.land)])
+        self.assertEqual(len(fields.all()), 2)
+
+    def test_duplicate_is_rejected(self):
+        cases = {
+            "init": lambda: FieldSet([self.tas_source, self.tas_target]),
+            "add": lambda: FieldSet([self.tas_source]).add(self.tas_target),
+            "or": lambda: FieldSet([self.tas_source]) | FieldSet([self.tas_target]),
+            "ior": lambda: FieldSet([self.tas_source]).__ior__(FieldSet([self.tas_target])),
+        }
+        for name, create_duplicate in cases.items():
+            with self.subTest(name):
+                with self.assertRaisesRegex(AssertionError, "'tas' of component 'atmo' is defined more than once"):
+                    create_duplicate()
+
+
 class TestFakeCouplerGridPoints(unittest.TestCase):
     """
     FakeCoupler._infer_n_points sizes the fake arrays returned by get(), so it has to report the number of
@@ -117,10 +165,10 @@ class TestYACCouplerFieldRegistration(unittest.TestCase):
     def test_distinct_field_names_are_each_registered_once(self):
         coupler, components = _bare_yac_coupler(["partner_a", "partner_b"])
         field_definitions = FieldSet(
-            {
+            [
                 _field("field_a", components["partner_a"]),
                 _field("field_b", components["partner_b"]),
-            }
+            ]
         )
 
         with mock.patch.object(yac.Field, "create", side_effect=lambda *a, **k: object()) as create:
@@ -132,10 +180,10 @@ class TestYACCouplerFieldRegistration(unittest.TestCase):
     def test_field_name_declared_by_two_components_is_rejected(self):
         coupler, components = _bare_yac_coupler(["partner_a", "partner_b"])
         field_definitions = FieldSet(
-            {
+            [
                 _field("shared", components["partner_a"]),
                 _field("shared", components["partner_b"]),
-            }
+            ]
         )
 
         with mock.patch.object(yac.Field, "create", side_effect=lambda *a, **k: object()):
@@ -219,7 +267,7 @@ class TestCouplerChecksReceivedData(unittest.TestCase):
         coupler = FakeCoupler.__new__(FakeCoupler)
         coupler._grid = {"lat": np.array([70.0, 71.0, 72.0]), "lon": np.array([320.0, 321.0, 322.0])}
         field = _field("tas", _StubComponent(coupler=coupler, name="partner"), valid_range=valid_range)
-        coupler._field_definitions = FieldSet({field})
+        coupler._field_definitions = FieldSet([field])
         return coupler
 
     def test_values_inside_valid_range_pass(self):
