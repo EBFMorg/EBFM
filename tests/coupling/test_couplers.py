@@ -13,6 +13,7 @@ import numpy as np
 from ebfm.core.config import CouplingConfig, FieldValidationLevel, TimeConfig
 from ebfm.coupling import check_coupling_requirements
 from ebfm.coupling.couplers import FakeCoupler
+from ebfm.coupling.couplers.templateCoupler import TemplateCoupler
 from ebfm.coupling.components.base import Component
 from ebfm.coupling.fields import Field, FieldSet, GenericExchangeType, Timestep
 
@@ -312,6 +313,27 @@ class TestCouplingRequirements(unittest.TestCase):
 
         with mock.patch.dict(sys.modules, {"yac": None, "ebfm.coupling.couplers.yacCoupler": None}):
             check_coupling_requirements(coupling_config, [])
+
+
+class TestTemplateCouplerIsUnimplemented(unittest.TestCase):
+    def test_every_backend_method_raises(self):
+        # __new__ skips __init__, which raises as well, so the other methods can be called
+        coupler = TemplateCoupler.__new__(TemplateCoupler)
+        data = np.zeros(1)
+        calls = {
+            "__init__": lambda: TemplateCoupler(SimpleNamespace(active_coupled_components=lambda: [])),
+            "get_mpi_handshake_group_name": lambda: TemplateCoupler.get_mpi_handshake_group_name(),
+            "_setup": lambda: coupler._setup({}, FieldSet()),
+            "_map_exchange_type": lambda: coupler._map_exchange_type(GenericExchangeType.SOURCE),
+            "_put": lambda: coupler._put("partner", "tas", data),
+            "_get": lambda: coupler._get("partner", "tas"),
+            "finalize": lambda: coupler.finalize(),
+        }
+
+        for name, call in calls.items():
+            with self.subTest(method=name):
+                with self.assertRaises(NotImplementedError):
+                    call()
 
 
 if __name__ == "__main__":

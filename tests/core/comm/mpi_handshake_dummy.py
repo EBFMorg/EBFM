@@ -14,8 +14,8 @@ import sys
 # local communicator for dummy this executable
 DUMMY_LABEL = "mpi_handshake_dummy"
 
-# join the "ebfmDummyCoupler" group for testing purposes
-CPL_LABEL = "ebfmDummyCoupler"
+# join the "ebfmNoneCoupler" group for testing purposes
+CPL_LABEL = "ebfmNoneCoupler"
 
 comms = mpi_handshake([DUMMY_LABEL, CPL_LABEL])
 

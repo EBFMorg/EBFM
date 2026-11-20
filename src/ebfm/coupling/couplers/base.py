@@ -28,7 +28,7 @@ CouplerExchangeType = TypeVar("CouplerExchangeType")
 """Backend-specific exchange type used by a concrete coupler implementation.
 
 Examples:
-- Generic/dummy couplers may use the generic `GenericExchangeType` directly.
+- Couplers without a coupling library (NoneCoupler, FakeCoupler) may use `GenericExchangeType` directly.
 - YAC coupler uses `yac.ExchangeType`.
 """
 
