@@ -268,7 +268,7 @@ def _main_impl():
     coupler.setup(grid, time_config)
 
     # Warn once up front, rather than every timestep, about output that is written but not covered by tests.
-    is_coupled = not isinstance(coupler, ebfm.coupling.DummyCoupler)
+    is_coupled = not isinstance(coupler, ebfm.coupling.NoneCoupler)
     if is_coupled or grid["is_unstructured"]:
         # TODO: see https://github.com/EBFMorg/EBFM/issues/176
         logger.warning(

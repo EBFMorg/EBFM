@@ -82,7 +82,7 @@ class FakeCoupler(Coupler):
 
     This coupler is useful for running EBFM standalone without needing the actual
     coupling library (YAC) or coupled models (ICON atmosphere, Elmer/Ice) to be
-    running. Unlike DummyCoupler which stands for no active coupling, FakeCoupler
+    running. Unlike NoneCoupler which stands for no active coupling, FakeCoupler
     is intended for testing the coupling infrastructure by providing fake values
     to emulate the presence of coupled models.
 
@@ -137,7 +137,7 @@ class FakeCoupler(Coupler):
 
     def _map_exchange_type(self, exchange_type: GenericExchangeType) -> GenericExchangeType:
         """
-        Dummy coupler keeps generic exchange types unchanged.
+        Return the generic exchange type unchanged, since there is no coupling library to map it to.
         """
         return exchange_type
 

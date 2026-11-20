@@ -4,7 +4,7 @@
 
 import importlib
 
-from .couplers import Coupler, DummyCoupler, FakeCoupler  # noqa: F401
+from .couplers import Coupler, NoneCoupler, FakeCoupler  # noqa: F401
 from ebfm.core.config import CouplingLibrary
 
 # The coupler of each coupling library: module, class, and how to install the library. A module is only imported when
@@ -60,8 +60,8 @@ def check_coupling_requirements(coupling_config, active_coupling_features: list[
 def select_coupler_class(coupling_config) -> type[Coupler]:
     """Factory pattern: return the Coupler subclass for this run.
 
-    - No coupling requested          → DummyCoupler (no-op)
-    - Coupling requested, fake mode  → FakeCoupler (no YAC required)
+    - No coupling requested          → NoneCoupler (no-op)
+    - Coupling requested, fake mode  → FakeCoupler (for testing, synthetic data, no coupling library required)
     - Coupling requested, real mode  → YACCoupler
 
     @param[in] coupling_config CouplingConfig holding coupling flags
@@ -73,4 +73,4 @@ def select_coupler_class(coupling_config) -> type[Coupler]:
             return FakeCoupler
         return _import_coupler_class(CouplingLibrary.YAC)
 
-    return DummyCoupler
+    return NoneCoupler

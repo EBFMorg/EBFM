@@ -13,35 +13,35 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class DummyCoupler(Coupler):
+class NoneCoupler(Coupler):
     """
-    A dummy coupler implementation that does nothing.
+    A coupler implementation that does nothing.
     This can be used when no coupling is required.
     """
 
     def __init__(self, coupling_config: CouplingConfig):
         super().__init__(coupling_config)
 
-        # DummyCoupler couples to none of the available components
+        # NoneCoupler couples to none of the available components
         self._coupled_components = dict()
-        logger.debug(f"DummyCoupler created for component '{coupling_config.component_name}'.")
+        logger.debug(f"NoneCoupler created for component '{coupling_config.component_name}'.")
 
     @staticmethod
     def get_mpi_handshake_group_name() -> str:
-        return "ebfmDummyCoupler"
+        return "ebfmNoneCoupler"
 
     def _setup(self, grid: GridDict, field_definitions: FieldSet):
-        """DummyCoupler has no specific setup operations.
+        """NoneCoupler has no specific setup operations.
 
         @param[in] grid Grid used by EBFM where coupling happens
         @param[in] field_definitions set of field definitions collected from all coupled components
         """
         logger.debug("Setup coupling...")
-        logger.debug("Do nothing for DummyCoupler.")
+        logger.debug("Do nothing for NoneCoupler.")
 
     def _map_exchange_type(self, exchange_type: GenericExchangeType) -> GenericExchangeType:
         """
-        Dummy coupler keeps generic exchange types unchanged.
+        Return the generic exchange type unchanged, since there is no coupling library to map it to.
         """
         return exchange_type
 
@@ -56,7 +56,7 @@ class DummyCoupler(Coupler):
         @returns exit code, or None if put successfully completed.
         """
         logger.debug(f"Put field {field_name} to {component_name}...")
-        logger.debug("Do nothing for DummyCoupler.")
+        logger.debug("Do nothing for NoneCoupler.")
         return None
 
     def _get(self, component_name: str, field_name: str) -> tuple[np.ndarray | None, CouplerExitCode | None]:
@@ -69,10 +69,10 @@ class DummyCoupler(Coupler):
         @returns tuple of (field data, exit code). Exit code is None if get successfully received data.
         """
         logger.debug(f"Get field {field_name} from {component_name}...")
-        logger.debug("Do nothing for DummyCoupler.")
+        logger.debug("Do nothing for NoneCoupler.")
         return None, None
 
     def finalize(self):
-        """Finalize the coupling interface (does nothing for DummyCoupler)"""
+        """Finalize the coupling interface (does nothing for NoneCoupler)"""
         logger.debug("Finalizing coupling...")
-        logger.debug("No coupling to finalize for DummyCoupler.")
+        logger.debug("No coupling to finalize for NoneCoupler.")
