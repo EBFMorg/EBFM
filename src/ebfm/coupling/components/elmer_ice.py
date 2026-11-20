@@ -49,7 +49,7 @@ class ElmerIce(Component):
         timestep = Timestep(value=self.ebfm_time.time_step_iso8601())
 
         return FieldSet(
-            {
+            [
                 Field(
                     name="T_ice",
                     coupled_component=self,
@@ -92,7 +92,7 @@ class ElmerIce(Component):
                 #     metadata="Surface slope in y direction",
                 #     exchange_type=ExchangeType.TARGET,
                 # ),
-            }
+            ]
         )
 
     def prepare_grid(self, grid: GridDict):

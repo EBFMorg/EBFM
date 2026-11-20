@@ -99,7 +99,7 @@ class IconLand(Component):
         timestep = Timestep(value=self.ebfm_time.time_step_iso8601())
 
         return FieldSet(
-            {
+            [
                 Field(
                     name="icefract",
                     coupled_component=self,
@@ -178,7 +178,7 @@ class IconLand(Component):
                     metadata="Evapotranspiration incl. sublimation, negative upward (kg m-2 s-1)",
                     exchange_type=ExchangeType.TARGET,
                 ),
-            }
+            ]
         )
 
     def _exchange(

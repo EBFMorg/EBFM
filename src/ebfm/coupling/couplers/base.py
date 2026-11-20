@@ -241,10 +241,7 @@ class Coupler(ABC, Generic[CouplerExchangeType]):
         return data, error
 
     def _valid_range(self, component_name: str, field_name: str) -> tuple[float, float] | None:
-        fields = self._field_definitions.filter(
-            lambda f: f.coupled_component.name == component_name and f.name == field_name
-        ).all()
-        return next(iter(fields)).valid_range if fields else None
+        return self._field_definitions.get(field_name, component_name).valid_range
 
     def _describe_columns(self, data: np.ndarray, bad: np.ndarray) -> str:
         lines = []

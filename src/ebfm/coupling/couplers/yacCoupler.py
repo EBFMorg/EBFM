@@ -158,19 +158,7 @@ class YACCoupler(Coupler[yac.ExchangeType]):
             component_name
         ), f"Cannot get field for {component_name} because no coupling exists."
 
-        component = self._coupled_components[component_name]
-
-        comp_fields = self._fields.filter(lambda f: f.coupled_component == component and f.name == field_name).all()
-
-        if len(comp_fields) == 0:
-            raise KeyError(f"No field named '{field_name}' found for component '{component_name}'.")
-        elif len(comp_fields) > 1:
-            raise KeyError(
-                f"Found {len(comp_fields)} fields named '{field_name}' found for component '{component_name}'. "
-                f"Expected exactly one field per component and field name."
-            )
-
-        field = comp_fields.pop()
+        field = self._fields.get(field_name, component_name)
         assert isinstance(field, YACField), f"Expected YACField, got {type(field)}"
         return field
 

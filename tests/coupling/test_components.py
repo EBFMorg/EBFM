@@ -581,14 +581,14 @@ class SurfaceEnergyBalanceComponent(Component):
         timestep = Timestep(value=self.ebfm_time.time_step_iso8601())
 
         return FieldSet(
-            {
+            [
                 Field(name=name, coupled_component=self, timestep=timestep, exchange_type=GenericExchangeType.SOURCE)
                 for name in self.SOURCE_FIELDS
-            }
-            | {
+            ]
+            + [
                 Field(name=name, coupled_component=self, timestep=timestep, exchange_type=GenericExchangeType.TARGET)
                 for name in self.TARGET_FIELDS
-            }
+            ]
         )
 
     def _exchange(

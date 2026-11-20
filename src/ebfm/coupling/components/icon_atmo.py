@@ -39,7 +39,7 @@ class IconAtmo(Component):
         timestep = Timestep(value=self.ebfm_time.time_step_iso8601())
 
         return FieldSet(
-            {
+            [
                 Field(
                     name="pr",
                     coupled_component=self,
@@ -103,7 +103,7 @@ class IconAtmo(Component):
                     metadata="Surface pressure (in Pa)",
                     exchange_type=ExchangeType.TARGET,
                 ),
-            }
+            ]
         )
 
     def _exchange(
