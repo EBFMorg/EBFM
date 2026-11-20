@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+import sys
 import unittest
 from argparse import Namespace
 from types import SimpleNamespace
@@ -10,14 +11,18 @@ from unittest import mock
 import numpy as np
 
 from ebfm.core.config import CouplingConfig, FieldValidationLevel, TimeConfig
+from ebfm.coupling import check_coupling_requirements
 from ebfm.coupling.couplers import FakeCoupler
-from ebfm.coupling.couplers.helpers import coupling_supported
 from ebfm.coupling.components.base import Component
 from ebfm.coupling.fields import Field, FieldSet, GenericExchangeType, Timestep
 
-if coupling_supported:
+try:
     import yac
     from ebfm.coupling.couplers.yacCoupler import YACCoupler
+
+    yac_available = True
+except ImportError:
+    yac_available = False
 
 
 class _StubTime:
@@ -101,7 +106,7 @@ class TestFakeCouplerGridPoints(unittest.TestCase):
         self.assertEqual(self._bare_fake_coupler()._infer_n_points(None), 0)
 
 
-@unittest.skipUnless(coupling_supported, "requires yac (pip install 'ebfm[cpl]')")
+@unittest.skipUnless(yac_available, "requires yac (pip install 'ebfm[cpl]')")
 class TestYACCouplerFieldRegistration(unittest.TestCase):
     """
     Test that _construct_coupling_pre_sync() registers each field name with YAC at most once. YAC itself rejects
@@ -238,6 +243,27 @@ class TestCouplerChecksReceivedData(unittest.TestCase):
         coupler = self._coupler_with_field(valid_range=None)
 
         coupler._check_received("partner", "tas", np.array([-999.9, 1e20, np.nan]))
+
+
+class TestCouplingRequirements(unittest.TestCase):
+    def test_missing_coupling_library_is_reported(self):
+        coupling_config = SimpleNamespace(use_fake_coupling=False)
+
+        # None in sys.modules makes importing the module fail like a missing library
+        with mock.patch.dict(sys.modules, {"yac": None, "ebfm.coupling.couplers.yacCoupler": None}):
+            with self.assertRaises(RuntimeError) as raised:
+                check_coupling_requirements(coupling_config, ["--couple-to-elmer-ice"])
+
+        message = str(raised.exception)
+        self.assertIn("['--couple-to-elmer-ice']", message)
+        self.assertIn("Coupling with yac requires its python bindings", message)
+        self.assertIn("installing_yac.html", message)
+
+    def test_no_requirements_without_coupling(self):
+        coupling_config = SimpleNamespace(use_fake_coupling=False)
+
+        with mock.patch.dict(sys.modules, {"yac": None, "ebfm.coupling.couplers.yacCoupler": None}):
+            check_coupling_requirements(coupling_config, [])
 
 
 if __name__ == "__main__":
