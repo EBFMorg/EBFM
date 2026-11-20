@@ -226,6 +226,79 @@ class TestColumnShift(unittest.TestCase):
             err_msg="column mass across the shift does not balance snowfall in minus deepest layer out",
         )
 
+    def _oversized_top_case(self, top_density):
+        """Snowfall onto a top layer thicker than max_subZ.
+
+        melt_sublimation produces such a top layer when it merges layer 1 into it and
+        layer 1 is a thick deep layer that has reached the surface (columns outside the
+        glacier mask are never split). The top layer is 4.4 * max_subZ thick, as seen in
+        a coupled run (0.44 m).
+        """
+        grid, OUT, IN = self._snowfall_case()
+        OUT["subZ"][:, 0] = 4.4 * MAX_SUBZ
+        OUT["subD"][:, 0] = top_density
+        return grid, OUT, IN
+
+    def _fresh_snow_density(self):
+        # Dfreshsnow of snowfall_and_deposition for IN["T"] = T0 (between T0 - 15 and T0 + 2) and WS = 4.
+        return 50 + 1.7 * 15 ** (3 / 2) + 266.86 * (0.5 * (1 + np.tanh(4.0 / 5))) ** 8.8
+
+    def test_snowfall_hands_oversized_top_layer_down_whole(self):
+        """An oversized top layer moves to index 1 unchanged; the snow starts a new top layer.
+
+        Forcing layer 1 to max_subZ would squeeze the whole mass of the old top layer into
+        it: about 1950 kg m-3 here (a dense top layer), or almost no mass if the old top
+        layer is just lighter than the fresh snow (next test).
+        """
+        grid, OUT, IN = self._oversized_top_case(top_density=600.0)
+        subZ_top, subD_top = OUT["subZ"][:, 0].copy(), OUT["subD"][:, 0].copy()
+        subW_old = OUT["subW"].copy()
+
+        self._step(grid, OUT, IN)
+
+        # Compaction perturbs subZ/subD by ~1e-6 relative over one hourly step at 600 kg m-3.
+        np.testing.assert_allclose(OUT["subZ"][:, 1], subZ_top, rtol=1e-4, err_msg="layer 1 is not the old top layer")
+        np.testing.assert_allclose(OUT["subD"][:, 1], subD_top, rtol=1e-4, err_msg="layer 1 density changed")
+        np.testing.assert_array_equal(OUT["subW"][:, 1], subW_old[:, 0], err_msg="layer 1 water is not the old top's")
+        # The new top layer holds exactly this step's snowfall (compaction preserves subD * subZ).
+        np.testing.assert_allclose(
+            OUT["subD"][:, 0] * OUT["subZ"][:, 0],
+            IN["snow"] * self.C["Dwater"],
+            rtol=1e-10,
+            err_msg="new top layer is not this step's snowfall",
+        )
+        np.testing.assert_allclose(OUT["subW"][:, 2:NL], subW_old[:, 1 : NL - 1], rtol=0, atol=0)
+        self.assertTrue((OUT["subD"] <= self.C["Dice"]).all(), "density above ice density")
+
+    def test_snowfall_onto_oversized_top_keeps_heat_conduction_fast(self):
+        """A top layer just lighter than the fresh snow does not stall the heat conduction.
+
+        Its density is chosen so that squeezing the old top layer into a layer 1 of
+        max_subZ would leave layer 1 with 0.001 kg m-3. Compaction keeps that tiny mass
+        and densifies the layer to micrometres, and the heat conduction would need more
+        than MAX_HEAT_SUBSTEPS sub-steps: the run stops, or hangs without that limit.
+        """
+        from ebfm.core import compute_backend
+
+        squeezed_density = 1e-3
+        Dfresh = self._fresh_snow_density()
+        ratio = 4.4  # top layer thickness / max_subZ, see _oversized_top_case
+        top_density = (squeezed_density + (ratio - 1) * Dfresh) / ratio
+
+        backends = [compute_backend.ComputeBackend.NUMPY]
+        if compute_backend._NUMBA_AVAILABLE:
+            backends.append(compute_backend.ComputeBackend.NUMBA)
+        try:
+            for backend in backends:
+                with self.subTest(backend=backend.name):
+                    compute_backend._backend = backend
+                    grid, OUT, IN = self._oversized_top_case(top_density=top_density)
+                    self._step(grid, OUT, IN)
+                    # Compaction densifies the old top layer by a few percent in one hourly step.
+                    np.testing.assert_allclose(OUT["subD"][:, 1], top_density, rtol=5e-2)
+        finally:
+            compute_backend._backend = compute_backend.ComputeBackend.NUMPY
+
     def test_water_credited_to_deep_runoff_actually_leaves(self):
         """runoff_irr_deep must be credited the water that really left the column.
 
