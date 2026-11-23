@@ -2,6 +2,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
+import dataclasses
 import sys
 import unittest
 from argparse import Namespace
@@ -13,6 +14,7 @@ import numpy as np
 from ebfm.core.config import CouplingConfig, FieldValidationLevel, TimeConfig
 from ebfm.coupling import check_coupling_requirements
 from ebfm.coupling.couplers import FakeCoupler
+from ebfm.coupling.couplers.fakeCoupler import FakeFieldConfig
 from ebfm.coupling.couplers.templateCoupler import TemplateCoupler
 from ebfm.coupling.components.base import Component
 from ebfm.coupling.fields import Field, FieldSet, GenericExchangeType, Timestep
@@ -68,6 +70,8 @@ def _bare_yac_coupler(component_names: list[str]) -> tuple["YACCoupler", dict[st
     coupler.component = None
     coupler.cell_centers = None
     coupler._fields = FieldSet()
+    coupler._field_definitions = FieldSet()
+    coupler._grid = None
     components = {name: _StubComponent(coupler=coupler, name=name) for name in component_names}
     coupler._coupled_components = dict(components)
     return coupler, components
@@ -234,8 +238,8 @@ class TestYACCouplerFieldRegistration(unittest.TestCase):
 
 class TestCouplerChecksReceivedData(unittest.TestCase):
     """
-    Coupler.get rejects received values outside the valid range of their field definition, for every coupler
-    backend. A field without a valid range accepts all values.
+    Coupler.get rejects received values that are NaN or outside the valid range of their field definition, for
+    every coupler backend. A field without a valid range accepts all values except NaN.
     """
 
     args = Namespace(
@@ -288,10 +292,21 @@ class TestCouplerChecksReceivedData(unittest.TestCase):
         self.assertIn("column 1 (lat=71.0000, lon=321.0000): -999.9", message)
         self.assertIn("column 2 (lat=72.0000, lon=322.0000): 400", message)
 
-    def test_field_without_valid_range_accepts_all_values(self):
+    def test_field_without_valid_range_accepts_all_values_except_nan(self):
         coupler = self._coupler_with_field(valid_range=None)
 
-        coupler._check_received("partner", "tas", np.array([-999.9, 1e20, np.nan]))
+        coupler._check_received("partner", "tas", np.array([-999.9, 1e20, 0.0]))
+
+    def test_nan_is_rejected(self):
+        coupler = self._coupler_with_field(valid_range=None)
+
+        with self.assertRaises(RuntimeError) as raised:
+            coupler._check_received("partner", "tas", np.array([250.0, np.nan, 250.0]))
+
+        message = str(raised.exception)
+        self.assertIn("1 of 3 values of field 'tas' from component 'partner' as NaN", message)
+        self.assertIn("interpolation stack", message)
+        self.assertIn("column 1 (lat=71.0000, lon=321.0000): nan", message)
 
 
 class TestCouplingRequirements(unittest.TestCase):
@@ -334,6 +349,104 @@ class TestTemplateCouplerIsUnimplemented(unittest.TestCase):
             with self.subTest(method=name):
                 with self.assertRaises(NotImplementedError):
                     call()
+
+
+@unittest.skipUnless(yac_available, "requires yac (pip install 'ebfm[cpl]')")
+class TestYACCouplerGetUnsetTargetPoints(unittest.TestCase):
+    """
+    YAC leaves target points that the interpolation stack does not reach untouched. They must reach Coupler.get as
+    NaN, which it rejects, instead of as whatever the receive buffer held before.
+    """
+
+    N_POINTS = 4
+
+    def _coupler_receiving(self, received: dict[int, float]):
+        """
+        A coupler with one target field "tas" from "partner", whose YAC get assigns only the points in `received`.
+        """
+        from ebfm.coupling.fields.yacField import YACField
+
+        coupler, components = _bare_yac_coupler(["partner"])
+        coupler.interface = mock.Mock()
+        coupler.interface.get_field_role.return_value = yac.ExchangeType.TARGET
+
+        def get(buf):
+            for index, value in received.items():
+                buf[0, index] = value
+            return buf, yac.Action.COUPLING
+
+        handle = mock.Mock(collection_size=1, size=self.N_POINTS, action=yac.Action.COUPLING)
+        handle.get.side_effect = get
+        field = YACField.from_field(_field("tas", components["partner"]))
+        coupler._fields.add(dataclasses.replace(field, field_handle=handle))
+        return coupler
+
+    def test_all_points_received(self):
+        coupler = self._coupler_receiving({i: 250.0 + i for i in range(self.N_POINTS)})
+
+        data, error = coupler._get("partner", "tas")
+
+        np.testing.assert_array_equal(data, [250.0, 251.0, 252.0, 253.0])
+        self.assertIsNone(error)
+
+    def test_unset_points_are_nan(self):
+        coupler = self._coupler_receiving({0: 250.0, 2: 252.0})
+
+        data, _ = coupler._get("partner", "tas")
+
+        np.testing.assert_array_equal(data, [250.0, np.nan, 252.0, np.nan])
+
+    def test_unset_points_are_rejected(self):
+        coupler = self._coupler_receiving({0: 250.0, 2: 252.0})
+
+        with self.assertRaises(RuntimeError) as raised:
+            coupler.get("partner", "tas")
+
+        message = str(raised.exception)
+        self.assertIn("2 of 4 values of field 'tas' from component 'partner' as NaN", message)
+        self.assertIn("interpolation stack", message)
+
+
+class TestIconLandSurfaceTemperatureRange(unittest.TestCase):
+    """
+    The surface temperature received from ICON-Land enters the firn model as its upper boundary, so a fill value
+    or a temperature in deg C must stop the run when it is received.
+    """
+
+    args = Namespace(
+        start_time="2025-01-01T00:00:00Z",
+        end_time="2025-01-02T00:00:00Z",
+        time_step="PT1H",
+        calendar="proleptic_gregorian",
+        component_name="ebfm",
+        couple_to_icon_atmo=False,
+        couple_to_icon_land=True,
+        couple_to_elmer_ice=False,
+        fake_coupling=True,
+        field_validation_level=FieldValidationLevel("FATAL"),
+        coupler_config=None,
+    )
+    grid = {"x": np.zeros(3), "has_shading": False}
+
+    def _get_t_srf(self, value: float):
+        time_config = TimeConfig(args=self.args)
+        coupler = FakeCoupler(CouplingConfig(args=self.args, time_config=time_config))
+        coupler._register_fake_values(FakeFieldConfig(coupler.get_component("icon_land"), "t_srf", value))
+        coupler.setup(grid=self.grid, time=time_config)
+        return coupler.get("icon_land", "t_srf")
+
+    def test_plausible_surface_temperature_passes(self):
+        data, error = self._get_t_srf(260.0)
+
+        np.testing.assert_array_equal(data, [260.0, 260.0, 260.0])
+        self.assertIsNone(error)
+
+    def test_implausible_surface_temperature_is_rejected(self):
+        for name, value in {"fill value": -999.9, "temperature in deg C": -25.0}.items():
+            with self.subTest(case=name):
+                with self.assertRaises(RuntimeError) as raised:
+                    self._get_t_srf(value)
+                self.assertIn("3 of 3 values of field 't_srf' from component 'icon_land'", str(raised.exception))
 
 
 if __name__ == "__main__":

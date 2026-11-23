@@ -13,7 +13,12 @@ from .base import Component, ExchangeKeySet
 
 from ebfm.coupling.fields import FieldSet, Field, ExchangeType, Timestep
 from ebfm.core.config import ComponentId
-from ebfm.core.constants import LATENT_HEAT_OF_FUSION, MELTING_POINT, WATER_DENSITY
+from ebfm.core.constants import (
+    LATENT_HEAT_OF_FUSION,
+    MELTING_POINT,
+    PLAUSIBLE_SURFACE_TEMPERATURE,
+    WATER_DENSITY,
+)
 
 
 def partition_evapotrans(evapotrans: np.ndarray, Tsurf: np.ndarray, melt: np.ndarray) -> dict[str, np.ndarray]:
@@ -166,6 +171,7 @@ class IconLand(Component):
                     timestep=timestep,
                     metadata="Surface temperature of the glacier tile (K)",
                     exchange_type=ExchangeType.TARGET,
+                    valid_range=PLAUSIBLE_SURFACE_TEMPERATURE,
                 ),
                 Field(
                     name="melt",

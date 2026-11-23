@@ -526,6 +526,34 @@ def _heat_conduction_prep_kernel_gpu(
 
 
 @cuda.jit
+def _heat_conduction_check_kernel_gpu(subT, subD, subZ, Tsurf, dt_stab, min_subT, min_dt_stab, warn_dt_stab, status):
+    """Flag the columns the heat-conduction solve must not run on, or should warn about. One thread per column.
+
+    status[i] = 1 if Tsurf, subT (layers 1..nl-1), subD or subZ is non-finite, a layer 1..nl-1 is colder than
+    min_subT, or dt_stab is below min_dt_stab (> 0), i.e. the solve would need too many sub-steps. The checks match
+    those of the NumPy / Numba paths in LOOP_SNOW.py. Otherwise status[i] = 2 if dt_stab is below warn_dt_stab, and
+    0 if not.
+    """
+    i = cuda.grid(1)
+    if i >= subT.shape[0]:
+        return
+    nl = subT.shape[1]
+
+    ok = math.isfinite(Tsurf[i]) and dt_stab[i] >= min_dt_stab
+    for k in range(nl):
+        if not (math.isfinite(subD[i, k]) and math.isfinite(subZ[i, k])):
+            ok = False
+        if k > 0 and not (math.isfinite(subT[i, k]) and subT[i, k] >= min_subT):
+            ok = False
+    if not ok:
+        status[i] = 1
+    elif dt_stab[i] < warn_dt_stab:
+        status[i] = 2
+    else:
+        status[i] = 0
+
+
+@cuda.jit
 def _heat_boundary_clip_kernel_gpu(subT, Tsurf, subZ, T0):
     """Surface ghost-layer update + melting-point clip. One thread per column.
 
@@ -644,6 +672,7 @@ class SnowDeviceState:
         self._denom_interior = cuda.device_array((gpsum, nl - 3), dtype=np.float64)
         self._denom_bottom = cuda.device_array((gpsum,), dtype=np.float64)
         self._dt_stab = cuda.device_array((gpsum,), dtype=np.float64)
+        self._check_status = cuda.device_array((gpsum,), dtype=np.uint8)
         self._T_loc_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
         self._kdTdz_ws = cuda.device_array((gpsum, nl), dtype=np.float64)
         self._RP = cuda.device_array((gpsum, nl), dtype=np.float64)
@@ -707,8 +736,14 @@ class SnowDeviceState:
             self._psload_ws,
         )
 
-    def heat_conduction(self, dt, C):
-        """Launch heat-conduction prep, solve and boundary/clip, all on-device."""
+    def heat_conduction(self, dt, C, min_subT, min_dt_stab, warn_dt_stab):
+        """Launch heat-conduction prep, solve and boundary/clip, all on-device.
+
+        Returns None if every column passes the checks of _heat_conduction_check_kernel_gpu. Otherwise returns
+        the inputs Tsurf/subT/subD/subZ and dt_stab as host arrays, for LOOP_SNOW.py to report, and "invalid":
+        True if a column fails the checks, in which case the solve is not launched, or False if a column only
+        has a dt_stab below warn_dt_stab.
+        """
         _heat_conduction_prep_kernel_gpu[self.blocks, _TPB](
             self.subD,
             self.subZ,
@@ -725,6 +760,30 @@ class SnowDeviceState:
             self._dt_stab,
             C["dayseconds"],
         )
+        _heat_conduction_check_kernel_gpu[self.blocks, _TPB](
+            self.subT,
+            self.subD,
+            self.subZ,
+            self.Tsurf,
+            self._dt_stab,
+            min_subT,
+            min_dt_stab,
+            warn_dt_stab,
+            self._check_status,
+        )
+        status = self._check_status.copy_to_host()
+        state = None
+        if status.any():
+            state = {
+                "invalid": bool((status == 1).any()),
+                "Tsurf": self.Tsurf.copy_to_host(),
+                "subT": self.subT.copy_to_host(),
+                "subD": self.subD.copy_to_host(),
+                "subZ": self.subZ.copy_to_host(),
+                "dt_stab": self._dt_stab.copy_to_host(),
+            }
+            if state["invalid"]:
+                return state
         _heat_conduction_kernel_gpu[self.blocks, _TPB](
             self.subT,
             self.Tsurf,
@@ -748,6 +807,7 @@ class SnowDeviceState:
             self.subZ,
             C["T0"],
         )
+        return state
 
     def percolation(self, avail_W, C, perc_mode, dt):
         """Launch the percolation kernel on the resident arrays."""
