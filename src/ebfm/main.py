@@ -391,6 +391,15 @@ def _main_impl():
             IN["surface_elevation"] = data_from_elmer["surface_elevation"]
             elmer_ice.update_surface_elevation(grid, IN["surface_elevation"])
 
+            # Update the glacier mask from Elmer/Ice ice thickness.
+            if "ice_thickness" in data_from_elmer:
+                nan = np.isnan(data_from_elmer["ice_thickness"])
+                assert not nan.any(), (
+                    f"Elmer/Ice sent NaN for ice_thickness at columns {np.flatnonzero(nan)}. "
+                    "Check the coupling configuration or Elmer/Ice surface_elevation."
+                )
+                grid["mask"] = (data_from_elmer["ice_thickness"] > 1.0).astype(int)
+
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
             # IN['dhdy'] = data_from_elmer('dhdy')

@@ -45,6 +45,8 @@ class FakeFieldConfig:
 # ---------------------------------------------------------------------------
 _DEFAULT_FAKE_FIELDS: tuple[FakeFieldConfig, ...] = (
     # Elmer/Ice -> EBFM
+    # ice thickness [m] — anything > 1 to keep cells active by default
+    FakeFieldConfig(ElmerIce(coupler=None), "ice_thickness", 100.0),
     # surface elevation [m]
     FakeFieldConfig(ElmerIce(coupler=None), "surface_elevation", 1000.0),
     # ICON atmosphere -> EBFM

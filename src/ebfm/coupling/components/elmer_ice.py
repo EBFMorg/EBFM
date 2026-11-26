@@ -32,6 +32,7 @@ class ElmerIce(Component):
             source_keys={"T_ice", "smb_to_elmer", "runoff_to_elmer"},
             target_keys={
                 "surface_elevation",
+                "ice_thickness",
                 # Enable together with their field definitions and their gets in _exchange below.
                 # "dhdx",
                 # "dhdy",
@@ -78,6 +79,13 @@ class ElmerIce(Component):
                     coupled_component=self,
                     timestep=timestep,
                     metadata="Surface elevation (in m)",
+                    exchange_type=ExchangeType.TARGET,
+                ),
+                Field(
+                    name="ice_thickness",
+                    coupled_component=self,
+                    timestep=timestep,
+                    metadata="Ice thickness (in m)",
                     exchange_type=ExchangeType.TARGET,
                 ),
                 # Field(
@@ -182,6 +190,11 @@ class ElmerIce(Component):
         surface_elevation = self._get_if_coupled("surface_elevation", fallback_values=fallback_values)
         if surface_elevation is not None:
             received_data["surface_elevation"] = surface_elevation
+
+        # Get ice thickness to update the glacier mask dynamically.
+        ice_thickness = self._get_if_coupled("ice_thickness", fallback_values=fallback_values)
+        if ice_thickness is not None:
+            received_data["ice_thickness"] = ice_thickness
 
         # The gradient fields have no field definition yet, so these two gets do nothing. Enabling their field
         # definitions also requires uncommenting them in the accepted key set above, because the target keys a
