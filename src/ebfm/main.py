@@ -399,6 +399,11 @@ def _main_impl():
                     "Check the coupling configuration or Elmer/Ice surface_elevation."
                 )
                 grid["mask"] = (data_from_elmer["ice_thickness"] > 1.0).astype(int)
+                logger.info(
+                    f"[ElmerIce] ice_thickness: min={data_from_elmer['ice_thickness'].min():.1f} "
+                    f"max={data_from_elmer['ice_thickness'].max():.1f}  →  mask: "
+                    f"active={grid['mask'].sum()}/{len(grid['mask'])}"
+                )
 
             # TODO add gradient field later
             # IN['dhdx'] = data_from_elmer('dhdx')
